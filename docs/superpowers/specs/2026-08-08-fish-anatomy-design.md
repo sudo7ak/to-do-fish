@@ -64,7 +64,7 @@ makes the silhouette *data*: a new species is a table, not a function.
 type SpeciesSpec = {
   profile: [number, number][];   // (t, halfHeight ÷ length)
   fins: FinSpec[];
-  palette: { back, belly, fin, pattern };
+  palette: { back, belly, fin, marking };
   pattern: 'bands' | 'stripe' | 'spots' | 'none';
   wave: { amplitude, wavelength, speed };
 };
@@ -103,11 +103,11 @@ type FinSpec = {
   kind: 'dorsal' | 'anal' | 'pectoral' | 'pelvic' | 'caudal';
   span: number;      // length ÷ body length
   sweep: number;     // how far it rakes backward
-  lag: number;       // frames behind the body wave
+  lag: number;       // phase offset in radians, behind the body wave
 };
 ```
 
-Drawn at the spine point for its `anchor`, rotated to the local tangent. `lag` makes
+Drawn at the spine point for its `anchor`, rotated to the local tangent. `lag` is a phase offset in radians (not frames — frame rate varies), and makes
 fins trail the body wave — the difference between "alive" and "a rigid shape
 wobbling". Angelfish filaments and betta veils are ordinary fins with a long `span`
 and a large `lag`; they need no special case.
