@@ -309,6 +309,85 @@ export function drawMotes(
 }
 
 /**
+ * The largest a decorative bubble may be.
+ *
+ * A waiting task is drawn as a ~24px-radius sphere with a fish sealed inside, and
+ * tapping it releases the task. Ambient bubbles have to stay unmistakably smaller than
+ * that or they read as tasks you cannot tap — so this is a correctness constraint on
+ * the mechanic, not a style choice.
+ */
+export const MAX_AIR_BUBBLE = 3.6;
+
+/** Where the airstones sit, as fractions of width. Off-centre, clear of the add-pill. */
+const VENTS = [0.14, 0.52, 0.87];
+
+/**
+ * Streams of small bubbles rising from the substrate, wobbling as they go and thinning
+ * out near the surface.
+ *
+ * Deliberately fast and small: aeration reads as background life, where the slow,
+ * fat, fish-bearing task bubbles read as content.
+ */
+export function drawAirBubbles(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	time: number,
+	strength = 1
+): void {
+	if (strength <= 0) return;
+	const t = time / 1000;
+	const floor = size.h - 8;
+	const travel = floor - WATERLINE;
+	if (travel <= 0) return;
+
+	ctx.save();
+	for (let v = 0; v < VENTS.length; v++) {
+		// Each vent puffs in bursts rather than metronomically, so three streams do not
+		// pulse in lockstep.
+		const gust = 0.65 + 0.35 * Math.sin(t * 0.35 + v * 2.1);
+		const perVent = 7;
+
+		for (let i = 0; i < perVent; i++) {
+			const seed = v * 31 + i;
+			const speed = (26 + noise(seed, 12) * 26) * gust;
+
+			// Rise, wrap, repeat. The offset spreads the stream out along its climb.
+			const climbed = (t * speed + noise(seed, 13) * travel) % travel;
+			const y = floor - climbed;
+			const progress = climbed / travel;
+
+			// Bubbles wobble more as they rise and slow, and swell very slightly.
+			const wobble = Math.sin(t * 2.2 + seed + progress * 6) * (2 + progress * 7);
+			const x = size.w * VENTS[v] + (noise(seed, 14) - 0.5) * 16 + wobble;
+
+			const r = Math.min(
+				MAX_AIR_BUBBLE,
+				(0.9 + noise(seed, 15) * 1.7) * (1 + progress * 0.45)
+			);
+
+			// Fade in off the sand and out again at the surface, so none pops into being.
+			const fade = Math.min(1, progress * 6) * (1 - Math.max(0, progress - 0.82) / 0.18);
+			ctx.globalAlpha = 0.5 * fade * strength;
+
+			ctx.beginPath();
+			ctx.arc(x, y, r, 0, Math.PI * 2);
+			ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+			ctx.lineWidth = 0.9;
+			ctx.stroke();
+
+			// A highlight only on the bigger ones; below that it is a smudge.
+			if (r > 2) {
+				ctx.beginPath();
+				ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.28, 0, Math.PI * 2);
+				ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+				ctx.fill();
+			}
+		}
+	}
+	ctx.restore();
+}
+
+/**
  * Depth haze at the bottom and a soft vignette at the edges. Both push the middle
  * of the tank forward, which is where the fish are.
  */
@@ -347,6 +426,7 @@ export function drawTank(
 	drawSubstrate(ctx, size, colors);
 	drawPlants(ctx, size, colors, time);
 	drawMotes(ctx, size, time, colors.light);
+	drawAirBubbles(ctx, size, time, colors.light);
 	drawSurface(ctx, size, colors, time);
 }
 
