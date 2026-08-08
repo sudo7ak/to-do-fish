@@ -611,6 +611,126 @@ describe('head', () => {
 	});
 });
 
+/**
+ * A canvas fake that follows the transform stack, so drawn coordinates can be checked
+ * against the glass. `fakeCtx` records local coordinates; a fin drawn 30px behind a
+ * fish that itself sits at x=395 looks perfectly innocent in local space.
+ */
+function boundsCtx() {
+	// [a, b, c, d, e, f] — the standard 2D affine, same order as `setTransform`.
+	let m = [1, 0, 0, 1, 0, 0];
+	const stack: number[][] = [];
+	let minX = Infinity;
+	let maxX = -Infinity;
+
+	const mul = (n: number[]) => {
+		m = [
+			m[0] * n[0] + m[2] * n[1],
+			m[1] * n[0] + m[3] * n[1],
+			m[0] * n[2] + m[2] * n[3],
+			m[1] * n[2] + m[3] * n[3],
+			m[0] * n[4] + m[2] * n[5] + m[4],
+			m[1] * n[4] + m[3] * n[5] + m[5]
+		];
+	};
+
+	const mark = (x: number, y: number) => {
+		const wx = m[0] * x + m[2] * y + m[4];
+		minX = Math.min(minX, wx);
+		maxX = Math.max(maxX, wx);
+	};
+
+	const ctx = {
+		get minX() {
+			return minX;
+		},
+		get maxX() {
+			return maxX;
+		},
+		save: () => stack.push([...m]),
+		restore: () => {
+			m = stack.pop() ?? m;
+		},
+		translate: (x: number, y: number) => mul([1, 0, 0, 1, x, y]),
+		scale: (x: number, y: number) => mul([x, 0, 0, y, 0, 0]),
+		rotate: (a: number) => mul([Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0]),
+		moveTo: mark,
+		lineTo: mark,
+		quadraticCurveTo: (cx: number, cy: number, x: number, y: number) => {
+			// Control points bound the curve, so marking them is conservative.
+			mark(cx, cy);
+			mark(x, y);
+		},
+		bezierCurveTo: (a: number, b: number, c: number, d: number, x: number, y: number) => {
+			mark(a, b);
+			mark(c, d);
+			mark(x, y);
+		},
+		arc: (x: number, y: number, r: number) => {
+			mark(x - r, y);
+			mark(x + r, y);
+			mark(x, y - r);
+			mark(x, y + r);
+		},
+		ellipse: (x: number, y: number, rx: number, ry: number) => {
+			mark(x - rx, y);
+			mark(x + rx, y);
+			mark(x, y - ry);
+			mark(x, y + ry);
+		},
+		createLinearGradient: () => ({ addColorStop: () => {} }),
+		createRadialGradient: () => ({ addColorStop: () => {} }),
+		globalAlpha: 1,
+		globalCompositeOperation: 'source-over',
+		fillStyle: '',
+		strokeStyle: '',
+		lineWidth: 0,
+		lineCap: 'butt'
+	} as unknown as CanvasRenderingContext2D & { minX: number; maxX: number };
+
+	for (const method of ['clip', 'beginPath', 'closePath', 'fill', 'stroke', 'setLineDash', 'fillRect', 'roundRect', 'setTransform']) {
+		(ctx as unknown as Record<string, unknown>)[method] = () => {};
+	}
+
+	return ctx;
+}
+
+describe('fin clipping', () => {
+	it('keeps every fin inside the glass, for the widest-finned species', () => {
+		// `place` clamps the *body* to [0.06, 0.94] of the width — about 24px of slack on
+		// a phone — but an exotic caudal reaches over 30px past the body. The tail clipped
+		// through the right wall in a busy tank. `place` cannot be widened (hit-testing
+		// shares it), so the drawing layer insets by what each species actually needs.
+		const kinds: CreatureKind[] = ['fish', 'ghost', 'koi', 'treat'];
+		const creatures = kinds.flatMap((kind) =>
+			Array.from({ length: 20 }, (_, i) => creature(kind, { id: `${kind}-edge-${i}` }))
+		);
+
+		for (let frame = 0; frame < 60; frame++) {
+			const ctx = boundsCtx();
+			drawCreatures(ctx, creatures, COLORS, SIZE, frame * 431);
+
+			expect(ctx.minX).toBeGreaterThanOrEqual(0);
+			expect(ctx.maxX).toBeLessThanOrEqual(SIZE.w);
+		}
+	});
+
+	it('does not shove a mid-tank fish around to make room', () => {
+		// The inset must be a clamp, not a squeeze: only a fish already against the wall
+		// may move, or drawn positions drift away from the ones pointer picking uses.
+		const ctx = boundsCtx();
+		const mid = creature('fish', { id: 'centred', depth: 0.5 });
+		const at = place(mid, SIZE, 0);
+
+		drawCreatures(ctx, [mid], COLORS, SIZE, 0);
+
+		// The nose is roughly half a body length ahead of the centre; if the fish had
+		// been shifted, the drawn span would no longer straddle its placement.
+		expect(ctx.minX).toBeLessThan(at.x);
+		expect(ctx.maxX).toBeGreaterThan(at.x);
+	});
+});
+
 describe('drawCreatures — the whole tank', () => {
 	it('draws every creature in the scene', () => {
 		const ctx = fakeCtx();

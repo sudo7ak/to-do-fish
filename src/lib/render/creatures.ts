@@ -181,6 +181,33 @@ function spreadX(seed: number, size: Size): number {
 
 // ------------------------------------------------------------------ drawing
 
+/**
+ * The species a creature wears, and the scale it is drawn at — or `null` for the
+ * creatures that have no fish body.
+ *
+ * One place, because `drawCreature` and the fin-clipping inset must agree about what
+ * is on screen; deciding it twice is how the inset ends up sized for the wrong fish.
+ */
+function bodyOf(creature: Creature): { spec: SpeciesSpec; scale: number } | null {
+	switch (creature.kind) {
+		case 'fish':
+			// A bought treat keeps its exotic look, at a size that sits in the shoal.
+			// Turning it into an ordinary fish read as the prize vanishing on purchase.
+			return creature.claimed
+				? { spec: SPECIES.exotic, scale: 0.72 }
+				: { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
+		case 'ghost':
+			return { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
+		case 'koi':
+			return { spec: SPECIES.koi, scale: 1 };
+		case 'treat':
+			return { spec: creature.locked ? LOCKED_EXOTIC : SPECIES.exotic, scale: 1 };
+		default:
+			// A bubble's fish is clipped to the sphere; a pearl has no fins at all.
+			return null;
+	}
+}
+
 export function drawCreature(
 	ctx: CanvasRenderingContext2D,
 	creature: Creature,
@@ -188,28 +215,26 @@ export function drawCreature(
 	colors: Palette,
 	time: number
 ): void {
+	const body = bodyOf(creature);
+
 	ctx.save();
 	ctx.translate(at.x, at.y);
+	if (body && body.scale !== 1) ctx.scale(body.scale, body.scale);
 
+	// `bodyOf` returns a spec for every kind that has one, so the assertions below hold
+	// by construction — the compiler just cannot see across the switch.
 	switch (creature.kind) {
 		case 'fish':
-			// A bought treat keeps its exotic look, at a size that sits in the shoal.
-			// Turning it into an ordinary fish read as the prize vanishing on purchase.
-			if (creature.claimed) {
-				ctx.scale(0.72, 0.72);
-				drawFish(ctx, at, SPECIES.exotic, time, hash(creature.id));
-			} else {
-				drawFish(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
-			}
+			drawFish(ctx, at, body!.spec, time, hash(creature.id));
 			break;
 		case 'ghost':
-			drawGhost(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
+			drawGhost(ctx, at, body!.spec, time, hash(creature.id));
 			break;
 		case 'koi':
 			drawKoi(ctx, at, time, hash(creature.id));
 			break;
 		case 'bubble':
-			drawBubble(ctx, creature, colors, time);
+			drawBubble(ctx, creature, time);
 			break;
 		case 'treat':
 			drawTreatFish(ctx, creature, at, time);
@@ -222,6 +247,71 @@ export function drawCreature(
 	ctx.restore();
 }
 
+/**
+ * How far a species reaches horizontally from its own origin, in local pixels.
+ *
+ * `place` clamps the *body* centre to [0.06, 0.94] of the width, which leaves about
+ * 24px of slack on a phone — but an exotic or betta caudal is 0.70–0.75 of body
+ * length, over 30px, so the tail clipped through the glass in a busy tank. `place`
+ * cannot grow the margin: pointer hit-testing shares it, and moving every fish inward
+ * to suit the widest tail would waste the tank.
+ *
+ * So the drawing layer insets instead, and it insets by what each species actually
+ * needs rather than one constant — a single margin either under-shoots the betta or
+ * over-shoots the neon by 20px.
+ *
+ * On a straight spine the fin transform is the identity, a fin root sits at
+ * `length * (0.5 - anchor)`, and the fin's own path runs from `-span * sweep` to
+ * `+span * 0.15`. Bending only pulls the extremes inward, so this is an upper bound.
+ */
+function speciesReach(spec: SpeciesSpec): number {
+	let reach = spec.length * 0.5; // nose and tail of the body itself
+
+	for (const fin of spec.fins) {
+		const root = spec.length * (0.5 - fin.anchor);
+		const span = fin.span * spec.length;
+		reach = Math.max(reach, Math.abs(root - span * fin.sweep), Math.abs(root + span * 0.15));
+	}
+
+	// The bubble trail streams further back than any tail, and the treat's halo is a
+	// disc of one body length. Both are faint, but a hard vertical cut through a glow
+	// at the edge of the glass is more obvious than the glow itself.
+	return Math.max(reach, spec.length * TRAIL_ANCHOR + TRAIL_DRIFT + TRAIL_RADIUS, spec.length);
+}
+
+/**
+ * The placement to draw at: the body's own position, pulled in only far enough that
+ * the fins stay inside the glass.
+ *
+ * This deliberately diverges from `place` at the very edges. `place` answers "where is
+ * this creature", which hit-testing needs to keep agreeing with itself; this answers
+ * "where can it be painted without clipping", and only differs for a fish already
+ * pressed against the wall.
+ */
+function insetForFins(at: Placement, creature: Creature, size: Size): Placement {
+	const body = bodyOf(creature);
+	if (!body) return at;
+
+	const margin = Math.min(size.w * 0.5, speciesReach(body.spec) * body.scale);
+	const x = Math.min(size.w - margin, Math.max(margin, at.x));
+
+	return x === at.x ? at : { ...at, x };
+}
+
+/**
+ * Back to front: bubbles and pearls behind, koi in front. Module scope, because
+ * `drawCreatures` runs inside a `requestAnimationFrame` loop and had been allocating
+ * this record sixty times a second.
+ */
+const DRAW_ORDER: Record<Creature['kind'], number> = {
+	pearl: 0,
+	bubble: 1,
+	ghost: 2,
+	fish: 3,
+	koi: 4,
+	treat: 5
+};
+
 /** Paints every creature in one pass, back to front: bubbles and pearls behind, koi in front. */
 export function drawCreatures(
 	ctx: CanvasRenderingContext2D,
@@ -231,17 +321,9 @@ export function drawCreatures(
 	time: number,
 	animate = true
 ): void {
-	const order: Record<Creature['kind'], number> = {
-		pearl: 0,
-		bubble: 1,
-		ghost: 2,
-		fish: 3,
-		koi: 4,
-		treat: 5
-	};
-
-	for (const creature of [...creatures].sort((a, b) => order[a.kind] - order[b.kind])) {
-		drawCreature(ctx, creature, place(creature, size, time, animate), colors, time);
+	for (const creature of [...creatures].sort((a, b) => DRAW_ORDER[a.kind] - DRAW_ORDER[b.kind])) {
+		const at = insetForFins(place(creature, size, time, animate), creature, size);
+		drawCreature(ctx, creature, at, colors, time);
 	}
 }
 
@@ -589,6 +671,15 @@ function drawGhost(
 	ctx.globalAlpha = outer;
 }
 
+/**
+ * Where the bubble trail sits behind the tail, as a fraction of body length, how far
+ * it drifts back over its cycle, and the largest bubble radius. Named because
+ * `speciesReach` has to know how far a fish's drawn geometry actually extends.
+ */
+const TRAIL_ANCHOR = 0.75;
+const TRAIL_DRIFT = 10;
+const TRAIL_RADIUS = 2.4;
+
 /** The bubble trail behind a live fish. Three bubbles rising and fading on a loop. */
 function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, len: number): void {
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
@@ -600,7 +691,7 @@ function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, le
 		ctx.globalAlpha = outer * 0.45 * (1 - cycle);
 		ctx.beginPath();
 		// Behind the tail, not off the nose: a fish does not breathe backwards.
-		ctx.arc(-len * 0.75 - cycle * 10, -cycle * 20, 1.4 + i * 0.5, 0, Math.PI * 2);
+		ctx.arc(-len * TRAIL_ANCHOR - cycle * TRAIL_DRIFT, -cycle * 20, 1.4 + i * 0.5, 0, Math.PI * 2);
 		ctx.stroke();
 	}
 
@@ -628,12 +719,7 @@ function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number, see
 	}
 }
 
-function drawBubble(
-	ctx: CanvasRenderingContext2D,
-	creature: Creature,
-	colors: Palette,
-	time: number
-): void {
+function drawBubble(ctx: CanvasRenderingContext2D, creature: Creature, time: number): void {
 	const seed = hash(creature.id);
 	const radius = 24;
 	const wobble = Math.sin(time / 700 + seed) * 1.5;
@@ -678,8 +764,6 @@ function drawBubble(
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
 	ctx.lineWidth = 2.4;
 	ctx.stroke();
-
-	void colors;
 }
 
 function drawTreatFish(
