@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
-import { SPECIES } from './species';
+import { SPECIES, SWIMMERS } from './species';
 
 import { WATERLINE } from './water';
 
@@ -508,6 +508,29 @@ describe('drawCreatures — the whole tank', () => {
 		drawCreatures(fakeCtx(), creatures, COLORS, SIZE, 0);
 
 		expect(creatures.map((c) => c.id)).toEqual(before);
+	});
+});
+
+describe('koi', () => {
+	it('draws and stays balanced', () => {
+		const ctx = fakeCtx();
+		const c = creature('koi', { id: 'koi-2026-08-01' });
+
+		drawCreature(ctx, c, place(c, SIZE, 500), COLORS, 500);
+
+		expect(ctx.calls.filter((call) => call === 'fill').length).toBeGreaterThan(0);
+		expect(ctx.depth).toBe(0);
+	});
+
+	it('swims more slowly than an ordinary fish', () => {
+		// The koi is the reward for a cleared day; it should be unhurried.
+		expect(SPECIES.koi.wave.speed).toBeLessThan(SPECIES.clown.wave.speed);
+	});
+
+	it('is longer than every swimmer', () => {
+		for (const name of SWIMMERS) {
+			expect(SPECIES.koi.length).toBeGreaterThan(SPECIES[name].length);
+		}
 	});
 });
 

@@ -278,7 +278,7 @@ export function drawCreature(
 			drawGhost(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
 			break;
 		case 'koi':
-			drawKoi(ctx, at, time);
+			drawKoi(ctx, at, time, hash(creature.id));
 			break;
 		case 'bubble':
 			drawBubble(ctx, creature, colors, time);
@@ -636,60 +636,25 @@ function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, le
 	ctx.globalAlpha = 1;
 }
 
-function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number): void {
-	if (at.flip) ctx.scale(-1, 1);
+/** The cleared-day koi: an ordinary fish body with barbels and a gold rim. */
+function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number, seed: number): void {
+	const spec = SPECIES.koi;
+	drawFish(ctx, at, spec, time, seed);
 
-	const len = 46;
-	const hgt = 17;
-	const beat = Math.sin(time / 300);
+	// Barbels, the detail that separates a koi from a large goldfish. Drawn after the
+	// body so they sit over the head.
+	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
+	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const nose = pointAt(spine, 0.04);
 
-	// Trailing veil fins first, so the body sits over them.
-	ctx.fillStyle = 'rgba(255, 226, 168, 0.75)';
-	ctx.beginPath();
-	ctx.moveTo(-len / 2, 0);
-	ctx.quadraticCurveTo(-len * 0.85, -hgt * 1.1 + beat * 6, -len * 1.05, -hgt * 0.3 + beat * 8);
-	ctx.quadraticCurveTo(-len * 0.7, 0, -len * 1.05, hgt * 0.5 + beat * 8);
-	ctx.quadraticCurveTo(-len * 0.85, hgt * 1.1 + beat * 6, -len / 2, 0);
-	ctx.closePath();
-	ctx.fill();
-
-	const gradient = ctx.createLinearGradient(0, -hgt, 0, hgt);
-	gradient.addColorStop(0, '#FFF0C4');
-	gradient.addColorStop(0.45, '#FFC46B');
-	gradient.addColorStop(1, '#E08A2B');
-
-	bodyPath(ctx, len, hgt);
-	ctx.fillStyle = gradient;
-	ctx.fill();
-
-	// The red kohaku blotches that make a koi a koi.
-	ctx.save();
-	bodyPath(ctx, len, hgt);
-	ctx.clip();
-	ctx.fillStyle = 'rgba(226, 78, 47, 0.85)';
-	ctx.beginPath();
-	ctx.arc(len * 0.16, -hgt * 0.35, 7, 0, Math.PI * 2);
-	ctx.fill();
-	ctx.beginPath();
-	ctx.arc(-len * 0.2, hgt * 0.1, 5.5, 0, Math.PI * 2);
-	ctx.fill();
-	ctx.restore();
-
-	// Gold rim, which is what separates it from an ordinary orange fish.
-	bodyPath(ctx, len, hgt);
-	ctx.strokeStyle = 'rgba(255, 240, 196, 0.9)';
-	ctx.lineWidth = 1.4;
-	ctx.stroke();
-
-	// Barbels.
-	ctx.beginPath();
-	ctx.moveTo(len * 0.46, hgt * 0.1);
-	ctx.quadraticCurveTo(len * 0.58, hgt * 0.3, len * 0.52, hgt * 0.5);
-	ctx.strokeStyle = 'rgba(255, 240, 196, 0.8)';
+	ctx.strokeStyle = 'rgba(255, 240, 196, 0.85)';
 	ctx.lineWidth = 1;
-	ctx.stroke();
-
-	drawEye(ctx, { ...LEGACY_SPECIES.clown, length: len, height: hgt });
+	for (const side of [-1, 1]) {
+		ctx.beginPath();
+		ctx.moveTo(nose.x, nose.y + side * 2);
+		ctx.quadraticCurveTo(nose.x + 7, nose.y + side * 5, nose.x + 4, nose.y + side * 9);
+		ctx.stroke();
+	}
 }
 
 function drawBubble(
