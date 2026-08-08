@@ -292,6 +292,40 @@ describe('body shading', () => {
 	});
 });
 
+describe('per-frame cost', () => {
+	it('builds each species\' body gradient once, not once a frame', () => {
+		// This runs inside a requestAnimationFrame loop. The gradient depends only on the
+		// species, so rebuilding it per fish per frame is pure waste.
+		const ctx = fakeCtx();
+		const c = creature('fish', { id: 'steady' });
+
+		for (let frame = 0; frame < 30; frame++) {
+			drawCreature(ctx, c, place(c, SIZE, frame * 100), COLORS, frame * 100);
+		}
+
+		expect(ctx.calls.filter((call) => call.startsWith('linearGradient(')).length).toBe(1);
+	});
+
+	it('still shades a second species with its own gradient', () => {
+		// A cache keyed too coarsely would paint every fish in the first species' colours.
+		const ctx = fakeCtx();
+		const ids = SWIMMERS.map((name) => {
+			for (let i = 0; i < 400; i++) if (speciesFor(`id-${i}`) === name) return `id-${i}`;
+			return '';
+		});
+
+		for (const id of ids) {
+			const c = creature('fish', { id });
+			drawCreature(ctx, c, place(c, SIZE, 0), COLORS, 0);
+		}
+
+		const spans = new Set(ctx.calls.filter((call) => call.startsWith('linearGradient(')));
+		// The angel and the clown happen to share no peak with anyone; six species give
+		// at least five distinct spans.
+		expect(spans.size).toBeGreaterThanOrEqual(5);
+	});
+});
+
 describe('place — where creatures sit', () => {
 	it('cruises the treat fish in the surface lane', () => {
 		const y = place(creature('treat', { depth: 0 }), SIZE, 0).y;

@@ -10,6 +10,7 @@ import {
 	tangentAt,
 	profileAt,
 	profilePeak,
+	type Point,
 	type Spine
 } from './spine';
 
@@ -265,6 +266,9 @@ export function drawCreature(
  * `+span * 0.15`. Bending only pulls the extremes inward, so this is an upper bound.
  */
 function speciesReach(spec: SpeciesSpec): number {
+	const cached = reachCache.get(spec);
+	if (cached !== undefined) return cached;
+
 	let reach = spec.length * 0.5; // nose and tail of the body itself
 
 	for (const fin of spec.fins) {
@@ -276,7 +280,14 @@ function speciesReach(spec: SpeciesSpec): number {
 	// The bubble trail streams further back than any tail, and the treat's halo is a
 	// disc of one body length. Both are faint, but a hard vertical cut through a glow
 	// at the edge of the glass is more obvious than the glow itself.
-	return Math.max(reach, spec.length * TRAIL_ANCHOR + TRAIL_DRIFT + TRAIL_RADIUS, spec.length);
+	const total = Math.max(
+		reach,
+		spec.length * TRAIL_ANCHOR + TRAIL_DRIFT + TRAIL_RADIUS,
+		spec.length
+	);
+
+	reachCache.set(spec, total);
+	return total;
 }
 
 /**
@@ -343,18 +354,59 @@ function tracePath(ctx: CanvasRenderingContext2D, points: { x: number; y: number
 	ctx.closePath();
 }
 
-/** Fills the body outline, lit from above, with a rim so it holds its edge in the water. */
-function drawBody(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine, alpha = 1): void {
-	const loop = outline(spine, spec.profile, spec.length);
+/**
+ * Per-species values that never change but were being recomputed for every fish on
+ * every frame, sixty times a second: the body gradient, the profile's peak, and the
+ * horizontal reach used to keep fins off the glass.
+ *
+ * Keyed by the spec object, and every spec is a module constant, so this is bounded by
+ * the number of species. The gradient is additionally keyed by context, because a
+ * `CanvasGradient` belongs to the canvas that made it.
+ */
+const gradientCache = new WeakMap<CanvasRenderingContext2D, Map<SpeciesSpec, CanvasGradient>>();
+const peakCache = new Map<SpeciesSpec, number>();
+const reachCache = new Map<SpeciesSpec, number>();
+
+function bodyGradient(ctx: CanvasRenderingContext2D, spec: SpeciesSpec): CanvasGradient {
+	let perSpecies = gradientCache.get(ctx);
+	if (!perSpecies) {
+		perSpecies = new Map();
+		gradientCache.set(ctx, perSpecies);
+	}
+
+	const cached = perSpecies.get(spec);
+	if (cached) return cached;
 
 	// The ramp has to span the body's real depth, not half its *length*. At `length/2`
 	// every species but the angel — whose profile happens to peak at 0.5 — sampled only
 	// the middle third of the gradient and came out a flat mid-tone.
-	const half = profilePeak(spec.profile) * spec.length;
-
+	const half = bodyHalf(spec);
 	const shade = ctx.createLinearGradient(0, -half, 0, half);
 	shade.addColorStop(0, spec.palette.back);
 	shade.addColorStop(1, spec.palette.belly);
+
+	perSpecies.set(spec, shade);
+	return shade;
+}
+
+/** The species' deepest half-height, in pixels. */
+function bodyHalf(spec: SpeciesSpec): number {
+	let half = peakCache.get(spec);
+	if (half === undefined) {
+		half = profilePeak(spec.profile) * spec.length;
+		peakCache.set(spec, half);
+	}
+	return half;
+}
+
+/** Fills the body outline, lit from above, with a rim so it holds its edge in the water. */
+function drawBody(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	loop: Point[],
+	alpha = 1
+): void {
+	const shade = bodyGradient(ctx, spec);
 
 	// Multiply, never assign: a caller may already have dimmed the context (a locked
 	// treat, a ghost), and assigning would repaint the body at full brightness inside
@@ -548,12 +600,13 @@ function drawMarkings(
 	ctx: CanvasRenderingContext2D,
 	spec: SpeciesSpec,
 	spine: Spine,
+	loop: Point[],
 	seed: number
 ): void {
 	if (spec.pattern === 'none') return;
 
 	ctx.save();
-	tracePath(ctx, outline(spine, spec.profile, spec.length));
+	tracePath(ctx, loop);
 	ctx.clip();
 	ctx.fillStyle = spec.palette.marking;
 	ctx.strokeStyle = spec.palette.marking;
@@ -595,24 +648,32 @@ function drawMarkings(
 	ctx.restore();
 }
 
+/**
+ * Returns the spine and outline it built, so a caller that needs to draw over the
+ * finished fish — the koi's rim and barbels — does not rebuild them. Both were being
+ * computed twice per koi per frame.
+ */
 function drawFish(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
 	spec: SpeciesSpec,
 	time: number,
 	seed: number
-): void {
+): { spine: Spine; loop: Point[] } {
 	if (at.flip) ctx.scale(-1, 1);
 
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
 	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const loop = outline(spine, spec.profile, spec.length);
 
 	drawRearFins(ctx, spec, spine, time, phase);
-	drawBody(ctx, spec, spine);
-	drawMarkings(ctx, spec, spine, seed);
+	drawBody(ctx, spec, loop);
+	drawMarkings(ctx, spec, spine, loop, seed);
 	drawPectoral(ctx, spec, spine, time, phase);
 	drawHead(ctx, spec, spine, time, phase);
 	drawTrail(ctx, time, seed, spec.length);
+
+	return { spine, loop };
 }
 
 /** A resolved task keeps swimming, drained to a translucent outline of the same fish. */
@@ -701,12 +762,10 @@ function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, le
 /** The cleared-day koi: an ordinary fish body with barbels and a gold rim. */
 function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number, seed: number): void {
 	const spec = SPECIES.koi;
-	drawFish(ctx, at, spec, time, seed);
+	const { spine } = drawFish(ctx, at, spec, time, seed);
 
 	// Barbels, the detail that separates a koi from a large goldfish. Drawn after the
 	// body so they sit over the head.
-	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
-	const spine = spineFor(spec.length, spec.wave, time, phase);
 	const nose = pointAt(spine, 0.04);
 
 	ctx.strokeStyle = 'rgba(255, 240, 196, 0.85)';
