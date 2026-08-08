@@ -181,6 +181,7 @@
 	></div>
 
 	<section class="sheet" aria-label={task ? 'Edit task' : 'New task'}>
+		<h2>{task ? 'Edit task' : 'New task'}</h2>
 		<form onsubmit={submit}>
 			<label>
 				<span>Task</span>
@@ -196,7 +197,7 @@
 			<fieldset>
 				<legend>When</legend>
 				{#each [['plain', 'Straight away'], ['time', 'At a time'], ['task', 'After another task'], ['text', 'When I decide'], ['treat', 'Guilty pleasure']] as [value, label] (value)}
-					<label class="choice">
+					<label class="choice" class:selected={form.kind === value}>
 						<input type="radio" bind:group={form.kind} {value} />
 						<span>{label}</span>
 					</label>
@@ -264,14 +265,33 @@
 		/* Above the list view: Edit is reachable from there, and a sheet that opens
 		   behind the list cannot be used at all. */
 		z-index: 21;
+		/* Centred and capped. Full-bleed, the fields stretch to the whole desktop
+		   width and the form stops being readable — this was designed at phone size. */
+		max-width: 34rem;
+		margin: 0 auto;
 		max-height: 85dvh;
 		overflow-y: auto;
-		padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+		padding: 1.5rem 1.5rem calc(1.5rem + env(safe-area-inset-bottom));
 		border-radius: 1.25rem 1.25rem 0 0;
-		background: rgba(255, 255, 255, 0.82);
-		backdrop-filter: blur(18px);
+		background: rgba(255, 255, 255, 0.9);
+		backdrop-filter: blur(20px);
 		box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
 		color: #12303a;
+	}
+
+	/* Wider than a phone: a floating card rather than a sheet welded to the edge. */
+	@media (min-width: 40rem) {
+		.sheet {
+			inset: auto 0 2rem 0;
+			border-radius: 1.25rem;
+			box-shadow: 0 18px 60px rgba(0, 0, 0, 0.3);
+		}
+	}
+
+	h2 {
+		margin: 0 0 1.1rem;
+		font-size: 1.15rem;
+		font-weight: 600;
 	}
 
 	form {
@@ -281,18 +301,29 @@
 
 	label {
 		display: grid;
-		gap: 0.3rem;
-		font-size: 0.85rem;
+		gap: 0.35rem;
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: rgba(18, 48, 58, 0.7);
 	}
 
 	input,
 	select {
-		padding: 0.6rem 0.7rem;
-		border: 1px solid rgba(18, 48, 58, 0.2);
-		border-radius: 0.6rem;
-		background: rgba(255, 255, 255, 0.9);
+		padding: 0.7rem 0.8rem;
+		border: 1px solid rgba(18, 48, 58, 0.18);
+		border-radius: 0.7rem;
+		background: #fff;
 		font-size: 1rem;
-		color: inherit;
+		font-family: inherit;
+		color: #12303a;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+
+	input:focus,
+	select:focus {
+		outline: none;
+		border-color: #12303a;
+		box-shadow: 0 0 0 3px rgba(18, 48, 58, 0.12);
 	}
 
 	fieldset {
@@ -305,18 +336,47 @@
 	}
 
 	legend {
-		padding: 0 0 0.3rem;
-		font-size: 0.85rem;
+		padding: 0 0 0.5rem;
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: rgba(18, 48, 58, 0.7);
 	}
 
 	.choice {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
-		padding: 0.35rem 0.6rem;
+		padding: 0.45rem 0.85rem;
+		border: 1px solid rgba(18, 48, 58, 0.14);
 		border-radius: 999px;
-		background: rgba(18, 48, 58, 0.07);
+		background: rgba(255, 255, 255, 0.7);
 		font-size: 0.85rem;
+		font-weight: 500;
+		color: #12303a;
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s, color 0.15s;
+	}
+
+	.choice:hover {
+		border-color: rgba(18, 48, 58, 0.35);
+	}
+
+	.choice.selected {
+		border-color: #12303a;
+		background: #12303a;
+		color: #fff;
+	}
+
+	/* The native control keeps focus and keyboard behaviour; the chip is the visible
+	   affordance. Bare OS radios read as a raw form, not as an app. */
+	.choice input {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		opacity: 0;
+	}
+
+	.choice:focus-within {
+		box-shadow: 0 0 0 3px rgba(18, 48, 58, 0.18);
 	}
 
 	small {

@@ -14,7 +14,7 @@
 	import type { Task } from '$lib/types';
 
 	import Tank from '$lib/ui/Tank.svelte';
-	import DateHeader, { today } from '$lib/ui/DateHeader.svelte';
+	import DateHeader, { today, formatDay } from '$lib/ui/DateHeader.svelte';
 	import TaskSheet from '$lib/ui/TaskSheet.svelte';
 	import CreatureSheet, { tapAction } from '$lib/ui/CreatureSheet.svelte';
 	import ListView from '$lib/ui/ListView.svelte';
@@ -39,13 +39,20 @@
 	let lastFrame = { time: 0, size: { w: 0, h: 0 }, animate: true };
 
 	const pearls = $derived(pearlBalance($tasks));
-	const clearedPct = $derived(
-		buildScene($tasks, $koi, date, Date.now()).clearedPct
-	);
+	const scene = $derived(buildScene($tasks, $koi, date, Date.now()));
+	const clearedPct = $derived(scene.clearedPct);
+
+	// Only after hydrating: before the store loads, every day looks empty, and a
+	// message that flashes on every launch is worse than none.
+	let hydrated = $state(false);
+	const emptyDay = $derived(hydrated && scene.creatures.length === 0);
 
 	onMount(() => {
 		const ticker = createTicker(store);
-		store.hydrate().then(() => ticker.start());
+		store.hydrate().then(() => {
+			hydrated = true;
+			ticker.start();
+		});
 
 		// Both the interval and the visibilitychange listener leak without this.
 		return () => ticker.stop();
@@ -82,7 +89,14 @@
 		const scene = buildScene(state.tasks, state.koi, date, Date.now());
 		const hit = pick(scene.creatures, point, lastFrame.size, lastFrame.time, lastFrame.animate);
 
-		// Pearls and the overflow lantern stand for no single task.
+		// The overflow treat stands for several tasks at once, so it cannot open a
+		// sheet — it opens the list, which is the view that can show them all.
+		if (hit && !hit.taskId && hit.kind === 'treat') {
+			listOpen = true;
+			return;
+		}
+
+		// Pearls stand for no task at all.
 		const task = hit?.taskId ? state.tasks.find((t) => t.id === hit.taskId) : undefined;
 		if (!task) return;
 
@@ -139,6 +153,13 @@
 			onNavigate={(next) => (date = next)}
 		/>
 	</div>
+
+	{#if emptyDay}
+		<p class="empty">
+			<span>Nothing in the tank for {formatDay(date)}.</span>
+			<small>Add a task and it will start swimming.</small>
+		</p>
+	{/if}
 
 	<Banner visible={$saveFailed} />
 
@@ -221,5 +242,28 @@
 
 	.chrome :global(button) {
 		pointer-events: auto;
+	}
+
+	.empty {
+		position: absolute;
+		top: 45%;
+		left: 0;
+		right: 0;
+		display: grid;
+		gap: 0.35rem;
+		margin: 0;
+		text-align: center;
+		color: #fff;
+		text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+		pointer-events: none;
+	}
+
+	.empty span {
+		font-size: 1rem;
+	}
+
+	.empty small {
+		font-size: 0.85rem;
+		opacity: 0.8;
 	}
 </style>

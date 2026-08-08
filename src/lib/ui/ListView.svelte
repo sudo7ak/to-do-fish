@@ -117,6 +117,7 @@
 
 {#if open}
 	<section class="list" aria-label="Task list">
+		<div class="inner">
 		<header>
 			<h2>{formatDay(date)}</h2>
 			<button type="button" class="ghost" onclick={onClose}>Back to the tank</button>
@@ -169,6 +170,8 @@
 			</ul>
 		{/each}
 
+		</div>
+
 		{#if selected.size > 0}
 			<div class="bulk" role="group" aria-label="Bulk actions">
 				<span>{describeSelection(selected.size)}</span>
@@ -187,11 +190,18 @@
 		/* Layer 10: full-screen view. Sheets (20) open above it. */
 		z-index: 10;
 		overflow-y: auto;
-		padding: 1rem 1rem 6rem;
-		padding-top: max(1rem, env(safe-area-inset-top));
+		padding: 1.5rem 1rem 6rem;
+		padding-top: max(1.5rem, env(safe-area-inset-top));
 		background: rgba(245, 252, 253, 0.97);
 		backdrop-filter: blur(20px);
 		color: #12303a;
+	}
+
+	/* A readable measure. Full width put the title at one edge of the screen and its
+	   Edit button at the other, with a metre of nothing between them. */
+	.inner {
+		max-width: 44rem;
+		margin: 0 auto;
 	}
 
 	header {
@@ -207,7 +217,7 @@
 	}
 
 	h3 {
-		margin: 1.4rem 0 0.4rem;
+		margin: 1.6rem 0 0.35rem;
 		font-size: 0.8rem;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -224,9 +234,26 @@
 	li {
 		display: flex;
 		align-items: center;
-		gap: 0.6rem;
-		padding: 0.6rem 0;
-		border-bottom: 1px solid rgba(18, 48, 58, 0.08);
+		gap: 0.75rem;
+		padding: 0.7rem 0.75rem;
+		border-radius: 0.7rem;
+		border-bottom: 1px solid rgba(18, 48, 58, 0.07);
+		transition: background 0.12s;
+	}
+
+	li:hover {
+		background: rgba(18, 48, 58, 0.04);
+	}
+
+	li:last-child {
+		border-bottom: 0;
+	}
+
+	input[type='checkbox'] {
+		width: 1.1rem;
+		height: 1.1rem;
+		accent-color: #12303a;
+		cursor: pointer;
 	}
 
 	.body {
@@ -236,8 +263,12 @@
 		min-width: 0;
 	}
 
+	.title {
+		font-size: 0.98rem;
+	}
+
 	.title.done {
-		opacity: 0.55;
+		opacity: 0.5;
 		text-decoration: line-through;
 	}
 
@@ -289,8 +320,9 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
+		justify-content: center;
 		gap: 0.5rem;
-		padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+		padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
 		background: rgba(255, 255, 255, 0.95);
 		box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
 		font-size: 0.85rem;

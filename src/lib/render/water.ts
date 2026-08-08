@@ -129,18 +129,33 @@ export function drawCaustics(
 		ctx.fill();
 	}
 
-	// Rippling caustic net across the upper water, the moving lace you get under a
-	// real surface.
-	ctx.strokeStyle = `rgba(255, 255, 255, ${0.09 * strength})`;
-	ctx.lineWidth = 1.5;
-	for (let row = 0; row < 4; row++) {
-		// Below the surface: caustics are light refracted *through* the waterline.
-		const y = WATERLINE + 26 + row * 34;
+	/**
+	 * Dappled caustics: short, scattered arcs rather than full-width sine rows.
+	 *
+	 * Continuous lines across the whole tank read as contour lines on a map — the eye
+	 * follows them end to end. Real caustics are broken lace, so these are cut into
+	 * segments of differing length, brightness and drift, and they fade out with
+	 * depth because the light does.
+	 */
+	ctx.lineCap = 'round';
+	for (let i = 0; i < 16; i++) {
+		const depth = noise(i, 21);
+		const y = WATERLINE + 20 + depth * size.h * 0.55;
+		const span = 30 + noise(i, 22) * 90;
+		// Drift sideways, wrapping, so the pattern never sits still or repeats cleanly.
+		const x0 = ((noise(i, 23) * size.w + t * (6 + noise(i, 24) * 10)) % (size.w + span)) - span;
+
+		// Dimmer further down, and never uniform.
+		const fade = (1 - depth * 0.75) * (0.5 + noise(i, 25) * 0.5);
+		ctx.strokeStyle = `rgba(255, 255, 255, ${0.07 * strength * fade})`;
+		ctx.lineWidth = 2 + noise(i, 26) * 3;
+
 		ctx.beginPath();
-		for (let x = 0; x <= size.w; x += 6) {
-			const wave = Math.sin(x / 45 + t * 1.1 + row) * 6 + Math.sin(x / 19 - t * 0.7) * 3;
-			if (x === 0) ctx.moveTo(x, y + wave);
-			else ctx.lineTo(x, y + wave);
+		for (let x = 0; x <= span; x += 6) {
+			const wave =
+				Math.sin((x0 + x) / 38 + t * 0.9 + i) * 5 + Math.sin((x0 + x) / 90 - t * 0.4 + i) * 7;
+			if (x === 0) ctx.moveTo(x0, y + wave);
+			else ctx.lineTo(x0 + x, y + wave);
 		}
 		ctx.stroke();
 	}

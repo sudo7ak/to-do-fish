@@ -25,11 +25,13 @@ describe('tapAction', () => {
 		expect(tapAction(freeText(), false)).toBe('release');
 	});
 
-	it('claims an affordable lantern on the spot', () => {
-		expect(tapAction(lantern(), true)).toBe('claim');
+	it('opens the sheet for an affordable treat rather than spending on one tap', () => {
+		// Spending pearls cannot be undone anywhere in the app, and a treat drifting
+		// under your thumb is easy to hit by accident.
+		expect(tapAction(lantern(), true)).toBe('sheet');
 	});
 
-	it('opens the sheet for a lantern that cannot be afforded, so the price is visible', () => {
+	it('opens the sheet for a treat that cannot be afforded, so the price is visible', () => {
 		expect(tapAction(lantern(), false)).toBe('sheet');
 	});
 

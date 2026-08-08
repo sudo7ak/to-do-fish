@@ -4,19 +4,23 @@
 	/**
 	 * What a tap on a creature should do.
 	 *
-	 * Two taps act immediately rather than opening anything. Releasing a free-text
-	 * bubble is the whole interaction for that kind of condition — the app never
-	 * prompts about one, so putting a confirmation sheet in the way would be the
-	 * same nagging by another name. Claiming an affordable lantern is equally
-	 * unambiguous: the price is already on the creature.
+	 * Releasing a free-text bubble acts immediately: that *is* the whole interaction
+	 * for that kind of condition — the app never prompts about one, so a confirmation
+	 * sheet would be the same nagging by another name. It is also free and reversible
+	 * in practice.
+	 *
+	 * Claiming is not. It spends pearls, cannot be undone anywhere in the app, and a
+	 * treat drifting under your thumb is easy to hit by accident — so a treat always
+	 * opens its sheet, where the price is stated and "Claim it" is a deliberate second
+	 * tap.
 	 */
 	export type TapAction = 'release' | 'claim' | 'sheet';
 
 	export function tapAction(task: Task, affordable: boolean): TapAction {
-		if (task.status === 'waiting') {
-			if (task.treatCost !== undefined) return affordable ? 'claim' : 'sheet';
+		if (task.status === 'waiting' && task.treatCost === undefined) {
 			if (task.condition?.kind === 'text') return 'release';
 		}
+		void affordable;
 		return 'sheet';
 	}
 
@@ -140,7 +144,12 @@
 
 		<div class="actions">
 			{#if actions.includes('claim')}
-				<button type="button" onclick={() => act(() => onClaim(task.id))}>Claim it</button>
+				<!-- The price is on the button: this tap is the confirmation, and it is the
+				     only action in the app that spends anything. -->
+				<button type="button" onclick={() => act(() => onClaim(task.id))}>
+					Claim it — {task.treatCost}
+					{task.treatCost === 1 ? 'pearl' : 'pearls'}
+				</button>
 			{/if}
 			{#if actions.includes('release')}
 				<button type="button" onclick={() => act(() => onRelease(task.id))}>
@@ -188,12 +197,24 @@
 		position: fixed;
 		inset: auto 0 0 0;
 		z-index: 21;
-		padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+		/* Capped and centred: full-bleed on a desktop leaves the content stranded at
+		   one edge of a 2000px bar. */
+		max-width: 30rem;
+		margin: 0 auto;
+		padding: 1.5rem 1.5rem calc(1.5rem + env(safe-area-inset-bottom));
 		border-radius: 1.25rem 1.25rem 0 0;
 		background: rgba(255, 255, 255, 0.82);
 		backdrop-filter: blur(18px);
 		box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
 		color: #12303a;
+	}
+
+	@media (min-width: 40rem) {
+		.sheet {
+			inset: auto 0 2rem 0;
+			border-radius: 1.25rem;
+			box-shadow: 0 18px 60px rgba(0, 0, 0, 0.3);
+		}
 	}
 
 	h2 {

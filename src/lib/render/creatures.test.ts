@@ -207,15 +207,22 @@ describe('place — where creatures sit', () => {
 		expect(shallow.y).toBeGreaterThan(WATERLINE);
 	});
 
-	it('keeps pearls clear of the add-pill along the bottom', () => {
-		// The pill and the planting both sit on the floor; pearls resting on the sand
-		// were invisible behind them, so the balance said 3 and you could see one.
-		const PILL_ZONE = 80;
-
+	it('settles pearls on the bed, not floating in open water', () => {
+		// Pearls are heavy. Lifted clear of the floor they read as bubbles.
 		for (let i = 0; i < 40; i++) {
 			const y = place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0).y;
-			expect(y).toBeLessThan(SIZE.h - PILL_ZONE);
-			expect(y).toBeGreaterThan(SIZE.h * 0.5);
+			expect(y).toBeGreaterThan(SIZE.h - 48);
+			expect(y).toBeLessThan(SIZE.h);
+		}
+	});
+
+	it('keeps pearls out from behind the add-pill', () => {
+		// The pill is a centred band along the bottom; pearls beneath it were invisible,
+		// so the balance said 3 and you could see one.
+		for (let i = 0; i < 40; i++) {
+			const x = place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0).x;
+			const centred = x > SIZE.w * 0.26 && x < SIZE.w * 0.74;
+			expect(centred).toBe(false);
 		}
 	});
 
@@ -225,6 +232,29 @@ describe('place — where creatures sit', () => {
 		);
 
 		expect(new Set(xs.map(Math.round)).size).toBeGreaterThan(3);
+	});
+
+	it('deals pearls evenly to both sides of the pill', () => {
+		// Coin-flipping per id piled seven of eight on one side.
+		const xs = Array.from({ length: 8 }, (_, i) =>
+			place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0).x
+		);
+		const left = xs.filter((x) => x < SIZE.w / 2).length;
+
+		expect(left).toBe(4);
+	});
+
+	it('keeps neighbouring pearls from landing on top of each other', () => {
+		const spots = Array.from({ length: 8 }, (_, i) =>
+			place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0)
+		);
+
+		for (let i = 0; i < spots.length; i++) {
+			for (let j = i + 1; j < spots.length; j++) {
+				const gap = Math.hypot(spots[i].x - spots[j].x, spots[i].y - spots[j].y);
+				expect(gap).toBeGreaterThan(9);
+			}
+		}
 	});
 
 	it('puts a shallow creature above a deep one', () => {

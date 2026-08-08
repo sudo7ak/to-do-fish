@@ -88,7 +88,11 @@
 		position: fixed;
 		inset: auto 0 0 0;
 		z-index: 21;
-		padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+		/* Capped and centred: full-bleed on a desktop leaves the content stranded at
+		   one edge of a 2000px bar. */
+		max-width: 34rem;
+		margin: 0 auto;
+		padding: 1.5rem 1.5rem calc(1.5rem + env(safe-area-inset-bottom));
 		border-radius: 1.25rem 1.25rem 0 0;
 		background: rgba(255, 255, 255, 0.85);
 		backdrop-filter: blur(18px);
@@ -96,9 +100,18 @@
 		color: #12303a;
 	}
 
+	@media (min-width: 40rem) {
+		.sheet {
+			inset: auto 0 2rem 0;
+			border-radius: 1.25rem;
+			box-shadow: 0 18px 60px rgba(0, 0, 0, 0.3);
+		}
+	}
+
 	h2 {
-		margin: 0 0 0.75rem;
-		font-size: 1.1rem;
+		margin: 0 0 1rem;
+		font-size: 1.15rem;
+		font-weight: 600;
 	}
 
 	fieldset {
@@ -111,17 +124,39 @@
 
 	.choice {
 		display: flex;
-		gap: 0.6rem;
+		gap: 0.7rem;
 		align-items: flex-start;
-		padding: 0.75rem;
-		border: 1px solid rgba(18, 48, 58, 0.15);
-		border-radius: 0.75rem;
+		padding: 0.9rem 1rem;
+		border: 1px solid rgba(18, 48, 58, 0.14);
+		border-radius: 0.85rem;
+		background: rgba(255, 255, 255, 0.6);
 		cursor: pointer;
+		transition: border-color 0.15s, background 0.15s;
+	}
+
+	.choice:hover {
+		border-color: rgba(18, 48, 58, 0.32);
 	}
 
 	.choice.selected {
 		border-color: #12303a;
-		background: rgba(18, 48, 58, 0.06);
+		background: rgba(18, 48, 58, 0.07);
+		box-shadow: inset 0 0 0 1px #12303a;
+	}
+
+	.choice input {
+		margin-top: 0.15rem;
+		width: 1.05rem;
+		height: 1.05rem;
+		accent-color: #12303a;
+	}
+
+	.choice strong {
+		font-size: 0.98rem;
+	}
+
+	.choice small {
+		line-height: 1.4;
 	}
 
 	.text {

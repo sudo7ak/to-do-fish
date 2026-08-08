@@ -21,13 +21,20 @@ const DEPTH_DISTANT = 0.8;
 const IMMINENT_MS = 60 * 60 * 1000; // within the hour: eye level
 const DISTANT_MS = 7 * 24 * 60 * 60 * 1000; // a week out: down in the plants
 
+/**
+ * Sized for a fingertip, not a mouse pointer: ~44px across is the usual floor for a
+ * touch target, and these creatures are moving while you aim at them.
+ *
+ * Ghosts stay smaller than live fish so a finished task cannot steal a tap meant for
+ * work you still have to do; pearls are smallest because tapping one does nothing.
+ */
 const TAP_RADIUS: Record<CreatureKind, number> = {
-	fish: 28,
-	bubble: 26,
-	ghost: 24,
-	koi: 34,
-	treat: 30,
-	pearl: 14
+	fish: 34,
+	bubble: 32,
+	ghost: 26,
+	koi: 38,
+	treat: 36,
+	pearl: 16
 };
 
 export function buildScene(tasks: Task[], koi: KoiRecord[], date: string, now: number): Scene {

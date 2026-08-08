@@ -23,8 +23,11 @@ const BOTTOM_MARGIN = 40;
 /** How far below the waterline the treat fish cruises. */
 const TREAT_DRAFT = 34;
 
-/** Clearance above the tank floor for pearls, keeping them out from behind the add-pill. */
-const PEARL_LIFT = 96;
+/**
+ * Where the add-pill's shadow starts, as a fraction of width. Pearls stay outside
+ * `[1 - PILL_EDGE, PILL_EDGE]` so the bottom button never covers them.
+ */
+const PILL_EDGE = 0.74;
 
 // ----------------------------------------------------------------- species
 
@@ -147,14 +150,32 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		return { x, y, flip: Math.cos(cruise) < 0 };
 	}
 	if (creature.kind === 'pearl') {
-		// Well above the floor: the add-pill and the planting both sit along the
-		// bottom, and pearls resting on the sand were hidden behind them — the balance
-		// said 3 and you could see one. They nestle among the plant tops instead.
-		return {
-			x: size.w * (0.06 + mix32(seed) * 0.88),
-			y: size.h - PEARL_LIFT - mix32(seed ^ 0x5f5e) * 34,
-			flip: false
-		};
+		/**
+		 * Pearls settle on the bed, among the plants — they are heavy, and floating
+		 * them in open water reads as bubbles rather than treasure.
+		 *
+		 * The add-pill is what used to hide them, and the pill is a *centred* band, so
+		 * the fix is horizontal: pearls gather in the sand to either side of it rather
+		 * than being lifted into the water column.
+		 */
+		// Pearls are the one creature the scene numbers (`pearl-0`, `pearl-1`, …), so
+		// they can be dealt out evenly instead of each flipping its own coin — which
+		// piled seven on the left and left one on the right.
+		const index = Number(creature.id.slice(6));
+		const n = Number.isFinite(index) ? index : Math.floor(mix32(seed) * 100);
+
+		const rightSide = n % 2 === 1;
+		const slot = Math.floor(n / 2);
+		// Golden-ratio spacing along the band, and three shallow rows so a big balance
+		// stacks up the beach instead of overlapping in a line.
+		const along = (slot * 0.6180339887) % 1;
+		const bandWidth = 1 - PILL_EDGE - 0.04;
+
+		const x = rightSide
+			? size.w * (PILL_EDGE + along * bandWidth)
+			: size.w * (0.04 + along * bandWidth);
+
+		return { x, y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6, flip: false };
 	}
 
 	const kindSpeed = creature.kind === 'koi' ? 0.5 : creature.kind === 'ghost' ? 0.62 : 1;
@@ -265,7 +286,7 @@ export function drawCreature(
 			drawTreatFish(ctx, creature, at, time);
 			break;
 		case 'pearl':
-			drawPearl(ctx, colors);
+			drawPearl(ctx, colors, time, hash(creature.id));
 			break;
 	}
 
@@ -853,30 +874,88 @@ function drawTreatFish(
 	ctx.globalAlpha = 1;
 }
 
-function drawPearl(ctx: CanvasRenderingContext2D, colors: Palette): void {
-	// Soft bloom on the sand beneath it.
-	const bloom = ctx.createRadialGradient(0, 0, 1, 0, 0, 11);
-	bloom.addColorStop(0, 'rgba(234, 246, 248, 0.55)');
-	bloom.addColorStop(1, 'rgba(234, 246, 248, 0)');
+/**
+ * A pearl: the thing you earned. Worth more pixels than its size suggests — it is the
+ * only currency in the app, and a dull grey bead on sand is easy to miss entirely.
+ *
+ * Built in layers: a breathing halo, an iridescent body, a rim fringe, a hard
+ * catchlight, and a twinkle that crosses it every few seconds.
+ */
+function drawPearl(ctx: CanvasRenderingContext2D, colors: Palette, time: number, seed: number): void {
+	const r = 7.5;
+	const t = time / 1000;
+	const phase = mix32(seed) * Math.PI * 2;
+	// Slow breathing, so a bed of pearls glimmers out of step rather than pulsing as one.
+	const pulse = 0.5 + 0.5 * Math.sin(t * 1.1 + phase);
+
+	// Halo on the sand beneath.
+	const bloom = ctx.createRadialGradient(0, 0, 1, 0, 0, r * 2.6);
+	bloom.addColorStop(0, `rgba(255, 255, 255, ${0.5 + pulse * 0.32})`);
+	bloom.addColorStop(0.5, `rgba(248, 253, 255, ${0.16 + pulse * 0.12})`);
+	bloom.addColorStop(1, 'rgba(255, 255, 255, 0)');
 	ctx.fillStyle = bloom;
 	ctx.beginPath();
-	ctx.arc(0, 0, 11, 0, Math.PI * 2);
+	ctx.arc(0, 0, r * 2.6, 0, Math.PI * 2);
 	ctx.fill();
 
-	const shine = ctx.createRadialGradient(-2.2, -2.4, 0.5, 0, 0, 6.5);
+	// Body: lit from the upper left, shading to a cool underside.
+	const shine = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
 	shine.addColorStop(0, '#FFFFFF');
-	shine.addColorStop(0.55, colors.pearl);
-	shine.addColorStop(1, '#A9C6D2');
+	shine.addColorStop(0.55, '#FFFFFF');
+	shine.addColorStop(0.82, colors.pearl);
+	// Pale, not slate: a dark underside was reading as a blue-grey bead.
+	shine.addColorStop(1, '#CFE2EC');
 
 	ctx.beginPath();
-	ctx.arc(0, 0, 6.5, 0, Math.PI * 2);
+	ctx.arc(0, 0, r, 0, Math.PI * 2);
 	ctx.fillStyle = shine;
 	ctx.fill();
 
+	// Iridescence: a faint pink and cyan fringe around the lower rim, which is what
+	// makes nacre look like nacre rather than a white ball.
+	ctx.lineWidth = 1.4;
+	ctx.strokeStyle = `rgba(255, 190, 230, ${0.18 + pulse * 0.14})`;
 	ctx.beginPath();
-	ctx.arc(-2, -2.4, 1.5, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+	ctx.arc(0, 0, r - 0.7, Math.PI * 0.15, Math.PI * 0.75);
+	ctx.stroke();
+
+	ctx.strokeStyle = `rgba(190, 246, 255, ${0.16 + pulse * 0.14})`;
+	ctx.beginPath();
+	ctx.arc(0, 0, r - 0.7, Math.PI * 0.8, Math.PI * 1.3);
+	ctx.stroke();
+
+	// Bounce light off the sand along the bottom edge.
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+	ctx.lineWidth = 1.2;
+	ctx.beginPath();
+	ctx.arc(0, 0, r - 1.4, Math.PI * 0.25, Math.PI * 0.7);
+	ctx.stroke();
+
+	// Hard catchlight.
+	ctx.beginPath();
+	ctx.arc(-r * 0.3, -r * 0.34, 2.4, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
 	ctx.fill();
+
+	// A four-point sparkle that crosses every few seconds — the difference between a
+	// bead that sits there and one that catches the light.
+	const twinkle = Math.max(0, Math.sin(t * 0.9 + phase * 2));
+	if (twinkle > 0.55) {
+		const glint = (twinkle - 0.55) / 0.45;
+		const arm = r * (1.1 + glint * 1.5);
+
+		ctx.save();
+		ctx.globalCompositeOperation = 'lighter';
+		ctx.strokeStyle = `rgba(255, 255, 255, ${glint * 0.9})`;
+		ctx.lineWidth = 1.1;
+		ctx.beginPath();
+		ctx.moveTo(-arm, 0);
+		ctx.lineTo(arm, 0);
+		ctx.moveTo(0, -arm);
+		ctx.lineTo(0, arm);
+		ctx.stroke();
+		ctx.restore();
+	}
 }
 
 // ------------------------------------------------------------------ helpers

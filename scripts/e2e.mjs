@@ -353,6 +353,44 @@ if (opened) {
 	check('completing from the tank sheet works', (await find('Tappable'))?.status === 'done');
 }
 
+// ------------------------------------------------------------------- UX
+console.log('\n== UX ==');
+await reset(snap([]));
+check('an empty day says so instead of showing a blank tank', (await page.locator('p.empty').count()) > 0);
+check('the empty message names the day', (await page.locator('p.empty').innerText()).includes('Today'));
+
+await reset(snap([task('a', 'One')]));
+check('the message goes away once there is something in the tank', (await page.locator('p.empty').count()) === 0);
+
+// Claiming an affordable treat must not happen on a single stray tap.
+await reset(
+	snap([
+		task('e1', 'Earned', { status: 'done', completedAt: Date.now() }),
+		task('e2', 'Earned two', { status: 'done', completedAt: Date.now() }),
+		task('tr', 'Cheap treat', { treatCost: 1, status: 'waiting' })
+	])
+);
+const before = await pearls();
+let treatSheet = false;
+outer2: for (let y = 140; y < 400; y += 12) {
+	for (let x = 20; x < 450; x += 12) {
+		await page.mouse.click(x, y);
+		if ((await page.locator('section[aria-label="Cheap treat"]').count()) > 0) {
+			treatSheet = true;
+			break outer2;
+		}
+	}
+}
+check('tapping an affordable treat opens its sheet rather than buying it', treatSheet);
+check('and spends nothing until confirmed', (await pearls()) === before);
+if (treatSheet) {
+	const claimLabel = await page.getByRole('button', { name: /Claim it/ }).innerText();
+	check('the claim button states the price', /1 pearl\b/.test(claimLabel), claimLabel);
+	await page.getByRole('button', { name: /Claim it/ }).click();
+	await page.waitForTimeout(400);
+	check('confirming the claim spends the pearls', (await pearls()) === before - 1);
+}
+
 console.log('\n== Console errors ==');
 check('no page errors during the run', errors.length === 0, errors.slice(0, 3).join(' | '));
 
