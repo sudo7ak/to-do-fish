@@ -770,7 +770,25 @@ function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, le
 /** The cleared-day koi: an ordinary fish body with barbels and a gold rim. */
 function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number, seed: number): void {
 	const spec = SPECIES.koi;
-	const { spine } = drawFish(ctx, at, spec, time, seed);
+	const { spine, loop } = drawFish(ctx, at, spec, time, seed);
+
+	/**
+	 * A bright gold rim with a soft bloom behind it.
+	 *
+	 * The koi is what you get for clearing a whole day, so it has to be unmistakable —
+	 * but it shares its cream and gold with the angel, and once the two overlapped the
+	 * generic body outline was not enough to tell them apart. Stroked twice through the
+	 * shadow so the bloom builds without a second path.
+	 */
+	ctx.save();
+	ctx.shadowColor = 'rgba(255, 206, 94, 0.9)';
+	ctx.shadowBlur = 9;
+	ctx.strokeStyle = 'rgba(255, 233, 156, 0.95)';
+	ctx.lineWidth = 1.8;
+	tracePath(ctx, loop);
+	ctx.stroke();
+	ctx.stroke();
+	ctx.restore();
 
 	// Barbels, the detail that separates a koi from a large goldfish. Drawn after the
 	// body so they sit over the head.

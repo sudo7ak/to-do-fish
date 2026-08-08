@@ -128,9 +128,14 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 			{ anchor: 0.24, kind: 'pectoral', span: 0.14, sweep: 1, lag: 0.3 }
 		],
 		palette: {
+			// Cream flank, dusky bronze fins. The fin was `#fff0d2`, a cream lighter than
+			// the body's own back, so the diamond that *is* an angelfish disappeared into
+			// it — and next to the cream-and-orange koi the whole fish read as a small
+			// koi. Real angelfish carry darker, translucent fins than their flanks, so
+			// darkening them separates the silhouette and stays naturalistic.
 			back: '#ffe9be',
 			belly: '#efa63a',
-			fin: '#fff0d2',
+			fin: '#8f6a3a',
 			marking: '#6b4a22',
 			iris: '#2c1d0c'
 		},
