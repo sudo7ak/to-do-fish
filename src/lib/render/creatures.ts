@@ -35,6 +35,18 @@ const TREAT_DRAFT = 34;
  */
 const PILL_EDGE = 0.74;
 
+/**
+ * The exotic, drained of its colour: what a treat you cannot yet afford is drawn as.
+ *
+ * A module constant rather than a per-frame spread, so it is the same object on every
+ * frame and the per-species caches below (gradient, half-height, drawn width) hit
+ * instead of growing one entry per frame.
+ */
+const LOCKED_EXOTIC: SpeciesSpec = {
+	...SPECIES.exotic,
+	palette: { ...SPECIES.exotic.palette, back: '#c7a8d8', belly: '#8e7cb0', fin: '#cec4e0' }
+};
+
 // ---------------------------------------------------------------- placement
 
 export function place(creature: Creature, size: Size, time: number, animate = true): Placement {
@@ -244,7 +256,12 @@ function drawBody(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine
 	shade.addColorStop(0, spec.palette.back);
 	shade.addColorStop(1, spec.palette.belly);
 
-	ctx.globalAlpha = alpha;
+	// Multiply, never assign: a caller may already have dimmed the context (a locked
+	// treat, a ghost), and assigning would repaint the body at full brightness inside
+	// an otherwise drained fish — leaving only the fins looking spent.
+	const outer = ctx.globalAlpha;
+	ctx.globalAlpha = outer * alpha;
+
 	tracePath(ctx, loop);
 	ctx.fillStyle = shade;
 	ctx.fill();
@@ -253,7 +270,7 @@ function drawBody(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine
 	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
 	ctx.lineWidth = 1.2;
 	ctx.stroke();
-	ctx.globalAlpha = 1;
+	ctx.globalAlpha = outer;
 }
 
 /**
@@ -493,16 +510,17 @@ function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, le
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
 	ctx.lineWidth = 0.8;
 
+	const outer = ctx.globalAlpha;
 	for (let i = 0; i < 3; i++) {
 		const cycle = (((time / 900 + seed + i * 0.33) % 1) + 1) % 1;
-		ctx.globalAlpha = 0.45 * (1 - cycle);
+		ctx.globalAlpha = outer * 0.45 * (1 - cycle);
 		ctx.beginPath();
 		// Behind the tail, not off the nose: a fish does not breathe backwards.
 		ctx.arc(-len * 0.75 - cycle * 10, -cycle * 20, 1.4 + i * 0.5, 0, Math.PI * 2);
 		ctx.stroke();
 	}
 
-	ctx.globalAlpha = 1;
+	ctx.globalAlpha = outer;
 }
 
 /** The cleared-day koi: an ordinary fish body with barbels and a gold rim. */
@@ -603,34 +621,26 @@ function drawTreatFish(
 		ctx.fill();
 	}
 
-	// Out of reach reads as a promise, not a corpse: drained, never invisible.
-	ctx.globalAlpha = affordable ? 1 : 0.62;
-	const muted: SpeciesSpec = affordable
-		? spec
-		: {
-				...spec,
-				palette: {
-					...spec.palette,
-					back: '#c7a8d8',
-					belly: '#8e7cb0',
-					fin: '#cec4e0'
-				}
-			};
+	// Out of reach reads as a promise, not a corpse: drained, never invisible. The dim
+	// is multiplied in and put back rather than assigned, so every layer of the fish —
+	// body, markings, eye, fins — drains together.
+	const outer = ctx.globalAlpha;
+	ctx.globalAlpha = outer * (affordable ? 1 : 0.62);
 
-	drawFish(ctx, at, muted, time, seed);
-	ctx.globalAlpha = 1;
+	drawFish(ctx, at, affordable ? spec : LOCKED_EXOTIC, time, seed);
+	ctx.globalAlpha = outer;
 
 	// Sparkles, affordable only: the tell that you can have it now.
 	if (affordable) {
 		ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
 		for (let i = 0; i < 3; i++) {
 			const cycle = (((time / 1100 + i * 0.33 + seed) % 1) + 1) % 1;
-			ctx.globalAlpha = Math.sin(cycle * Math.PI);
+			ctx.globalAlpha = outer * Math.sin(cycle * Math.PI);
 			ctx.beginPath();
 			ctx.arc(spec.length * 0.3 - i * 12, -spec.length * 0.35 - cycle * 10, 1.8, 0, Math.PI * 2);
 			ctx.fill();
 		}
-		ctx.globalAlpha = 1;
+		ctx.globalAlpha = outer;
 	}
 }
 

@@ -24,9 +24,16 @@ function fakeCtx() {
 	let maxDepth = 0;
 
 	let alpha = 1;
+	// The alpha in force at each fill/stroke. `globalAlpha` is a single mutable slot, so
+	// reading the final value proves nothing about what was painted; a nested draw that
+	// *assigns* rather than multiplies is only visible as a paint at the wrong alpha.
+	const fillAlphas: number[] = [];
+	const strokeAlphas: number[] = [];
 
 	const ctx = {
 		calls,
+		fillAlphas,
+		strokeAlphas,
 		get depth() {
 			return depth;
 		},
@@ -58,11 +65,26 @@ function fakeCtx() {
 		strokeStyle: '',
 		lineWidth: 0,
 		lineCap: 'butt'
-	} as unknown as CanvasRenderingContext2D & { calls: string[]; depth: number; maxDepth: number };
+	} as unknown as CanvasRenderingContext2D & {
+		calls: string[];
+		fillAlphas: number[];
+		strokeAlphas: number[];
+		depth: number;
+		maxDepth: number;
+	};
 
-	for (const method of ['clip', 'beginPath', 'closePath', 'fill', 'stroke', 'setLineDash', 'roundRect', 'setTransform']) {
+	for (const method of ['clip', 'beginPath', 'closePath', 'setLineDash', 'roundRect', 'setTransform']) {
 		(ctx as unknown as Record<string, unknown>)[method] = () => calls.push(method);
 	}
+
+	(ctx as unknown as Record<string, unknown>).fill = () => {
+		fillAlphas.push(alpha);
+		calls.push('fill');
+	};
+	(ctx as unknown as Record<string, unknown>).stroke = () => {
+		strokeAlphas.push(alpha);
+		calls.push('stroke');
+	};
 
 	// Coordinate-bearing calls record their (rounded) arguments too, not just the method
 	// name — otherwise every path drawn through the same sequence of canvas calls looks
@@ -596,6 +618,17 @@ describe('treat fish', () => {
 		expect(open.calls.length).toBeGreaterThan(locked.calls.length);
 		expect(open.depth).toBe(0);
 		expect(locked.depth).toBe(0);
+
+		// The point of the dim is that the *whole* fish is drained. `drawBody` used to
+		// assign `globalAlpha` instead of multiplying it, so the body, markings, eye and
+		// mouth painted at full brightness inside a fish whose fins alone were faded —
+		// exactly backwards. Every paint in a locked treat must be below full alpha.
+		expect(locked.calls).toContain('alpha(0.62)');
+		expect(Math.max(...locked.fillAlphas)).toBeCloseTo(0.62, 5);
+		expect(Math.max(...locked.strokeAlphas)).toBeLessThanOrEqual(0.62);
+
+		// And an affordable one is painted at full strength.
+		expect(Math.max(...open.fillAlphas)).toBe(1);
 	});
 
 	it('draws a claimed treat as the same exotic fish, in the shoal', () => {
