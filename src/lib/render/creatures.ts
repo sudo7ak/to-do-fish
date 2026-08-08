@@ -2,8 +2,8 @@ import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
 import { WATERLINE, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
-import { speciesFor, SPECIES, type Species, type SpeciesSpec } from './species';
-import { spineFor, outline, type Spine } from './spine';
+import { speciesFor, SPECIES, type Species, type SpeciesSpec, type FinSpec } from './species';
+import { spineFor, outline, pointAt, tangentAt, profileAt, type Spine } from './spine';
 
 export { speciesFor };
 export type { Species };
@@ -366,6 +366,77 @@ function drawBody(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine
 	ctx.globalAlpha = 1;
 }
 
+/**
+ * One fin, anchored at its spine fraction and rotated to the local tangent, so it
+ * follows the body's bend without any special handling.
+ *
+ * `lag` offsets the fin's own flutter behind the body wave. Fins that move in perfect
+ * lockstep with the body read as rigid cardboard.
+ */
+function drawFin(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	fin: FinSpec,
+	spine: Spine,
+	time: number,
+	phase: number,
+	side: 1 | -1
+): void {
+	const root = pointAt(spine, fin.anchor);
+	const heading = tangentAt(spine, fin.anchor);
+	const half = profileAt(spec.profile, fin.anchor) * spec.length;
+	const span = fin.span * spec.length;
+
+	const flutter =
+		Math.sin((time / 1000) * spec.wave.speed + phase - fin.lag) * 0.18 * (fin.lag + 0.4);
+
+	ctx.save();
+	ctx.translate(root.x, root.y);
+	ctx.rotate(heading + Math.PI); // face the nose
+	ctx.scale(1, side);
+
+	ctx.beginPath();
+	ctx.moveTo(0, half * 0.6);
+	ctx.quadraticCurveTo(-span * 0.3, half + span * 0.5, -span * fin.sweep, half + span);
+	ctx.quadraticCurveTo(span * 0.1, half + span * 0.4 + flutter * span, span * 0.15, half * 0.5);
+	ctx.closePath();
+
+	ctx.fillStyle = withAlpha(spec.palette.fin, 0.82);
+	ctx.fill();
+
+	// Rays, so the fin reads as a fin and not a petal.
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.25);
+	ctx.lineWidth = 0.8;
+	for (const k of [0.25, 0.5, 0.75]) {
+		ctx.beginPath();
+		ctx.moveTo(0, half * 0.6);
+		ctx.lineTo(-span * fin.sweep * k, half + span * k);
+		ctx.stroke();
+	}
+
+	ctx.restore();
+}
+
+/** Every fin for a fish, in draw order: rear and far fins first. */
+function drawFins(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	time: number,
+	phase: number
+): void {
+	for (const fin of spec.fins) {
+		if (fin.kind === 'caudal') {
+			drawFin(ctx, spec, fin, spine, time, phase, 1);
+			drawFin(ctx, spec, fin, spine, time, phase, -1);
+		} else if (fin.kind === 'dorsal') {
+			drawFin(ctx, spec, fin, spine, time, phase, -1);
+		} else {
+			drawFin(ctx, spec, fin, spine, time, phase, 1);
+		}
+	}
+}
+
 function drawFish(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
@@ -378,6 +449,7 @@ function drawFish(
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
 	const spine = spineFor(spec.length, spec.wave, time, phase);
 
+	drawFins(ctx, spec, spine, time, phase);
 	drawBody(ctx, spec, spine);
 	drawTrail(ctx, time, seed, spec.length);
 }
@@ -429,88 +501,6 @@ function drawGhost(
 	ctx.stroke();
 
 	ctx.globalAlpha = 1;
-}
-
-/**
- * The caudal fin, rooted exactly at the tail of the body so it reads as attached.
- * Sized off `flow` as a fraction of body length — never longer than the fish.
- */
-function drawTail(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec, beat: number): void {
-	const { length: len, height: hgt, flow } = spec;
-	const root = -len / 2 + 1;
-	const reach = len * flow;
-	const spread = hgt * (0.45 + flow * 0.7);
-	const sway = beat * 4;
-
-	// The root is a short vertical edge on the body, not a single point — a tail
-	// pinched to one vertex reads as a leaf stuck on the back.
-	const rootHalf = hgt * 0.22;
-
-	ctx.fillStyle = withAlpha(spec.fin, 0.8);
-	ctx.beginPath();
-	ctx.moveTo(root, -rootHalf);
-
-	switch (spec.tail) {
-		case 'forked':
-			ctx.lineTo(root - reach, -spread + sway);
-			ctx.quadraticCurveTo(root - reach * 0.5, 0, root - reach, spread + sway);
-			ctx.lineTo(root, rootHalf);
-			break;
-		case 'fan':
-			ctx.quadraticCurveTo(root - reach * 0.8, -spread * 0.95 + sway, root - reach, -spread * 0.5 + sway);
-			ctx.quadraticCurveTo(root - reach * 1.1, sway, root - reach, spread * 0.5 + sway);
-			ctx.quadraticCurveTo(root - reach * 0.8, spread * 0.95 + sway, root, rootHalf);
-			break;
-		case 'veil':
-			ctx.quadraticCurveTo(root - reach * 0.7, -spread * 0.85 + sway, root - reach * 1.1, -spread * 0.1 + sway * 1.6);
-			ctx.quadraticCurveTo(root - reach * 0.9, spread * 0.7 + sway * 1.4, root - reach * 0.45, spread * 0.55 + sway);
-			ctx.quadraticCurveTo(root - reach * 0.3, spread * 0.3, root, rootHalf);
-			break;
-		case 'round':
-			ctx.quadraticCurveTo(root - reach * 0.9, -spread * 0.9 + sway, root - reach, sway);
-			ctx.quadraticCurveTo(root - reach * 0.9, spread * 0.9 + sway, root, rootHalf);
-			break;
-	}
-
-	ctx.closePath();
-	ctx.fill();
-
-	// Fin rays, fanning from the root. Cheap, and it stops the tail reading as a
-	// flat paper cut-out.
-	ctx.strokeStyle = withAlpha(spec.body[1], 0.28);
-	ctx.lineWidth = 0.9;
-	for (const f of [-0.6, 0, 0.6]) {
-		ctx.beginPath();
-		ctx.moveTo(root, 0);
-		ctx.lineTo(root - reach * 0.85, spread * f + sway);
-		ctx.stroke();
-	}
-}
-
-/**
- * Dorsal and anal fins, drawn as low ridges sitting *on* the body outline rather
- * than as separate shapes hovering near it.
- */
-function drawFins(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec, beat: number): void {
-	const { length: len, height: hgt, flow } = spec;
-	ctx.fillStyle = withAlpha(spec.fin, 0.85);
-
-	// Dorsal: rises from the shoulder, peaks mid-back, settles at the tail root.
-	const peak = hgt * (0.55 + flow * 0.9);
-	ctx.beginPath();
-	ctx.moveTo(len * 0.2, -hgt * 0.62);
-	ctx.quadraticCurveTo(len * 0.02, -peak + beat * 1.5, -len * 0.3, -hgt * 0.5);
-	ctx.quadraticCurveTo(-len * 0.05, -hgt * 0.72, len * 0.2, -hgt * 0.62);
-	ctx.closePath();
-	ctx.fill();
-
-	// Anal fin, shallower, mirroring below.
-	ctx.beginPath();
-	ctx.moveTo(-len * 0.02, hgt * 0.66);
-	ctx.quadraticCurveTo(-len * 0.18, hgt * (0.78 + flow * 0.5) - beat, -len * 0.36, hgt * 0.5);
-	ctx.quadraticCurveTo(-len * 0.16, hgt * 0.66, -len * 0.02, hgt * 0.66);
-	ctx.closePath();
-	ctx.fill();
 }
 
 /** Markings, clipped to the body so nothing spills over the silhouette. */

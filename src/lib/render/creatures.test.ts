@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
+import { SPECIES } from './species';
 
 import { WATERLINE } from './water';
 
@@ -430,6 +431,31 @@ describe('place — where creatures sit', () => {
 		const c = creature('fish', { id: 'a' });
 
 		expect(place(c, SIZE, 0, false)).toEqual(place(c, SIZE, 60_000, false));
+	});
+});
+
+describe('fins', () => {
+	it('draws one shape per fin, plus the body', () => {
+		// Six fills for a betta (body + 4 fins + eye white) is a floor, not an exact
+		// count — the point is that fins reach the canvas at all.
+		const ctx = fakeCtx();
+		const c = creature('fish', { id: 'finny' });
+
+		drawCreature(ctx, c, place(c, SIZE, 300), COLORS, 300);
+
+		expect(ctx.calls.filter((call) => call === 'fill').length).toBeGreaterThanOrEqual(3);
+	});
+
+	it('moves the fins as the body wave passes', () => {
+		const a = fakeCtx();
+		const b = fakeCtx();
+		const c = creature('fish', { id: 'finny' });
+
+		drawCreature(a, c, place(c, SIZE, 100), COLORS, 100);
+		drawCreature(b, c, place(c, SIZE, 700), COLORS, 700);
+
+		expect(a.calls.length).toBe(b.calls.length);
+		expect(a.calls.join()).not.toBe(b.calls.join());
 	});
 });
 
