@@ -379,7 +379,11 @@ function speciesReach(spec: SpeciesSpec): number {
 	for (const fin of spec.fins) {
 		const root = spec.length * (0.5 - fin.anchor);
 		const span = fin.span * spec.length;
-		reach = Math.max(reach, Math.abs(root - span * fin.sweep), Math.abs(root + span * 0.15));
+		reach = Math.max(
+			reach,
+			Math.abs(root - span * fin.sweep),
+			Math.abs(root + span * FIN_FORWARD_REACH)
+		);
 	}
 
 	// Tilting swings the tail wider. A shape reaching `reach` along its own axis and
@@ -502,6 +506,40 @@ const gradientCache = new WeakMap<CanvasRenderingContext2D, Map<SpeciesSpec, Can
 const peakCache = new Map<SpeciesSpec, number>();
 const reachCache = new Map<SpeciesSpec, number>();
 
+const finGradientCache = new WeakMap<CanvasRenderingContext2D, Map<FinSpec, CanvasGradient>>();
+
+/**
+ * The root-to-tip opacity ramp that makes a fin read as membrane rather than card.
+ *
+ * Cached per fin like the body gradient, and for the same reason: this is called for
+ * every fin of every fish on every frame. It is drawn in the fin's own local
+ * coordinates, where `half` and `span` are fixed by the species, so one gradient
+ * serves the fin for the life of the context.
+ */
+function finGradient(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	fin: FinSpec,
+	half: number,
+	span: number
+): CanvasGradient {
+	let perFin = finGradientCache.get(ctx);
+	if (!perFin) {
+		perFin = new Map();
+		finGradientCache.set(ctx, perFin);
+	}
+
+	const cached = perFin.get(fin);
+	if (cached) return cached;
+
+	const wash = ctx.createLinearGradient(0, half, -span * fin.sweep, half + span);
+	wash.addColorStop(0, withAlpha(spec.palette.fin, 0.92));
+	wash.addColorStop(1, withAlpha(spec.palette.fin, 0.52));
+
+	perFin.set(fin, wash);
+	return wash;
+}
+
 function bodyGradient(ctx: CanvasRenderingContext2D, spec: SpeciesSpec): CanvasGradient {
 	let perSpecies = gradientCache.get(ctx);
 	if (!perSpecies) {
@@ -588,7 +626,7 @@ function traceFin(
 	time: number,
 	phase: number,
 	side: 1 | -1
-): { half: number; span: number } {
+): { half: number; span: number; front: number; back: number; rootY: number } {
 	const root = pointAt(spine, fin.anchor);
 	const heading = tangentAt(spine, fin.anchor);
 	const half = profileAt(spec.profile, fin.anchor) * spec.length;
@@ -602,29 +640,54 @@ function traceFin(
 	ctx.rotate(heading + Math.PI); // face the nose
 	ctx.scale(1, side);
 
+	// Every fin roots along a stretch of the body rather than at a point, and bellies
+	// out on the way to the tip. A fin joined at one point can only ever look stuck
+	// on: it read as a gold needle on the swimmers and as a shape floating alongside
+	// the body on the long-finned ones. The veil is the same construction with a
+	// shorter base and a fuller belly, not a different idea.
+	const { base: baseFrac, belly, waist } = FIN_SHAPE[spec.finStyle === 'veil' ? 'veil' : 'blade'];
+	const base = span * baseFrac;
+	const front = base * FIN_BASE_FRONT;
+	const back = -base * FIN_BASE_BACK;
+	// Sits on the body edge. Rooting inside the profile hid the join, so the visible
+	// part started mid-body and looked detached from the fish.
+	//
+	// The caudal is the exception: it is drawn as two mirrored lobes (`finSides`), and
+	// basing each one off the axis left a notch of open water between them at the
+	// peduncle — the tail read as two spikes trailing the fish rather than as its tail.
+	// Rooting on the axis makes the two lobes share an edge and close into one shape.
+	const rootY = fin.kind === 'caudal' ? 0 : half * 0.94;
+
 	ctx.beginPath();
-	if (spec.finStyle === 'veil') {
-		// Rooted along a stretch of the body rather than at a point, and bellied out on
-		// the way to the tip. A fin joined at one point can only ever look stuck on,
-		// which is what made the prizes read as ordinary fish in a bright colour.
-		const base = span * 0.34;
-		ctx.moveTo(base * 0.55, half * 0.92);
-		ctx.quadraticCurveTo(-span * 0.36, half + span * 0.78, -span * fin.sweep, half + span);
-		ctx.quadraticCurveTo(
-			-span * 0.1,
-			half + span * (0.34 + flutter),
-			-base * 0.75,
-			half * 0.94
-		);
-	} else {
-		ctx.moveTo(0, half * 0.6);
-		ctx.quadraticCurveTo(-span * 0.3, half + span * 0.5, -span * fin.sweep, half + span);
-		ctx.quadraticCurveTo(span * 0.1, half + span * 0.4 + flutter * span, span * 0.15, half * 0.5);
-	}
+	ctx.moveTo(front, rootY);
+	ctx.quadraticCurveTo(-span * 0.36, half + span * belly, -span * fin.sweep, half + span);
+	ctx.quadraticCurveTo(-span * 0.1, half + span * (waist + flutter), back, rootY);
 	ctx.closePath();
 
-	return { half, span };
+	return { half, span, front, back, rootY };
 }
+
+/**
+ * Fin outline, as fractions of the fin's own span.
+ *
+ * `base` is how much of the body the fin is joined along, `belly` how far it bows out
+ * reaching the tip, `waist` how deeply the trailing edge cuts back in.
+ */
+const FIN_SHAPE = {
+	blade: { base: 0.66, belly: 0.55, waist: 0.3 },
+	veil: { base: 0.34, belly: 0.78, waist: 0.34 }
+} as const;
+
+/** Where the base sits relative to the anchor, forward and aft, as fractions of `base`. */
+const FIN_BASE_FRONT = 0.55;
+const FIN_BASE_BACK = 0.75;
+
+/**
+ * The furthest a fin reaches *ahead* of its anchor, as a fraction of span — the front
+ * of its base. `speciesReach` needs this to keep fins inside the glass, so it lives
+ * here rather than being written as a literal in two places that can drift apart.
+ */
+export const FIN_FORWARD_REACH = 0.66 * FIN_BASE_FRONT;
 
 /** One fin, filled and rayed. */
 function drawFin(
@@ -636,20 +699,32 @@ function drawFin(
 	phase: number,
 	side: 1 | -1
 ): void {
-	const { half, span } = traceFin(ctx, spec, fin, spine, time, phase, side);
+	const { half, span, front, back, rootY } = traceFin(ctx, spec, fin, spine, time, phase, side);
 
-	ctx.fillStyle = withAlpha(spec.palette.fin, 0.82);
+	// Membrane, not sheet metal — but thinning the whole fin evenly just turned gold
+	// to khaki against the water. Real fins are meatiest where they leave the body and
+	// thin towards the edge, so the opacity ramps root-to-tip: full colour at the base,
+	// see-through at the margin.
+	ctx.fillStyle = finGradient(ctx, spec, fin, half, span);
 	ctx.fill();
 
-	// Rays, so the fin reads as a fin and not a petal.
-	ctx.strokeStyle = withAlpha(spec.palette.belly, spec.finStyle === 'veil' ? 0.34 : 0.25);
+	// Rays, so the fin reads as a fin and not a petal. They fan out from across the
+	// base — converging them on a single point undoes the base the outline just drew.
+	//
+	// Clipped to the fin. Fanned rays do not track the outline's curve, so the longest
+	// ones shot past the margin and read as loose hairs; clipping to the shape that was
+	// just traced means no ray can escape whatever the sweep and span happen to be.
+	ctx.save();
+	ctx.clip();
+	ctx.strokeStyle = withAlpha(spec.palette.belly, spec.finStyle === 'veil' ? 0.34 : 0.28);
 	ctx.lineWidth = 0.8;
 	for (const k of spec.finStyle === 'veil' ? [0.2, 0.4, 0.6, 0.8] : [0.25, 0.5, 0.75]) {
 		ctx.beginPath();
-		ctx.moveTo(0, half * 0.6);
+		ctx.moveTo(front + (back - front) * k, rootY);
 		ctx.lineTo(-span * fin.sweep * k, half + span * k);
 		ctx.stroke();
 	}
+	ctx.restore();
 
 	ctx.restore();
 }

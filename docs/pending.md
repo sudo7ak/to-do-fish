@@ -52,16 +52,32 @@ reward for finishing.
 
 ## 2. Fish appearance
 
-### 2.1 Fin rework for the nine swimmers
+### 2.1 Fin rework for the nine swimmers — done 2026-08-09
 
-**Looked at.** Only the three prize species carry `finStyle: 'veil'` (the
-ray-veined membrane rooted along a base). All nine swimmers still take the default
-blade branch in `traceFin`, so for them: the fin root is a near-point rather than a
-base, the caudal is the wrong size on several species, and fins are opaque where they
-should read as membrane.
+The blade branch is gone. Both styles now share one construction, differing only in
+`FIN_SHAPE` (base length, belly, waist): every fin roots along a stretch of body and
+bellies out to the tip. Four defects closed, three of which only showed at 8×:
 
-This is the largest remaining visual gap and it is already scoped — the veil path
-exists and works; the work is extending it and tuning per-species roots and sizes.
+- **Point roots.** Blades were joined at effectively one point, so they read as gold
+  needles stuck into the body, and the long-finned species looked like a fish swimming
+  beside its own fins.
+- **Split tails.** The caudal is drawn as two mirrored lobes, each based `half*0.94`
+  off the axis — leaving a notch of open water between them at the peduncle. The tail
+  read as two spikes trailing the fish. Caudals now root on the axis, so the lobes
+  share an edge and close into one shape.
+- **Escaping rays.** Fanning the rays from across the base (instead of converging them
+  on a point, which undid the base) let the longest ones shoot past the fin margin as
+  loose hairs. They are now clipped to the traced fin, so no sweep/span combination can
+  push one outside.
+- **Opaque fins.** Flattening the whole fin to one alpha turned gold to khaki against
+  the water. Opacity now ramps root-to-tip — full colour where it leaves the body,
+  see-through at the margin — which is both how a real fin is built and how it stops
+  reading as card.
+
+Two guards fired and both were right: the per-fin gradient allocated on every frame
+(the ramp is now cached per fin, like the body gradient), and the marking test's
+`clip`-counting proxy broke once fins started clipping. That assertion now asks
+whether the marking colour was ever painted, which is the property it always meant.
 
 ### 2.2 Puffer palette reads muddy
 

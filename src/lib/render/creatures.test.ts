@@ -32,11 +32,13 @@ function fakeCtx() {
 	// *assigns* rather than multiplies is only visible as a paint at the wrong alpha.
 	const fillAlphas: number[] = [];
 	const strokeAlphas: number[] = [];
+	const fillColours: string[] = [];
 
 	const ctx = {
 		calls,
 		fillAlphas,
 		strokeAlphas,
+		fillColours,
 		get depth() {
 			return depth;
 		},
@@ -75,6 +77,7 @@ function fakeCtx() {
 		calls: string[];
 		fillAlphas: number[];
 		strokeAlphas: number[];
+		fillColours: string[];
 		depth: number;
 		maxDepth: number;
 	};
@@ -85,6 +88,10 @@ function fakeCtx() {
 
 	(ctx as unknown as Record<string, unknown>).fill = () => {
 		fillAlphas.push(alpha);
+		// The colour actually painted, so a test can ask "was this species' marking
+		// colour ever laid down?" instead of counting clips and hoping only markings
+		// clip. Gradients are objects, not strings, and record as ''.
+		fillColours.push(typeof ctx.fillStyle === 'string' ? ctx.fillStyle : '');
 		calls.push('fill');
 	};
 	(ctx as unknown as Record<string, unknown>).stroke = () => {
@@ -361,12 +368,20 @@ describe('per-frame cost', () => {
 		// species, so rebuilding it per fish per frame is pure waste.
 		const ctx = fakeCtx();
 		const c = creature('fish', { id: 'steady' });
+		const gradients = () => ctx.calls.filter((call) => call.startsWith('linearGradient(')).length;
 
-		for (let frame = 0; frame < 30; frame++) {
+		drawCreature(ctx, c, place(c, SIZE, 0), COLORS, 0);
+		const afterOneFrame = gradients();
+
+		for (let frame = 1; frame < 30; frame++) {
 			drawCreature(ctx, c, place(c, SIZE, frame * 100), COLORS, frame * 100);
 		}
 
-		expect(ctx.calls.filter((call) => call.startsWith('linearGradient(')).length).toBe(1);
+		// Pinned to the first frame's count rather than to 1: the body gradient is no
+		// longer the only cached one — each fin has an opacity ramp — and what matters is
+		// that 30 frames cost no more than one, not how many a fish needs.
+		expect(afterOneFrame).toBeGreaterThan(0);
+		expect(gradients()).toBe(afterOneFrame);
 	});
 
 	it('still shades a second species with its own gradient', () => {
@@ -921,8 +936,13 @@ describe('markings', () => {
 
 		drawCreature(withMarks, c, place(c, SIZE, 0), COLORS, 0);
 
-		// Betta is `pattern: 'none'`, so nothing should be clipped for markings.
-		expect(withMarks.calls.filter((call) => call === 'clip').length).toBe(0);
+		// Betta is `pattern: 'none'`, so its marking colour must never be laid down.
+		//
+		// This used to count `clip` calls and assert zero, on the assumption that only
+		// markings clip. Fin rays clip too now, so that proxy broke while the property it
+		// stood for held. Asking about the colour tests the actual claim, and would still
+		// catch a marking drawn without clipping — which the old assertion would not.
+		expect(withMarks.fillColours).not.toContain(SPECIES.betta.palette.marking);
 	});
 });
 
