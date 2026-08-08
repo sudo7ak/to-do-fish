@@ -511,7 +511,10 @@ describe('fins', () => {
 		expect(ctx.calls.filter((call) => call === 'fill').length).toBeGreaterThanOrEqual(3);
 	});
 
-	it('moves the fins as the body wave passes', () => {
+	it('flutters the caudal fin itself, not merely something on the canvas', () => {
+		// "The transcripts differ" is satisfied by the body bending; it says nothing
+		// about the fins. The caudal is the first thing `drawFish` draws, so its two
+		// `quadraticCurveTo` calls are the first two in the transcript — pin those.
 		const a = fakeCtx();
 		const b = fakeCtx();
 		const c = creature('fish', { id: 'finny' });
@@ -519,8 +522,79 @@ describe('fins', () => {
 		drawCreature(a, c, place(c, SIZE, 100), COLORS, 100);
 		drawCreature(b, c, place(c, SIZE, 700), COLORS, 700);
 
+		const caudal = (calls: string[]) => {
+			const start = calls.findIndex((call) => call.startsWith('quadraticCurveTo('));
+			expect(start).toBeGreaterThanOrEqual(0);
+			return calls.slice(start, start + 2);
+		};
+
+		expect(caudal(a.calls)).toHaveLength(2);
 		expect(a.calls.length).toBe(b.calls.length);
-		expect(a.calls.join()).not.toBe(b.calls.join());
+		expect(caudal(a.calls)).not.toEqual(caudal(b.calls));
+	});
+
+	it('draws the near pectoral after the body, so it overlaps', () => {
+		// Depth cue: the pectoral is the one part of the fish nearer the viewer than the
+		// flank. Under the body it flattened the fish into a decal.
+		const ctx = fakeCtx();
+		const c = creature('fish', { id: 'finny' });
+
+		drawCreature(ctx, c, place(c, SIZE, 300), COLORS, 300);
+
+		// The body is the only fill preceded by a linear gradient.
+		const bodyFill = ctx.calls.findIndex((call) => call.startsWith('linearGradient('));
+		// Fins are the only things drawn inside their own rotate().
+		const rotates = ctx.calls.flatMap((call, i) => (call.startsWith('rotate(') ? [i] : []));
+
+		expect(rotates.some((i) => i < bodyFill)).toBe(true);
+		expect(rotates.some((i) => i > bodyFill)).toBe(true);
+	});
+});
+
+describe('ghosts', () => {
+	it('outlines its own fins, not just its body', () => {
+		// For half the tank the species *is* the fins — a guppy is a fan tail, a betta is
+		// veils, an angel is a diamond. A body-only outline made all three identical.
+		for (const name of SWIMMERS) {
+			let id = '';
+			for (let i = 0; i < 400 && !id; i++) if (speciesFor(`id-${i}`) === name) id = `id-${i}`;
+
+			const ghost = fakeCtx();
+			const c = creature('ghost', { id });
+			drawCreature(ghost, c, place(c, SIZE, 250), COLORS, 250);
+
+			// One `rotate()` per fin side: fins are the only thing drawn in a local frame.
+			const sides = SPECIES[name].fins.reduce(
+				(n, fin) => n + (fin.kind === 'caudal' ? 2 : 1),
+				0
+			);
+			expect(ghost.calls.filter((call) => call.startsWith('rotate(')).length).toBe(sides);
+			expect(ghost.depth).toBe(0);
+		}
+	});
+
+	it('strokes its fins rather than filling them', () => {
+		const ghost = fakeCtx();
+		const c = creature('ghost', { id: 'spent' });
+
+		drawCreature(ghost, c, place(c, SIZE, 250), COLORS, 250);
+
+		// The single body wash is the only fill a ghost makes.
+		expect(ghost.calls.filter((call) => call === 'fill').length).toBe(1);
+		expect(ghost.calls.filter((call) => call === 'stroke').length).toBeGreaterThan(4);
+	});
+
+	it('gives two species visibly different ghost silhouettes', () => {
+		const shapes = SWIMMERS.map((name) => {
+			let id = '';
+			for (let i = 0; i < 400 && !id; i++) if (speciesFor(`id-${i}`) === name) id = `id-${i}`;
+			const ctx = fakeCtx();
+			// Frozen clock and a shared placement, so only the species differs.
+			drawCreature(ctx, creature('ghost', { id }), { x: 200, y: 400, flip: false }, COLORS, 0);
+			return ctx.calls.filter((call) => call.startsWith('quadraticCurveTo(')).join();
+		});
+
+		expect(new Set(shapes).size).toBe(SWIMMERS.length);
 	});
 });
 

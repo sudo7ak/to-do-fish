@@ -34,6 +34,12 @@ export type Placement = { x: number; y: number; flip: boolean };
 const TOP_MARGIN = WATERLINE + 26;
 const BOTTOM_MARGIN = 40;
 
+/**
+ * Where the eye sits along the spine, as the spec specifies. Shared by the live head
+ * and the ghost's single dot so the two cannot drift apart.
+ */
+const EYE_T = 0.12;
+
 /** How far below the waterline the treat fish cruises. */
 const TREAT_DRAFT = 34;
 
@@ -286,13 +292,26 @@ function drawBody(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine
 }
 
 /**
- * One fin, anchored at its spine fraction and rotated to the local tangent, so it
- * follows the body's bend without any special handling.
- *
- * `lag` offsets the fin's own flutter behind the body wave. Fins that move in perfect
- * lockstep with the body read as rigid cardboard.
+ * Which sides a fin is drawn on: a tail lobes both ways, a dorsal stands up, and
+ * everything else hangs below.
  */
-function drawFin(
+function finSides(fin: FinSpec): (1 | -1)[] {
+	if (fin.kind === 'caudal') return [1, -1];
+	return fin.kind === 'dorsal' ? [-1] : [1];
+}
+
+/**
+ * Lays down one fin's path, anchored at its spine fraction and rotated to the local
+ * tangent, so it follows the body's bend without any special handling.
+ *
+ * Leaves the path current and the fin's own transform in force: the caller decides
+ * whether to fill it (a live fish) or merely stroke it (a ghost), and must `restore`.
+ *
+ * `lag` offsets the fin's own flutter behind the body wave — fins moving in perfect
+ * lockstep with the body read as rigid cardboard — and doubles as the flutter's
+ * amplitude, which is why long trailing veils ripple most. See `FinSpec.lag`.
+ */
+function traceFin(
 	ctx: CanvasRenderingContext2D,
 	spec: SpeciesSpec,
 	fin: FinSpec,
@@ -300,7 +319,7 @@ function drawFin(
 	time: number,
 	phase: number,
 	side: 1 | -1
-): void {
+): { half: number; span: number } {
 	const root = pointAt(spine, fin.anchor);
 	const heading = tangentAt(spine, fin.anchor);
 	const half = profileAt(spec.profile, fin.anchor) * spec.length;
@@ -320,6 +339,21 @@ function drawFin(
 	ctx.quadraticCurveTo(span * 0.1, half + span * 0.4 + flutter * span, span * 0.15, half * 0.5);
 	ctx.closePath();
 
+	return { half, span };
+}
+
+/** One fin, filled and rayed. */
+function drawFin(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	fin: FinSpec,
+	spine: Spine,
+	time: number,
+	phase: number,
+	side: 1 | -1
+): void {
+	const { half, span } = traceFin(ctx, spec, fin, spine, time, phase, side);
+
 	ctx.fillStyle = withAlpha(spec.palette.fin, 0.82);
 	ctx.fill();
 
@@ -336,8 +370,13 @@ function drawFin(
 	ctx.restore();
 }
 
-/** Every fin for a fish, in draw order: rear and far fins first. */
-function drawFins(
+/**
+ * The fins behind the body: caudal, dorsal, anal, pelvic.
+ *
+ * Drawn before the body so the body's fill covers where they meet it — a fin whose
+ * root is visible looks glued on.
+ */
+function drawRearFins(
 	ctx: CanvasRenderingContext2D,
 	spec: SpeciesSpec,
 	spine: Spine,
@@ -345,14 +384,27 @@ function drawFins(
 	phase: number
 ): void {
 	for (const fin of spec.fins) {
-		if (fin.kind === 'caudal') {
-			drawFin(ctx, spec, fin, spine, time, phase, 1);
-			drawFin(ctx, spec, fin, spine, time, phase, -1);
-		} else if (fin.kind === 'dorsal') {
-			drawFin(ctx, spec, fin, spine, time, phase, -1);
-		} else {
-			drawFin(ctx, spec, fin, spine, time, phase, 1);
-		}
+		if (fin.kind === 'pectoral') continue;
+		for (const side of finSides(fin)) drawFin(ctx, spec, fin, spine, time, phase, side);
+	}
+}
+
+/**
+ * The near-side pectoral, drawn *after* the body so it overlaps it.
+ *
+ * That overlap is the whole point: it is the one part of the fish that is nearer the
+ * viewer than the flank, and drawing it underneath flattened the fish into a decal.
+ */
+function drawPectoral(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	time: number,
+	phase: number
+): void {
+	for (const fin of spec.fins) {
+		if (fin.kind !== 'pectoral') continue;
+		for (const side of finSides(fin)) drawFin(ctx, spec, fin, spine, time, phase, side);
 	}
 }
 
@@ -364,8 +416,8 @@ function drawHead(
 	time: number,
 	phase: number
 ): void {
-	const at = pointAt(spine, 0.14);
-	const half = profileAt(spec.profile, 0.14) * spec.length;
+	const at = pointAt(spine, EYE_T);
+	const half = profileAt(spec.profile, EYE_T) * spec.length;
 	const radius = Math.max(2.2, half * 0.34);
 
 	// Eye white.
@@ -386,7 +438,7 @@ function drawHead(
 	ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
 	ctx.fill();
 
-	// Lid, a shade darker than the back.
+	// Lid: the belly tone, which reads as shadow against the lit back.
 	ctx.beginPath();
 	ctx.arc(at.x, at.y - half * 0.25, radius, Math.PI * 1.05, Math.PI * 1.95);
 	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
@@ -473,9 +525,10 @@ function drawFish(
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
 	const spine = spineFor(spec.length, spec.wave, time, phase);
 
-	drawFins(ctx, spec, spine, time, phase);
+	drawRearFins(ctx, spec, spine, time, phase);
 	drawBody(ctx, spec, spine);
 	drawMarkings(ctx, spec, spine, seed);
+	drawPectoral(ctx, spec, spine, time, phase);
 	drawHead(ctx, spec, spine, time, phase);
 	drawTrail(ctx, time, seed, spec.length);
 }
@@ -496,7 +549,26 @@ function drawGhost(
 
 	// Legible, but plainly spent. At 0.4 the outline vanished against the water and
 	// completing a task looked like deleting it.
-	ctx.globalAlpha = 0.62;
+	const outer = ctx.globalAlpha;
+	ctx.globalAlpha = outer * 0.62;
+
+	/**
+	 * Fins first, and stroked rather than filled.
+	 *
+	 * A ghost is an outline of *its own* species, and for half the tank the species
+	 * lives entirely in the fins: a guppy is a small body behind an oversized fan
+	 * tail, a betta is trailing veils, an angel is a diamond of dorsal and anal. Body
+	 * outline alone made those three indistinguishable from each other.
+	 */
+	ctx.strokeStyle = withAlpha(spec.palette.fin, 0.8);
+	ctx.lineWidth = 1.4;
+	for (const fin of spec.fins) {
+		for (const side of finSides(fin)) {
+			traceFin(ctx, spec, fin, spine, time, phase, side);
+			ctx.stroke();
+			ctx.restore();
+		}
+	}
 
 	tracePath(ctx, loop);
 	ctx.fillStyle = withAlpha(spec.palette.back, 0.16);
@@ -508,13 +580,13 @@ function drawGhost(
 	ctx.stroke();
 
 	// One dot of eye, so the outline still reads as facing somewhere.
-	const eye = pointAt(spine, 0.14);
-	const half = profileAt(spec.profile, 0.14) * spec.length;
+	const eye = pointAt(spine, EYE_T);
+	const half = profileAt(spec.profile, EYE_T) * spec.length;
 	ctx.beginPath();
 	ctx.arc(eye.x, eye.y - half * 0.25, Math.max(1.6, half * 0.22), 0, Math.PI * 2);
 	ctx.stroke();
 
-	ctx.globalAlpha = 1;
+	ctx.globalAlpha = outer;
 }
 
 /** The bubble trail behind a live fish. Three bubbles rising and fading on a loop. */
