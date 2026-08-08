@@ -2,7 +2,8 @@ import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
 import { WATERLINE, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
-import { speciesFor, type Species } from './species';
+import { speciesFor, SPECIES, type Species, type SpeciesSpec } from './species';
+import { spineFor, outline, type Spine } from './spine';
 
 export { speciesFor };
 export type { Species };
@@ -47,7 +48,7 @@ const PILL_EDGE = 0.74;
 /** The six species this legacy drawing table has entries for. */
 type Swimmer = Exclude<Species, 'koi' | 'exotic'>;
 
-type SpeciesSpec = {
+type LegacySpeciesSpec = {
 	length: number;
 	height: number;
 	/** Body gradient, back to belly. */
@@ -63,7 +64,7 @@ type SpeciesSpec = {
 	flow: number;
 };
 
-const SPECIES: Record<Swimmer, SpeciesSpec> = {
+const LEGACY_SPECIES: Record<Swimmer, LegacySpeciesSpec> = {
 	clown: {
 		length: 42,
 		height: 24,
@@ -270,11 +271,11 @@ export function drawCreature(
 				ctx.scale(0.72, 0.72);
 				drawTreatFish(ctx, { ...creature, locked: false }, at, time);
 			} else {
-				drawFish(ctx, at, SPECIES[speciesFor(creature.id) as Swimmer], time, hash(creature.id));
+				drawFish(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
 			}
 			break;
 		case 'ghost':
-			drawGhost(ctx, at, SPECIES[speciesFor(creature.id) as Swimmer], time, hash(creature.id));
+			drawGhost(ctx, at, LEGACY_SPECIES[speciesFor(creature.id) as Swimmer], time, hash(creature.id));
 			break;
 		case 'koi':
 			drawKoi(ctx, at, time);
@@ -330,6 +331,41 @@ function bodyPath(ctx: CanvasRenderingContext2D, len: number, hgt: number): void
 	ctx.closePath();
 }
 
+/** Traces a closed outline as a smooth loop through its points. */
+function tracePath(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[]): void {
+	ctx.beginPath();
+	ctx.moveTo(points[0].x, points[0].y);
+	for (let i = 1; i < points.length; i++) {
+		const previous = points[i - 1];
+		const point = points[i];
+		// Midpoint quadratics: a smooth curve through every point without needing
+		// hand-placed control points per species.
+		ctx.quadraticCurveTo(previous.x, previous.y, (previous.x + point.x) / 2, (previous.y + point.y) / 2);
+	}
+	ctx.closePath();
+}
+
+/** Fills the body outline, lit from above, with a rim so it holds its edge in the water. */
+function drawBody(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine, alpha = 1): void {
+	const loop = outline(spine, spec.profile, spec.length);
+	const half = spec.length * 0.5;
+
+	const shade = ctx.createLinearGradient(0, -half, 0, half);
+	shade.addColorStop(0, spec.palette.back);
+	shade.addColorStop(1, spec.palette.belly);
+
+	ctx.globalAlpha = alpha;
+	tracePath(ctx, loop);
+	ctx.fillStyle = shade;
+	ctx.fill();
+
+	tracePath(ctx, loop);
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
+	ctx.lineWidth = 1.2;
+	ctx.stroke();
+	ctx.globalAlpha = 1;
+}
+
 function drawFish(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
@@ -339,70 +375,18 @@ function drawFish(
 ): void {
 	if (at.flip) ctx.scale(-1, 1);
 
-	const { length: len, height: hgt } = spec;
-	const beat = Math.sin(time / 130 + seed);
+	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
+	const spine = spineFor(spec.length, spec.wave, time, phase);
 
-	drawTail(ctx, spec, beat);
-	drawFins(ctx, spec, beat);
-
-	// Body, lit from above: back saturated, belly pale.
-	const shade = ctx.createLinearGradient(0, -hgt, 0, hgt);
-	shade.addColorStop(0, spec.body[0]);
-	shade.addColorStop(1, spec.body[1]);
-
-	bodyPath(ctx, len, hgt);
-	ctx.fillStyle = shade;
-	ctx.fill();
-
-	drawPattern(ctx, spec, seed);
-
-	// Belly highlight, a soft crescent along the underside.
-	ctx.save();
-	bodyPath(ctx, len, hgt);
-	ctx.clip();
-	const belly = ctx.createLinearGradient(0, hgt * 0.1, 0, hgt);
-	belly.addColorStop(0, 'rgba(255, 255, 255, 0)');
-	belly.addColorStop(1, 'rgba(255, 255, 255, 0.45)');
-	ctx.fillStyle = belly;
-	ctx.fillRect(-len, -hgt, len * 2, hgt * 2);
-	ctx.restore();
-
-	// Body outline, a shade darker. Without it the fish dissolves into the water at
-	// the edges instead of holding a silhouette.
-	bodyPath(ctx, len, hgt);
-	ctx.strokeStyle = withAlpha(spec.body[1], 0.55);
-	ctx.lineWidth = 1.2;
-	ctx.stroke();
-
-	// Gill arc.
-	ctx.beginPath();
-	ctx.moveTo(len * 0.16, -hgt * 0.45);
-	ctx.quadraticCurveTo(len * 0.06, 0, len * 0.16, hgt * 0.45);
-	ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
-	ctx.lineWidth = 1.2;
-	ctx.stroke();
-
-	// Pectoral fin, fanning with the swim cycle.
-	ctx.save();
-	ctx.translate(len * 0.08, hgt * 0.12);
-	ctx.rotate(beat * 0.25);
-	ctx.beginPath();
-	ctx.moveTo(0, 0);
-	ctx.quadraticCurveTo(-len * 0.2, hgt * 0.5, -len * 0.05, hgt * 0.62);
-	ctx.quadraticCurveTo(len * 0.04, hgt * 0.3, 0, 0);
-	ctx.fillStyle = withAlpha(spec.fin, 0.85);
-	ctx.fill();
-	ctx.restore();
-
-	drawEye(ctx, spec);
-	drawTrail(ctx, time, seed, len);
+	drawBody(ctx, spec, spine);
+	drawTrail(ctx, time, seed, spec.length);
 }
 
 /** A resolved task keeps swimming, drained to a translucent outline of the same fish. */
 function drawGhost(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
-	spec: SpeciesSpec,
+	spec: LegacySpeciesSpec,
 	time: number,
 	seed: number
 ): void {
@@ -451,7 +435,7 @@ function drawGhost(
  * The caudal fin, rooted exactly at the tail of the body so it reads as attached.
  * Sized off `flow` as a fraction of body length — never longer than the fish.
  */
-function drawTail(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number): void {
+function drawTail(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec, beat: number): void {
 	const { length: len, height: hgt, flow } = spec;
 	const root = -len / 2 + 1;
 	const reach = len * flow;
@@ -507,7 +491,7 @@ function drawTail(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number
  * Dorsal and anal fins, drawn as low ridges sitting *on* the body outline rather
  * than as separate shapes hovering near it.
  */
-function drawFins(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number): void {
+function drawFins(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec, beat: number): void {
 	const { length: len, height: hgt, flow } = spec;
 	ctx.fillStyle = withAlpha(spec.fin, 0.85);
 
@@ -530,7 +514,7 @@ function drawFins(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number
 }
 
 /** Markings, clipped to the body so nothing spills over the silhouette. */
-function drawPattern(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, seed: number): void {
+function drawPattern(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec, seed: number): void {
 	if (spec.pattern === 'none') return;
 
 	const { length: len, height: hgt } = spec;
@@ -575,7 +559,7 @@ function drawPattern(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, seed: num
 	ctx.restore();
 }
 
-function drawEye(ctx: CanvasRenderingContext2D, spec: SpeciesSpec): void {
+function drawEye(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec): void {
 	const x = spec.length * 0.3;
 	const y = -spec.height * 0.18;
 
@@ -666,7 +650,7 @@ function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number): vo
 	ctx.lineWidth = 1;
 	ctx.stroke();
 
-	drawEye(ctx, { ...SPECIES.clown, length: len, height: hgt });
+	drawEye(ctx, { ...LEGACY_SPECIES.clown, length: len, height: hgt });
 }
 
 function drawBubble(
@@ -698,7 +682,7 @@ function drawBubble(
 	ctx.clip();
 	ctx.scale(0.62, 0.62);
 	ctx.translate(Math.sin(time / 800 + seed) * 7, Math.cos(time / 1100 + seed) * 4);
-	drawFish(ctx, { x: 0, y: 0, flip: false }, SPECIES[speciesFor(creature.id) as Swimmer], time, seed);
+	drawFish(ctx, { x: 0, y: 0, flip: false }, SPECIES[speciesFor(creature.id)], time, seed);
 	ctx.restore();
 
 	ctx.beginPath();
@@ -855,7 +839,7 @@ function drawTreatFish(
 	ctx.lineWidth = 1.2;
 	ctx.stroke();
 
-	drawEye(ctx, { ...SPECIES.betta, length: len * 0.86, height: hgt * 0.56 });
+	drawEye(ctx, { ...LEGACY_SPECIES.betta, length: len * 0.86, height: hgt * 0.56 });
 
 	// Sparkles, affordable only: the tell that you can have it now.
 	if (affordable) {
