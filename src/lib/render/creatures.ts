@@ -44,11 +44,13 @@ export type Placement = {
 };
 
 /**
- * How far a fish will tip. Real fish rarely exceed ~35 degrees in unhurried swimming,
- * and past that the silhouette stops reading side-on, which is where all the species
- * identity lives.
+ * How far a fish will tip, in radians (~23 degrees).
+ *
+ * Unhurried fish barely tilt; steeper reads as purposeful diving, and a whole shoal
+ * doing it at once looks agitated. Past ~35 degrees the silhouette also stops reading
+ * side-on, which is where all the species identity lives.
  */
-const MAX_PITCH = 0.6;
+const MAX_PITCH = 0.4;
 
 /** Seconds ahead used to sample velocity. Long enough to be stable, short enough to be current. */
 const PITCH_LOOKAHEAD = 0.08;
@@ -370,15 +372,21 @@ function speciesReach(spec: SpeciesSpec): number {
 	}
 	// The trail streams behind and above, so it rotates outward too.
 	vertical = Math.max(vertical, TRAIL_DRIFT + TRAIL_RADIUS);
-	const pitched = reach * Math.cos(MAX_PITCH) + vertical * Math.sin(MAX_PITCH);
+	// `reach·cos θ + vertical·sin θ` peaks at `θ = atan(vertical / reach)`, not at the
+	// largest tilt — so evaluating at MAX_PITCH can *understate* the extent. Take the
+	// worst angle the fish can actually reach.
+	const worstTilt = Math.min(MAX_PITCH, Math.atan2(vertical, reach));
+	const pitched = reach * Math.cos(worstTilt) + vertical * Math.sin(worstTilt);
 
 	// The bubble trail streams further back than any tail, and the treat's halo is a
 	// disc of one body length. Both are faint, but a hard vertical cut through a glow
 	// at the edge of the glass is more obvious than the glow itself.
 	// Curves bulge past their endpoints: a quadratic lies inside the hull of its control
-	// points, and the measurements above sample endpoints only. A few pixels of pad
-	// covers that gap — cheaper and steadier than modelling every control point.
-	const CURVE_PAD = 4;
+	// points, and every measurement above samples endpoints only. The body is traced
+	// over `SPINE_SEGMENTS` spans, so a control point sits at most about one span
+	// outside the sampled extreme — scale the pad with the fish rather than pinning a
+	// constant that a longer species would outgrow.
+	const curvePad = spec.length / 6;
 
 	const total =
 		Math.max(
@@ -386,7 +394,7 @@ function speciesReach(spec: SpeciesSpec): number {
 			pitched,
 			spec.length * TRAIL_ANCHOR + TRAIL_DRIFT + TRAIL_RADIUS,
 			spec.length
-		) + CURVE_PAD;
+		) + curvePad;
 
 	reachCache.set(spec, total);
 	return total;

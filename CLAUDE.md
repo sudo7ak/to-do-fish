@@ -4,35 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Pre-implementation.** The repository currently contains the design spec and nothing
-else — no `package.json`, no `src/`, no toolchain. The spec is approved and is the
-source of truth:
+**Built and merged.** v1 ships all the mechanics; the fish rendering was then rewritten
+on top of it. The tree is a working SvelteKit app with 425 unit tests and a 57-check
+end-to-end suite.
 
-`docs/superpowers/specs/2026-08-08-fish-tank-todo-design.md`
+Two specs, both still the source of truth for *why*:
 
-Read it before writing code. Everything below is a summary of the decisions in it that
-are easy to violate by accident; the spec has the reasoning.
+- `docs/superpowers/specs/2026-08-08-fish-tank-todo-design.md` — the app.
+- `docs/superpowers/specs/2026-08-08-fish-anatomy-design.md` — how creatures are drawn.
 
-`fish_tank_idea.mp4` is the visual reference the design is based on. Its analysis and
-extracted palette are recorded in the spec, so the video does not need re-watching.
+Where the code and those specs disagree, the code won and the reason is recorded in
+`docs/follow-ups.md`. Two known divergences: treats are exotic **fish**, not lanterns
+on the waterline; and a cleared day's ghosts are not deleted — they merge into the koi
+implicitly, because ghosts only ever render on their own date.
 
-## Scaffolding
+`docs/follow-ups.md` is the live list of open items. Read it before picking up work.
 
-Not yet run. When it is:
+`fish_tank_idea.mp4` is the visual reference. Its analysis and extracted palette are
+recorded in the app spec, so the video does not need re-watching.
+
+## Commands
 
 ```bash
-npx sv create .          # SvelteKit, TypeScript, Vitest
+npm run dev          # dev server on :5173 (scripts assume :5199 — see below)
+npm test             # 425 unit tests (vitest) over the pure layers
+npm run check        # svelte-check; must report 0 errors
+npm run build        # static build via adapter-static
+npm run screenshot   # PNG of the tank        (needs a dev server running)
+npm run e2e          # 57 checks via Playwright (needs a dev server running)
 ```
 
-Then set `adapter-static`, and in `src/routes/+layout.ts`:
+Both scripts expect a server on port 5199: `npx vite dev --port 5199 &`.
 
-```ts
-export const ssr = false;      // data is localStorage-only
-export const prerender = true;
-```
-
-SSR is not merely unused — it is wrong here. Store reads touch `localStorage`, and
-server rendering would paint an empty tank before hydration.
+**Anything visual must be looked at, not reasoned about.** Two art passes here were
+done blind and both shipped bugs one screenshot would have caught: a milky slab across
+the top of the tank, fins larger than the bodies they hung off, and six species that
+rendered as two. The standard check is `npm run screenshot` plus a 4× Playwright crop
+of the region in question — a full-tank shot is too small to judge a 40px fish.
 
 ## What this is
 
@@ -40,8 +48,8 @@ A personal to-do webapp whose entire interface is an aquarium. Every task is a
 creature. There is no list on the main screen. Two mechanics beyond ordinary to-dos:
 
 - **If–then tasks** wait inside a bubble until their condition is met.
-- **Guilty pleasures** are treats priced in pearls, floating on the waterline as
-  lanterns. Finishing a task drops a pearl.
+- **Guilty pleasures** are treats priced in pearls — exotic fish cruising below the
+  waterline, dim until you can afford them. Finishing a task drops a pearl.
 
 Local-first: no backend, no accounts, no network calls in v1.
 
@@ -58,14 +66,37 @@ render/     creature descriptors -> canvas pixels
 ui/         Svelte components: date header, sheets, list view, buttons
 ```
 
+`render/` is four modules, split so the testable half is not buried in drawing code:
+
+```
+render/rng.ts        hash + mix32          deterministic per-id randomness
+render/spine.ts      pure geometry         centreline with a travelling wave, profile -> outline
+render/species.ts    data only             per-species profiles, fins, palettes
+render/creatures.ts  drawing + placement   consumes the three above
+render/water.ts      tank, light, planting
+render/palette.ts    every colour in the app
+render/pick.ts       pointer hit-testing
+render/loop.ts       requestAnimationFrame driver
+```
+
 Enforced rules:
 
 - `triggers/` never imports `scene/`.
-- `render/` never imports `store/`.
+- `render/` imports **nothing** outside itself, not even `../types`. Only
+  `scene/types` (the creature descriptors) and its own siblings. A renderer whose
+  whole vocabulary is `Creature` cannot couple pixels to task data by accident.
 - `store/` reaches persistence only through the `TaskStore` interface, never
   `localStorage` directly.
 - No creature position is ever persisted. The tank is a projection of task data and
   never a source of it.
+- All per-creature variation comes from `hash(id)`, never `Math.random()` — the same
+  task is the same fish on every reload.
+- **Never `hash % n` or `hash >> k` on ids.** Sibling ids differ only in low bits, so
+  both collapse to a couple of buckets; this shipped twice, once making six species
+  render as two, once putting every fish on one line. Always mix through `mix32`.
+- `place()` decides where a creature is; `pick()` shares it, so changing it moves
+  taps as well as pixels. The drawing layer may inset from it, but must not redefine
+  it.
 
 Svelte handles chrome only. The tank is one `<canvas>` whose loop reads the store with
 `get()` and never triggers a re-render — that property is why Svelte was chosen over

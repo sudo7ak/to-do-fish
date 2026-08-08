@@ -50,7 +50,7 @@ nothing in the UI exposes it.
 
 ## 2. Test coverage gaps
 
-The unit suite (358) covers the pure layers; `npm run e2e` (50 checks) covers the
+The unit suite (425) covers the pure layers; `npm run e2e` (57 checks) covers the
 mechanics through the real UI. Known blind spots:
 
 | Gap | Why it matters |
@@ -110,6 +110,23 @@ open the list.
 Still unverified: ghosts against the busiest possible tank, and the claimed treat fish
 in more than one arrangement.
 
+### 4.2 Vertical swimming — **DONE**
+
+Fish moved vertically but stayed rigidly level, which read as a sprite on rails.
+`Placement` now carries a `pitch`, sampled from two points on the real path rather
+than a second formula that would drift from it, clamped to 0.4 rad (~23°).
+
+Two guards fired during the change and both found real bugs:
+
+- `speciesReach` measured the extent of an *unrotated* fish, so a tilted koi's tail
+  cleared the glass. It now takes the rotated extent — and at the **worst** angle,
+  `atan(vertical / reach)`, not the largest one: `reach·cos θ + vertical·sin θ` peaks
+  in the middle of the range, so evaluating at `MAX_PITCH` can understate it. Lowering
+  the max pitch made clipping *worse* before this was fixed, which is the opposite of
+  what anyone would predict.
+- The pad covering curve control points was a constant; it is now proportional to body
+  length, since a longer species outgrows a fixed number.
+
 ### 4.1 Fish anatomy rewrite (spine + species profiles) — verified 2026-08-08
 
 Every creature now derives from a spine (centreline + travelling wave) offset by a
@@ -163,10 +180,10 @@ sheen, and gradients within a fin are all invisible at the ~40px fish size used 
 
 ## 5. Code debt
 
-### 5.1 `laneX()` is dead code
+### 5.1 `laneX()` is dead code — **DONE**
 
-`src/lib/render/creatures.ts` — superseded by `spreadX()` and the per-fish lane
-centre. Nothing calls it. Delete it.
+Deleted during the fish anatomy rewrite, along with the rest of the legacy drawing
+scaffolding (`bodyPath`, `LEGACY_SPECIES`, the `Swimmer` alias and its casts).
 
 ### 5.2 `palette.lantern` is now a misleading name
 
@@ -174,22 +191,28 @@ The creature kind was renamed `lantern → treat` when treats became exotic fish
 the palette token is still `lantern` because it is a spec-named colour and renaming it
 would churn the reference tests. It now tints the treat fish.
 
-### 5.3 `CLAUDE.md` is badly stale
+### 5.3 `CLAUDE.md` is badly stale — **DONE**
 
 It still says **"Pre-implementation. The repository currently contains the design spec
 and nothing else — no `package.json`, no `src/`, no toolchain."** That is the first
 thing a new session reads, and all of it is now false. It also documents the
 scaffolding step as "not yet run".
 
-**This is the highest-value item in this document** for anyone picking the project up.
+Rewritten: status, a commands block, the `render/` module map, the determinism rules
+that have now bitten twice, and a standing instruction that visual work must be
+looked at rather than reasoned about.
 
-### 5.4 The spec is now behind the implementation
+### 5.4 The spec is now behind the implementation — **RECORDED**
 
 `docs/superpowers/specs/2026-08-08-fish-tank-todo-design.md` still describes treats as
 lanterns on the waterline and says the day's ghosts merge into the koi. Both changed:
 treats are exotic fish, and the merge is implicit (ghosts are date-scoped) rather than
-a deletion. The spec should either be updated or marked as the original design with
-deltas recorded in `progress.md`.
+a deletion.
+
+**Decision: the specs stay as written.** They record the design as approved, which is
+what makes them useful later — a spec quietly edited to match the code stops being
+evidence of anything. Both divergences are now named at the top of `CLAUDE.md`, which
+is what a new session actually reads first.
 
 ### 5.5 Screenshot and E2E scripts need the dev server started by hand
 
