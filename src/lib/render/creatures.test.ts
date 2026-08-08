@@ -595,9 +595,11 @@ describe('ghosts', () => {
 
 			const ghost = fakeCtx();
 			const c = creature('ghost', { id });
-			drawCreature(ghost, c, place(c, SIZE, 250), COLORS, 250);
+			// A fixed, level placement: `place` now also pitches a swimmer toward its
+			// direction of travel, which is a second `rotate()` and would be counted below.
+			drawCreature(ghost, c, { x: 200, y: 400, flip: false, pitch: 0 }, COLORS, 250);
 
-			// One `rotate()` per fin side: fins are the only thing drawn in a local frame.
+			// One `rotate()` per fin side: fins are the only thing left in a local frame.
 			const sides = SPECIES[name].fins.reduce(
 				(n, fin) => n + (fin.kind === 'caudal' ? 2 : 1),
 				0
@@ -624,7 +626,7 @@ describe('ghosts', () => {
 			for (let i = 0; i < 400 && !id; i++) if (speciesFor(`id-${i}`) === name) id = `id-${i}`;
 			const ctx = fakeCtx();
 			// Frozen clock and a shared placement, so only the species differs.
-			drawCreature(ctx, creature('ghost', { id }), { x: 200, y: 400, flip: false }, COLORS, 0);
+			drawCreature(ctx, creature('ghost', { id }), { x: 200, y: 400, flip: false, pitch: 0 }, COLORS, 0);
 			return ctx.calls.filter((call) => call.startsWith('quadraticCurveTo(')).join();
 		});
 

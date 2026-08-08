@@ -29,7 +29,39 @@ export type { Species };
  * used. Two implementations of "where is this fish" would drift apart within a day.
  */
 
-export type Placement = { x: number; y: number; flip: boolean };
+export type Placement = {
+	x: number;
+	y: number;
+	flip: boolean;
+	/**
+	 * Nose-up/nose-down angle in radians, screen space (positive = nose down).
+	 *
+	 * Fish move vertically as well as horizontally, but until this existed they stayed
+	 * rigidly level while doing it — a climbing fish read as a sprite sliding up rails
+	 * rather than an animal going somewhere.
+	 */
+	pitch: number;
+};
+
+/**
+ * How far a fish will tip. Real fish rarely exceed ~35 degrees in unhurried swimming,
+ * and past that the silhouette stops reading side-on, which is where all the species
+ * identity lives.
+ */
+const MAX_PITCH = 0.6;
+
+/** Seconds ahead used to sample velocity. Long enough to be stable, short enough to be current. */
+const PITCH_LOOKAHEAD = 0.08;
+
+/**
+ * Pitch from two samples of the real path, rather than a second formula that would
+ * drift out of step with it. `dx` is taken as a magnitude because left-and-right is
+ * already carried by `flip`; this is only the climb angle.
+ */
+function pitchFrom(dx: number, dy: number): number {
+	if (dx === 0 && dy === 0) return 0;
+	return Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.atan2(dy, Math.abs(dx))));
+}
 
 /** Water column available to swimmers, leaving the surface band and the planting alone. */
 const TOP_MARGIN = WATERLINE + 26;
@@ -76,14 +108,24 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		const phase = mix32(seed ^ 0x77) * Math.PI * 2;
 		const cruise = (t + Math.sin(t * 0.29 + phase) * 1.2) * 0.1;
 
-		const x = spreadX(seed, size) + size.w * Math.sin(cruise) * 0.1;
-		const y =
-			WATERLINE +
-			surfaceOffset(x, t * 1000) +
-			TREAT_DRAFT +
-			Math.sin(cruise * 1.7 + phase) * 12;
+		const treatAt = (at: number) => {
+			const c = (at + Math.sin(at * 0.29 + phase) * 1.2) * 0.1;
+			const tx = spreadX(seed, size) + size.w * Math.sin(c) * 0.1;
+			return {
+				x: tx,
+				y: WATERLINE + surfaceOffset(tx, at * 1000) + TREAT_DRAFT + Math.sin(c * 1.7 + phase) * 12
+			};
+		};
 
-		return { x, y, flip: Math.cos(cruise) < 0 };
+		const here = treatAt(t);
+		const ahead = treatAt(t + PITCH_LOOKAHEAD);
+
+		return {
+			x: here.x,
+			y: here.y,
+			flip: Math.cos(cruise) < 0,
+			pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y)
+		};
 	}
 	if (creature.kind === 'pearl') {
 		/**
@@ -111,11 +153,35 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 			? size.w * (PILL_EDGE + along * bandWidth)
 			: size.w * (0.04 + along * bandWidth);
 
-		return { x, y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6, flip: false };
+		return { x, y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6, flip: false, pitch: 0 };
 	}
 
 	const kindSpeed = creature.kind === 'koi' ? 0.5 : creature.kind === 'ghost' ? 0.62 : 1;
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
+
+	// Sampled at two instants so pitch comes from the path actually travelled.
+	const swimAt = (at: number) => swimPosition(creature, size, at, seed, phase, kindSpeed);
+	const here = swimAt(t);
+	const ahead = swimAt(t + PITCH_LOOKAHEAD);
+
+	return {
+		x: here.x,
+		y: here.y,
+		flip: here.flip,
+		// A frozen clock gives two identical samples, so a still fish sits level.
+		pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y)
+	};
+}
+
+/** Where a swimmer is at time `t` (seconds). Split out so `place` can sample it twice. */
+function swimPosition(
+	creature: Creature,
+	size: Size,
+	t: number,
+	seed: number,
+	phase: number,
+	kindSpeed: number
+): { x: number; y: number; flip: boolean } {
 
 	// Per-fish tempo, so a tank of six does not move as one organism.
 	const pace = (0.17 + mix32(seed ^ 0x1f) * 0.2) * kindSpeed;
@@ -228,6 +294,10 @@ export function drawCreature(
 
 	ctx.save();
 	ctx.translate(at.x, at.y);
+	// Point where it is going. The horizontal mirror is applied later, inside the body
+	// drawing, and mirroring reverses the sense of a rotation set before it — so a
+	// left-swimming fish takes the opposite sign to reach the same climb on screen.
+	if (at.pitch) ctx.rotate(at.flip ? -at.pitch : at.pitch);
 	if (body && body.scale !== 1) ctx.scale(body.scale, body.scale);
 
 	// `bodyOf` returns a spec for every kind that has one, so the assertions below hold
@@ -285,14 +355,38 @@ function speciesReach(spec: SpeciesSpec): number {
 		reach = Math.max(reach, Math.abs(root - span * fin.sweep), Math.abs(root + span * 0.15));
 	}
 
+	// Tilting swings the tail wider. A shape reaching `reach` along its own axis and
+	// `vertical` across it occupies `reach·cos θ + vertical·sin θ` horizontally once
+	// pitched — so a deep-bodied, long-finned fish needs more clearance nose-up than
+	// it does level.
+	let vertical = profilePeak(spec.profile) * spec.length;
+	for (const fin of spec.fins) {
+		// Every fin counts, the caudal included: tilted, a tail's vertical spread swings
+		// into horizontal reach just as a dorsal's does.
+		vertical = Math.max(
+			vertical,
+			profileAt(spec.profile, fin.anchor) * spec.length + fin.span * spec.length
+		);
+	}
+	// The trail streams behind and above, so it rotates outward too.
+	vertical = Math.max(vertical, TRAIL_DRIFT + TRAIL_RADIUS);
+	const pitched = reach * Math.cos(MAX_PITCH) + vertical * Math.sin(MAX_PITCH);
+
 	// The bubble trail streams further back than any tail, and the treat's halo is a
 	// disc of one body length. Both are faint, but a hard vertical cut through a glow
 	// at the edge of the glass is more obvious than the glow itself.
-	const total = Math.max(
-		reach,
-		spec.length * TRAIL_ANCHOR + TRAIL_DRIFT + TRAIL_RADIUS,
-		spec.length
-	);
+	// Curves bulge past their endpoints: a quadratic lies inside the hull of its control
+	// points, and the measurements above sample endpoints only. A few pixels of pad
+	// covers that gap — cheaper and steadier than modelling every control point.
+	const CURVE_PAD = 4;
+
+	const total =
+		Math.max(
+			reach,
+			pitched,
+			spec.length * TRAIL_ANCHOR + TRAIL_DRIFT + TRAIL_RADIUS,
+			spec.length
+		) + CURVE_PAD;
 
 	reachCache.set(spec, total);
 	return total;
@@ -828,7 +922,7 @@ function drawBubble(ctx: CanvasRenderingContext2D, creature: Creature, time: num
 	ctx.clip();
 	ctx.scale(0.62, 0.62);
 	ctx.translate(Math.sin(time / 800 + seed) * 7, Math.cos(time / 1100 + seed) * 4);
-	drawFish(ctx, { x: 0, y: 0, flip: false }, SPECIES[speciesFor(creature.id)], time, seed);
+	drawFish(ctx, { x: 0, y: 0, flip: false, pitch: 0 }, SPECIES[speciesFor(creature.id)], time, seed);
 	ctx.restore();
 
 	ctx.beginPath();
