@@ -58,12 +58,24 @@ describe('species data', () => {
 		expect(Math.max(...depths)).toBeGreaterThan(Math.min(...depths) * 2);
 	});
 
-	it('anchors every fin on the body, in order', () => {
+	it('roots every fin on the body, not in open water', () => {
+		// `0 <= anchor <= 1` only says the fin is somewhere along the spine's parameter
+		// range. What matters is that the root lands on a part of the body with actual
+		// depth: a fin anchored where the profile has tapered to nothing hangs off the
+		// snout or the tail tip with no body to attach to.
 		for (const name of ALL) {
 			for (const fin of SPECIES[name].fins) {
 				expect(fin.anchor).toBeGreaterThanOrEqual(0);
 				expect(fin.anchor).toBeLessThanOrEqual(1);
 				expect(fin.span).toBeGreaterThan(0);
+
+				const peak = Math.max(...SPECIES[name].profile.map(([, h]) => h));
+				const atRoot = profileAt(SPECIES[name].profile, fin.anchor);
+
+				// The caudal roots at the tail, where the body has deliberately tapered.
+				if (fin.kind !== 'caudal') {
+					expect(atRoot).toBeGreaterThan(peak * 0.25);
+				}
 			}
 		}
 	});

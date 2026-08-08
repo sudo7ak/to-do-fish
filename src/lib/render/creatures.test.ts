@@ -3,6 +3,8 @@ import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
 import { SPECIES, SWIMMERS, type SpeciesSpec } from './species';
+import { spineFor, outline } from './spine';
+import { hash, mix32 } from './rng';
 import { profilePeak } from './spine';
 
 import { WATERLINE } from './water';
@@ -115,6 +117,58 @@ function fakeCtx() {
 	return ctx;
 }
 
+
+/**
+ * The body outline a species should have at this instant, in the fish's own frame.
+ *
+ * Recomputed from the same primitives the renderer uses, so a test can assert the
+ * drawn path *is* the spine's outline rather than merely that it changed. `join()`
+ * inequality only ever proved "something moved" — it passed just as happily if the
+ * body froze and the bubble trail carried the difference.
+ */
+function expectedOutline(id: string, spec: SpeciesSpec, time: number) {
+	const phase = mix32(hash(id) ^ 0x11) * Math.PI * 2;
+	return outline(spineFor(spec.length, spec.wave, time, phase), spec.profile, spec.length);
+}
+
+/**
+ * Every point the canvas was steered through: `moveTo` targets and `quadraticCurveTo`
+ * control points. `tracePath` opens with `moveTo(points[0])` and then uses each point
+ * as the control for the following segment, so the opening point never appears as a
+ * control and both call kinds are needed to see the whole path.
+ */
+function drawnPathPoints(ctx: { calls: string[] }): Set<string> {
+	const points = new Set<string>();
+
+	for (const call of ctx.calls) {
+		if (call.startsWith('moveTo(')) {
+			points.add(call.slice('moveTo('.length).replace(')', ''));
+		} else if (call.startsWith('quadraticCurveTo(')) {
+			points.add(call.slice('quadraticCurveTo('.length).split(',').slice(0, 2).join(','));
+		}
+	}
+
+	return points;
+}
+
+const asKey = (p: { x: number; y: number }) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+
+/** Asserts the species' computed outline was actually traced onto the canvas. */
+function expectBodyDrawn(ctx: { calls: string[] }, id: string, spec: SpeciesSpec, time: number) {
+	const drawn = drawnPathPoints(ctx);
+	const expected = expectedOutline(id, spec, time);
+
+	// The closing point is consumed only as a curve endpoint's midpoint, never as a
+	// control or a moveTo, so it is the one point of the loop that cannot be observed.
+	const missing = expected
+		.slice(0, -1)
+		.map(asKey)
+		.filter((key) => !drawn.has(key));
+
+	expect(missing).toEqual([]);
+	expect(expected.length).toBeGreaterThan(8);
+}
+
 const creature = (kind: CreatureKind, over: Partial<Creature> = {}): Creature => ({
 	id: `${kind}-1`,
 	kind,
@@ -170,15 +224,16 @@ describe('drawCreature — every kind', () => {
 		expect(ghost.depth).toBe(0);
 	});
 
-	it('bends a ghost as it drifts, like a live fish', () => {
-		const early = fakeCtx();
-		const later = fakeCtx();
-		const c = creature('ghost', { id: 'drifter' });
+	it('bends a ghost as it drifts, tracing its own species outline', () => {
+		const id = 'drifter';
+		const spec = SPECIES[speciesFor(id)];
+		const c = creature('ghost', { id });
 
-		drawCreature(early, c, place(c, SIZE, 0), COLORS, 0);
-		drawCreature(later, c, place(c, SIZE, 1100), COLORS, 1100);
-
-		expect(early.calls.join()).not.toBe(later.calls.join());
+		for (const time of [0, 1100]) {
+			const ctx = fakeCtx();
+			drawCreature(ctx, c, place(c, SIZE, time), COLORS, time);
+			expectBodyDrawn(ctx, id, spec, time);
+		}
 	});
 });
 
@@ -220,16 +275,22 @@ describe('speciesFor', () => {
 });
 
 describe('body drawing follows the spine', () => {
-	it('draws a different path as the fish bends', () => {
-		// If the body path is identical over time, the spine is not reaching the canvas.
-		const early = fakeCtx();
-		const later = fakeCtx();
-		const c = creature('fish', { id: 'bender' });
+	it('traces the species outline, and re-traces it as the body bends', () => {
+		const id = 'bender';
+		const spec = SPECIES[speciesFor(id)];
+		const c = creature('fish', { id });
 
-		drawCreature(early, c, place(c, SIZE, 0), COLORS, 0);
-		drawCreature(later, c, place(c, SIZE, 900), COLORS, 900);
+		for (const time of [0, 900]) {
+			const ctx = fakeCtx();
+			drawCreature(ctx, c, place(c, SIZE, time), COLORS, time);
+			expectBodyDrawn(ctx, id, spec, time);
+		}
 
-		expect(early.calls.join()).not.toBe(later.calls.join());
+		// And the two outlines are genuinely different, so the assertions above are not
+		// both satisfied by one frozen shape.
+		expect(expectedOutline(id, spec, 0).map(asKey)).not.toEqual(
+			expectedOutline(id, spec, 900).map(asKey)
+		);
 	});
 
 	it('holds a natural mid-bend under reduced motion', () => {
@@ -241,8 +302,10 @@ describe('body drawing follows the spine', () => {
 		drawCreature(a, creature('fish', { id: 'one' }), place(creature('fish', { id: 'one' }), SIZE, 0, false), COLORS, 0);
 		drawCreature(b, creature('fish', { id: 'two' }), place(creature('fish', { id: 'two' }), SIZE, 0, false), COLORS, 0);
 
-		// Same frozen clock, different ids: different phases, so different shapes.
-		expect(a.calls.join()).not.toBe(b.calls.join());
+		// Same frozen clock, different ids: different phases, so different shapes — and
+		// each must be its own computed outline, not merely different from the other.
+		expectBodyDrawn(a, 'one', SPECIES[speciesFor('one')], 0);
+		expectBodyDrawn(b, 'two', SPECIES[speciesFor('two')], 0);
 	});
 
 	it('draws every species with a filled body and a balanced context', () => {
@@ -894,9 +957,13 @@ describe('treat fish', () => {
 		// assign `globalAlpha` instead of multiplying it, so the body, markings, eye and
 		// mouth painted at full brightness inside a fish whose fins alone were faded —
 		// exactly backwards. Every paint in a locked treat must be below full alpha.
-		expect(locked.calls).toContain('alpha(0.62)');
-		expect(Math.max(...locked.fillAlphas)).toBeCloseTo(0.62, 5);
-		expect(Math.max(...locked.strokeAlphas)).toBeLessThanOrEqual(0.62);
+		// Asserted as a property, not against the literal 0.62 — retuning the dim should
+		// not break a test whose point is "every paint is drained".
+		expect(locked.fillAlphas.length).toBeGreaterThan(0);
+		expect(Math.max(...locked.fillAlphas)).toBeLessThan(1);
+		expect(Math.max(...locked.strokeAlphas)).toBeLessThan(1);
+		// And the affordable one is not dimmed at all.
+		expect(Math.max(...open.fillAlphas)).toBe(1);
 
 		// And an affordable one is painted at full strength.
 		expect(Math.max(...open.fillAlphas)).toBe(1);
