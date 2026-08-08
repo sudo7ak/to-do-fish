@@ -174,6 +174,14 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
  * Golden-ratio spacing across the full width. Plain `hash % width` clumps badly at
  * four or five items; multiplying by the golden ratio is the standard trick for
  * spreading a small set of hashes evenly without knowing how many there are.
+ *
+ * `seed % 1000` is the one place in this file that uses the raw hash rather than
+ * mixing it through `mix32`, and it stays that way on purpose. Taking the low bits of
+ * a hash normally correlates sibling ids, which is why the rule exists — but here the
+ * result is immediately multiplied by the golden ratio and wrapped, which is itself a
+ * decorrelating step, and it only chooses which lane two or three treats cruise in.
+ * Mixing it would be tidier and would also move every existing treat, and `place` is
+ * shared with pointer hit-testing, so its output is not free to change.
  */
 function spreadX(seed: number, size: Size): number {
 	const position = ((seed % 1000) * 0.6180339887) % 1;

@@ -19,9 +19,19 @@ export type FinSpec = {
 	kind: FinKind;
 	/** Length as a fraction of body length. */
 	span: number;
-	/** How far the fin rakes backwards, in radians. */
+	/**
+	 * How far the fin rakes backwards, as a multiple of `span` — dimensionless, not an
+	 * angle. The fin's tip lands `span * sweep` behind its root.
+	 */
 	sweep: number;
-	/** Phase offset in radians behind the body wave — never frames, frame rate varies. */
+	/**
+	 * Phase offset in radians behind the body wave — never frames, frame rate varies.
+	 *
+	 * It also scales the fin's flutter amplitude (see `traceFin`). That is deliberate
+	 * rather than accidental reuse: the fins that trail furthest behind the wave are
+	 * the long soft veils, and those are exactly the fins that ripple most. One number
+	 * says "this fin is floppy" and both behaviours follow from it.
+	 */
 	lag: number;
 };
 
