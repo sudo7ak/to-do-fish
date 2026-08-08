@@ -437,6 +437,54 @@ function drawFins(
 	}
 }
 
+/** Eye and mouth, placed off the spine so they ride the head as it turns. */
+function drawHead(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	time: number,
+	phase: number
+): void {
+	const at = pointAt(spine, 0.14);
+	const half = profileAt(spec.profile, 0.14) * spec.length;
+	const radius = Math.max(2.2, half * 0.34);
+
+	// Eye white.
+	ctx.beginPath();
+	ctx.arc(at.x, at.y - half * 0.25, radius, 0, Math.PI * 2);
+	ctx.fillStyle = '#ffffff';
+	ctx.fill();
+
+	// Iris and pupil.
+	ctx.beginPath();
+	ctx.arc(at.x + radius * 0.18, at.y - half * 0.25, radius * 0.62, 0, Math.PI * 2);
+	ctx.fillStyle = spec.palette.iris;
+	ctx.fill();
+
+	// Catchlight — small, and most of what sells it.
+	ctx.beginPath();
+	ctx.arc(at.x - radius * 0.3, at.y - half * 0.25 - radius * 0.3, radius * 0.26, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+	ctx.fill();
+
+	// Lid, a shade darker than the back.
+	ctx.beginPath();
+	ctx.arc(at.x, at.y - half * 0.25, radius, Math.PI * 1.05, Math.PI * 1.95);
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
+	ctx.lineWidth = 1;
+	ctx.stroke();
+
+	// Mouth: a notch at the nose that opens on the swim cycle.
+	const nose = pointAt(spine, 0.02);
+	const gape = (Math.sin((time / 1000) * spec.wave.speed * 0.5 + phase) * 0.5 + 0.5) * radius * 0.5;
+	ctx.beginPath();
+	ctx.moveTo(nose.x, nose.y - gape * 0.3);
+	ctx.quadraticCurveTo(nose.x - radius * 0.7, nose.y, nose.x, nose.y + gape);
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.65);
+	ctx.lineWidth = 1.1;
+	ctx.stroke();
+}
+
 function drawFish(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
@@ -451,6 +499,7 @@ function drawFish(
 
 	drawFins(ctx, spec, spine, time, phase);
 	drawBody(ctx, spec, spine);
+	drawHead(ctx, spec, spine, time, phase);
 	drawTrail(ctx, time, seed, spec.length);
 }
 

@@ -459,6 +459,19 @@ describe('fins', () => {
 	});
 });
 
+describe('head', () => {
+	it('draws an eye with a pupil and a catchlight', () => {
+		// Three stacked arcs at the head: white, pupil, glint. Eyes are most of what
+		// makes a 40px shape look alive.
+		const ctx = fakeCtx();
+		const c = creature('fish', { id: 'eyed' });
+
+		drawCreature(ctx, c, place(c, SIZE, 0), COLORS, 0);
+
+		expect(ctx.calls.filter((call) => call.startsWith('arc(')).length).toBeGreaterThanOrEqual(3);
+	});
+});
+
 describe('drawCreatures — the whole tank', () => {
 	it('draws every creature in the scene', () => {
 		const ctx = fakeCtx();
