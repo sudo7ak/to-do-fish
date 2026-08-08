@@ -24,7 +24,7 @@
 	.banner {
 		position: fixed;
 		inset: max(3.5rem, calc(env(safe-area-inset-top) + 3.5rem)) 0.75rem auto 0.75rem;
-		z-index: 2;
+		z-index: 30; /* above every sheet: it must never be covered */
 		display: grid;
 		gap: 0.15rem;
 		padding: 0.7rem 0.9rem;

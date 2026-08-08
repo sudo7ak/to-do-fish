@@ -23,14 +23,18 @@
 	/** Which buttons the sheet offers for this task. */
 	export function actionsFor(task: Task, affordable: boolean): string[] {
 		const actions: string[] = [];
+		const unclaimedTreat = task.treatCost !== undefined && task.status === 'waiting';
 
-		if (task.treatCost !== undefined && task.status === 'waiting') {
+		if (unclaimedTreat) {
 			if (affordable) actions.push('claim');
 		} else if (task.status === 'waiting') {
 			actions.push('release');
 		}
 
-		if (task.status !== 'done') actions.push('complete');
+		// An unclaimed treat is deliberately NOT completable. Completing one skips
+		// `claimTreat`, so the affordability check never runs — while the price is
+		// still counted as spent. That is a free treat and a negative balance.
+		if (task.status !== 'done' && !unclaimedTreat) actions.push('complete');
 
 		actions.push('edit', 'move', 'delete');
 		return actions;
@@ -43,6 +47,10 @@
 				? `Costs ${task.treatCost} ${task.treatCost === 1 ? 'pearl' : 'pearls'}`
 				: 'Claimed';
 		}
+
+		// A finished task is not waiting for anything. Reading "Waiting until 15:00"
+		// under a struck-through title in the Done group is a contradiction on screen.
+		if (task.status === 'done') return null;
 
 		switch (task.condition?.kind) {
 			case 'time':
@@ -169,6 +177,7 @@
 	.backdrop {
 		position: fixed;
 		inset: 0;
+		z-index: 20;
 		border: 0;
 		padding: 0;
 		background: rgba(10, 30, 40, 0.35);
@@ -178,6 +187,7 @@
 	.sheet {
 		position: fixed;
 		inset: auto 0 0 0;
+		z-index: 21;
 		padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
 		border-radius: 1.25rem 1.25rem 0 0;
 		background: rgba(255, 255, 255, 0.82);

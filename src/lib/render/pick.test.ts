@@ -112,7 +112,7 @@ describe('pick — agreement with the renderer', () => {
 
 	it('never picks a creature the renderer put elsewhere', () => {
 		// Sweeping the tank, every hit must be within the radius of where it was drawn.
-		const creatures = [creature('a'), creature('b', 'koi'), creature('c', 'lantern')];
+		const creatures = [creature('a'), creature('b', 'koi'), creature('c', 'treat')];
 
 		for (let x = 0; x < SIZE.w; x += 20) {
 			for (let y = 0; y < SIZE.h; y += 40) {

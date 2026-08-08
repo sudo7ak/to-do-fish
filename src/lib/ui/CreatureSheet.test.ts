@@ -80,6 +80,18 @@ describe('actionsFor', () => {
 		expect(actionsFor(lantern(), false)).not.toContain('claim');
 	});
 
+	it('never offers to complete an unclaimed treat — that would skip paying for it', () => {
+		// Completing a waiting treat bypasses claimTreat, so the affordability guard
+		// never runs and the price is still deducted: a free treat and a negative balance.
+		expect(actionsFor(lantern(), true)).not.toContain('complete');
+		expect(actionsFor(lantern(), false)).not.toContain('complete');
+	});
+
+	it('offers to complete a treat once it has been claimed', () => {
+		const claimed = task({ treatCost: 5, status: 'open' });
+		expect(actionsFor(claimed, false)).toContain('complete');
+	});
+
 	it('never offers release on a lantern — a treat is bought, not let out', () => {
 		expect(actionsFor(lantern(), true)).not.toContain('release');
 		expect(actionsFor(lantern(), false)).not.toContain('release');
@@ -128,5 +140,15 @@ describe('describeCondition', () => {
 
 	it('reports a claimed treat as claimed rather than priced', () => {
 		expect(describeCondition(task({ treatCost: 5, status: 'open' }))).toBe('Claimed');
+	});
+
+	it('says nothing about waiting once the task is done', () => {
+		// A finished task listed under Done reading "Waiting until 15:00" is a
+		// contradiction on screen.
+		const wasTimed = task({ status: 'done', condition: { kind: 'time', at: '15:00' } });
+		const wasDependent = task({ status: 'done', condition: { kind: 'task', taskId: 'dep' } });
+
+		expect(describeCondition(wasTimed)).toBeNull();
+		expect(describeCondition(wasDependent)).toBeNull();
 	});
 });

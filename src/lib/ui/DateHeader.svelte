@@ -103,7 +103,10 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
-		padding: 0.75rem 1rem;
+		/* Inset past the corner glass buttons (menu and settings), which are fixed at
+		   1rem and 2.6rem wide. Without this they sit on top of the day arrows and
+		   swallow the clicks, so the date cannot be changed at all. */
+		padding: 0.75rem 4.25rem;
 		padding-top: max(0.75rem, env(safe-area-inset-top));
 		color: #fff;
 		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);

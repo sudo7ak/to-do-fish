@@ -14,8 +14,21 @@ import type { Palette } from './palette';
 
 export type Size = { w: number; h: number };
 
-/** Height of the wavy surface band, in CSS pixels. */
-const SURFACE_HEIGHT = 18;
+/**
+ * Where the water surface sits, in CSS pixels from the top.
+ *
+ * Deep enough to clear the date header, because the lanterns rest *on* this line and
+ * would otherwise be drawn behind the chrome and clipped by the top of the canvas.
+ * Exported so `creatures.ts` floats them on the same line this file draws — two
+ * numbers would drift apart the first time either changed.
+ */
+export const WATERLINE = 128;
+
+/** Amplitude of the surface wave, so callers can sit something on the moving line. */
+export function surfaceOffset(x: number, time: number): number {
+	const t = time / 1000;
+	return Math.sin(x / 90 + t * 0.9) * 5 + Math.sin(x / 37 - t * 1.4) * 2.5;
+}
 
 /** Deterministic pseudo-random in [0, 1) for element `i`. Same tank on every reload. */
 function noise(i: number, salt = 0): number {
@@ -47,20 +60,23 @@ export function drawSurface(
 	colors: Palette,
 	time: number
 ): void {
-	const t = time / 1000;
-	const waveAt = (x: number) =>
-		SURFACE_HEIGHT + Math.sin(x / 90 + t * 0.9) * 5 + Math.sin(x / 37 - t * 1.4) * 2.5;
+	const waveAt = (x: number) => WATERLINE + surfaceOffset(x, time);
 
-	// Body of the surface band.
+	// The bright band is a shallow lip just above the wave, NOT a fill from the top of
+	// the canvas: the tank is full-bleed water, and filling to y=0 turns the whole
+	// upper screen into a milky slab once the waterline sits deep enough to clear the
+	// header.
+	const lip = 26;
+
 	ctx.beginPath();
-	ctx.moveTo(0, 0);
+	ctx.moveTo(0, WATERLINE - lip);
 	for (let x = 0; x <= size.w; x += 4) ctx.lineTo(x, waveAt(x));
-	ctx.lineTo(size.w, 0);
+	ctx.lineTo(size.w, WATERLINE - lip);
 	ctx.closePath();
 
-	const band = ctx.createLinearGradient(0, 0, 0, SURFACE_HEIGHT + 8);
-	band.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
-	band.addColorStop(1, 'rgba(255, 255, 255, 0.08)');
+	const band = ctx.createLinearGradient(0, WATERLINE - lip, 0, WATERLINE + 6);
+	band.addColorStop(0, 'rgba(255, 255, 255, 0)');
+	band.addColorStop(1, 'rgba(255, 255, 255, 0.22)');
 	ctx.fillStyle = band;
 	ctx.fill();
 
@@ -115,10 +131,11 @@ export function drawCaustics(
 
 	// Rippling caustic net across the upper water, the moving lace you get under a
 	// real surface.
-	ctx.strokeStyle = `rgba(255, 255, 255, ${0.16 * strength})`;
-	ctx.lineWidth = 2;
-	for (let row = 0; row < 5; row++) {
-		const y = 40 + row * 34;
+	ctx.strokeStyle = `rgba(255, 255, 255, ${0.09 * strength})`;
+	ctx.lineWidth = 1.5;
+	for (let row = 0; row < 4; row++) {
+		// Below the surface: caustics are light refracted *through* the waterline.
+		const y = WATERLINE + 26 + row * 34;
 		ctx.beginPath();
 		for (let x = 0; x <= size.w; x += 6) {
 			const wave = Math.sin(x / 45 + t * 1.1 + row) * 6 + Math.sin(x / 19 - t * 0.7) * 3;
@@ -214,15 +231,19 @@ function drawPlantLayer(
 	for (let i = 0; i < blades; i++) {
 		const jitter = noise(i, opts.salt);
 		const x = (i / blades) * size.w + jitter * 18;
-		const height = size.h * (0.14 + jitter * 0.22) * opts.scale;
+		// Planting is scenery, not the subject: tall enough to frame the bed, never so
+		// tall it competes with the fish for the lower third of the tank.
+		const height = size.h * (0.07 + jitter * 0.11) * opts.scale;
 		const sway = Math.sin(t * 0.7 + i) * (7 + jitter * 7);
 
-		if (jitter > 0.62) {
-			// Broad-leaf: a tapered blade with a midrib.
+		if (jitter > 0.38) {
+			// Broad-leaf: a tapered blade with a midrib. Widened, because at 8px across
+			// it was indistinguishable from the grass and the bed read as spikes.
+			const width = (4 + jitter * 4) * opts.scale;
 			ctx.beginPath();
-			ctx.moveTo(x - 4 * opts.scale, base);
-			ctx.quadraticCurveTo(x + sway * 0.5 - 6, base - height * 0.6, x + sway, base - height);
-			ctx.quadraticCurveTo(x + sway * 0.5 + 6, base - height * 0.6, x + 4 * opts.scale, base);
+			ctx.moveTo(x - width, base);
+			ctx.quadraticCurveTo(x + sway * 0.5 - width * 1.1, base - height * 0.55, x + sway, base - height);
+			ctx.quadraticCurveTo(x + sway * 0.5 + width * 1.1, base - height * 0.55, x + width, base);
 			ctx.closePath();
 			ctx.fill();
 
@@ -257,7 +278,7 @@ export function drawMotes(
 	const t = time / 1000;
 
 	ctx.save();
-	for (let i = 0; i < 40; i++) {
+	for (let i = 0; i < 18; i++) {
 		const speed = 4 + noise(i, 2) * 10;
 		const x = (noise(i) * size.w + Math.sin(t * 0.2 + i) * 20) % size.w;
 		// Motes rise slowly and wrap, so the field never empties.
@@ -277,11 +298,13 @@ export function drawMotes(
  * of the tank forward, which is where the fish are.
  */
 export function drawDepth(ctx: CanvasRenderingContext2D, size: Size, colors: Palette): void {
-	const haze = ctx.createLinearGradient(0, size.h * 0.55, 0, size.h);
+	// Light touch: haze and vignette are there to seat the fish in depth, not to grey
+	// the tank down. Stacked at full strength they read as dirt on the glass.
+	const haze = ctx.createLinearGradient(0, size.h * 0.62, 0, size.h);
 	haze.addColorStop(0, 'rgba(0, 0, 0, 0)');
-	haze.addColorStop(1, withAlpha(colors.waterBottom, 0.55));
+	haze.addColorStop(1, withAlpha(colors.waterBottom, 0.3));
 	ctx.fillStyle = haze;
-	ctx.fillRect(0, size.h * 0.55, size.w, size.h * 0.45);
+	ctx.fillRect(0, size.h * 0.62, size.w, size.h * 0.38);
 
 	const vignette = ctx.createRadialGradient(
 		size.w / 2,
@@ -292,7 +315,7 @@ export function drawDepth(ctx: CanvasRenderingContext2D, size: Size, colors: Pal
 		Math.max(size.w, size.h) * 0.75
 	);
 	vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-	vignette.addColorStop(1, 'rgba(3, 32, 48, 0.35)');
+	vignette.addColorStop(1, 'rgba(3, 32, 48, 0.18)');
 	ctx.fillStyle = vignette;
 	ctx.fillRect(0, 0, size.w, size.h);
 }

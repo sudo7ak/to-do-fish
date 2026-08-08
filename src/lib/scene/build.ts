@@ -13,7 +13,7 @@ import type { Creature, CreatureKind, Scene } from './types';
  */
 
 /** Beyond this many lanterns, the remainder collapses into one overflow lantern. */
-export const MAX_VISIBLE_LANTERNS = 4;
+export const MAX_VISIBLE_TREATS = 4;
 
 /** Depth of a bubble about to fire, and of one still a week away. 0 = waterline, 1 = floor. */
 const DEPTH_IMMINENT = 0.2;
@@ -26,7 +26,7 @@ const TAP_RADIUS: Record<CreatureKind, number> = {
 	bubble: 26,
 	ghost: 24,
 	koi: 34,
-	lantern: 30,
+	treat: 30,
 	pearl: 14
 };
 
@@ -39,9 +39,18 @@ export function buildScene(tasks: Task[], koi: KoiRecord[], date: string, now: n
 
 	const balance = pearlBalance(live);
 
+	/**
+	 * The spec's "that day's ghosts merge into one golden koi" is already satisfied by
+	 * ghosts being date-scoped: on every later date you see the koi and none of that
+	 * day's ghosts, because ghosts only ever appear on their own date.
+	 *
+	 * Deleting the ghosts on the day itself was tried and was wrong — finishing
+	 * everything emptied the tank, so the reward for clearing a day was watching your
+	 * work disappear.
+	 */
 	const creatures: Creature[] = [
 		...inWater.map((task) => toCreature(task, live, now)),
-		...lanterns(waitingTreats, balance),
+		...treats(waitingTreats, balance),
 		...pearls(balance),
 		// A koi swims through every date from the day it was earned onward.
 		...koi.filter((record) => record.date <= date).map(toKoi)
@@ -68,7 +77,8 @@ function toCreature(task: Task, live: Task[], now: number): Creature {
 	}
 
 	// Open: a plain task, a released bubble, or a claimed treat swimming as an amber fish.
-	return base(task, 'fish', 0.5);
+	const fish = base(task, 'fish', 0.5);
+	return task.treatCost !== undefined ? { ...fish, claimed: true, cost: task.treatCost } : fish;
 }
 
 /**
@@ -99,10 +109,10 @@ function triggerMoment(task: Task): number | undefined {
 	return undefined;
 }
 
-function lanterns(waitingTreats: Task[], balance: number): Creature[] {
-	const visible = waitingTreats.slice(0, MAX_VISIBLE_LANTERNS).map(
+function treats(waitingTreats: Task[], balance: number): Creature[] {
+	const visible = waitingTreats.slice(0, MAX_VISIBLE_TREATS).map(
 		(task): Creature => ({
-			...base(task, 'lantern', 0),
+			...base(task, 'treat', 0),
 			// Affordability against the same balance the scene reports, rather than
 			// recomputing it per lantern — this runs every frame.
 			locked: balance < task.treatCost!,
@@ -118,12 +128,12 @@ function lanterns(waitingTreats: Task[], balance: number): Creature[] {
 	return [
 		...visible,
 		{
-			id: 'lantern-overflow',
-			kind: 'lantern',
+			id: 'treat-overflow',
+			kind: 'treat',
 			label: `+${hidden} more`,
 			depth: 0,
 			locked: true,
-			tapRadius: TAP_RADIUS.lantern
+			tapRadius: TAP_RADIUS.treat
 		}
 	];
 }

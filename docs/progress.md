@@ -53,6 +53,139 @@ fish variety; `+page.svelte` now also calls `drawForeground` after the creatures
 - **Verified: 340 tests, clean typecheck and build, `render/` still imports nothing
   outside itself. NOT verified by eye — Chrome extension still not connected.**
 
+## E2E suite — `npm run e2e` (`scripts/e2e.mjs`)
+
+50 checks driven through the real UI (Playwright), covering every v1 mechanic: all five
+task kinds, ULID ids, pearl arithmetic, claim/affordability refusals, the ticker
+(timed release, dependency release, free-text never firing), cycle rejection with a
+jargon-free message, koi award and non-revocation, date navigation and moving tasks,
+list bulk move/soft-delete, both environments, reload persistence, the storage-failure
+banner (via a thrown `localStorage.setItem`), and tank tap-to-complete. Run the dev
+server first. **Two real bugs it caught immediately:**
+
+- **The edit sheet opened *behind* the list view.** Nothing set `z-index`, so DOM order
+  decided and `ListView` (declared last) covered the sheets — Edit from the list was
+  completely unusable. There is now an explicit ladder: list 10, sheets 20/21,
+  banner 30.
+- **The corner glass buttons sat on top of the date arrows.** Menu/settings are fixed
+  at `1rem` and 2.6rem wide, directly over the header arrows, so they swallowed the
+  clicks and the date could not be changed. Header is now inset `4.25rem`.
+
+## Three visibility bugs (reported from use, reproduced in Playwright)
+
+1. **Pearls were invisible.** They rested on the sand, where the add-pill and the
+   planting both sit — balance said 3, you could see one. Now lifted to
+   `PEARL_LIFT = 96` above the floor, nestled in the plant tops. A test sweeps 40
+   pearls and asserts none lands in the bottom 80px.
+2. **Finishing the day emptied the tank.** My earlier ghost→koi merge deleted the
+   day's ghosts the moment it cleared, so the reward for finishing was watching your
+   work vanish. **Reverted.** The spec's "ghosts merge into one koi" is already
+   satisfied by ghosts being date-scoped: on every *later* date you see the koi and
+   none of that day's ghosts, without deleting anything on the day itself.
+3. **A claimed treat turned into an ordinary fish**, so buying a guilty pleasure
+   looked like it deleted it. `Creature.claimed` is now set by `buildScene`, and the
+   renderer draws a claimed treat as the exotic fish at 0.72 scale — recognisably the
+   thing you bought, now swimming in the shoal.
+
+Ghosts also went from 0.4 alpha hairline to 0.62 with a 0.16 body wash: at the old
+value completing a task looked like deleting it.
+
+## Treat-completion bug (found from a user screenshot)
+
+**An unclaimed treat could be marked Done, skipping payment.** `actionsFor` pushed
+`complete` for any non-done task, so both the tank sheet and the list offered "Done"
+on a waiting treat. That path calls `completeTask`, never `claimTreat` — so the
+affordability guard never ran, while `pearlBalance` still counted the price as spent
+(status left `waiting`). Result: a treat taken for free *and* a balance that could go
+negative. This is what made pearls appear stuck: the reporter's "Do homework" was a
+treat, and its price was being deducted.
+
+Fixes:
+- `actionsFor` no longer offers `complete` for an unclaimed treat — claim it first.
+- **ListView now offers `Claim`** (and "Need N more" when short). It previously had no
+  way to buy a treat at all, so keyboard users could not use the mechanic — which
+  broke the promise that the list is a first-class second view of the same actions.
+  It now renders straight from `actionsFor`, so the two views cannot drift.
+- `describeCondition` returns null for done tasks; finished items were showing
+  "Waiting until 15:00" under a struck-through title.
+
+`onClaim` added to ListView's props and wired in `+page.svelte`.
+
+## Swim model + treat fish
+
+**Treats are exotic fish, not lanterns.** Creature kind renamed `lantern` → `treat`
+throughout (`scene/types`, `scene/build`, `render/pick`, `render/creatures`, tests;
+`MAX_VISIBLE_LANTERNS` → `MAX_VISIBLE_TREATS`). Affordable = iridescent
+magenta/gold/violet, sail fins with clipped rays, veil tail, halo, sparkles; locked =
+same fish muted to violet-grey at 0.62 alpha, no halo, no sparkles — *not yet*, not
+dead. Cruises below the waterline, clear of the shoal. `palette.lantern` keeps its
+name: it is a spec colour token.
+
+**Swim model** in `place()`:
+
+- **Warped clock, not a warped path.** `warp = t + sin(0.37t)·0.9 + sin(0.13t)·1.6`,
+  then the usual sinusoid is traversed against `warp`. Pace swings ~0.46×–1.54×
+  (burst and glide). **`warp` must stay monotonic** — its derivative bottoms out near
+  0.46; push the coefficients up and it goes negative, and fish twitch backwards
+  mid-stroke. Because it is monotonic, `flip` is still just `cos(swim) < 0`.
+- **Vertical wander** on a different frequency from the horizontal sweep, giving a
+  lazy Lissajous loop instead of a rail. **Bubbles are exempt** — their depth encodes
+  time-until-trigger, so wandering it would be lying to the user.
+- **Per-fish lane centre** as well as amplitude and pace: sweeping everything about
+  the tank's midpoint made them all cross the centre together and bunch.
+
+Tests pin: vertical travel, pace variation (fastest stretch > 3× slowest), two fish
+taking different paths, bubbles holding depth, facing both ways, and a 400-sample
+in-bounds sweep per kind (the wander has room to push a fish through the glass at
+some phase — three spot-checks would not have caught it).
+
+## Second art pass — with actual eyes on it
+
+Added `playwright` (dev) + `npm run screenshot` (`scripts/screenshot.mjs`): seeds a
+realistic tank into localStorage, screenshots at 420×860 @2x. **Use this before
+touching anything visual** — the first art pass was done blind and shipped four bugs
+that a single screenshot would have caught immediately.
+
+What the screenshots found:
+
+- **Fins and tails were larger than the bodies** and detached (`flow` 1.7–2.0 as a
+  multiplier of body length). `flow` is now a *fraction* (0.26–0.45), tails root on a
+  short vertical edge rather than a single point, and fin rays were added.
+- **Every fish sat on one line.** `(seed >> 7)` discarded exactly the low bits that
+  differ between sibling ids like `t-aaa`/`t-bbb`.
+- **Only two species ever appeared.** `hash % 6` with a constant id stride of 993
+  (`993 % 6 == 3`) alternates between two values. Both now route through `mix32()`, an
+  avalanche mixer — **never use raw `hash % n` or `hash >> k` on sequential ids here.**
+- Bubble trail drew off the nose instead of behind the tail.
+- Surface band filled from y=0, so raising the waterline to 128 turned the whole top
+  of the screen into a milky slab; it is now a 26px lip above the wave.
+- Lanterns read as tin cans → bellied paper silhouette, curved ribs, finial, inner glow.
+- Pearls piled behind the add-pill → spread along the bed and lifted clear.
+- Plants were uniform spikes → broad leaves at ~4–8px, heights cut to 7–18% of tank.
+
+Haze/vignette/motes/caustics were all dialled back (they stacked into grey murk).
+
+## Lantern placement fix (post-art-pass)
+
+Two real bugs in where treats sat, both invisible to the type system:
+
+- **Lanterns were drawn behind the date header.** `y = TOP_MARGIN * 0.6` ≈ 17px, so the
+  body spanned y≈1–33 — under the chrome and clipped by the canvas top.
+- **All lanterns crowded the left third.** `laneX(seed, size, creature.depth)` with the
+  lantern's `depth: 0` hit `Math.max(spread, 0.4)`, pinning x to `[0.1w, 0.42w]`.
+
+Fixes: `water.ts` now exports **`WATERLINE = 128`** and `surfaceOffset(x, time)`, and
+`creatures.ts` imports both — the lanterns float on the *same* line the surface draws
+and bob with it, rather than hovering at a fixed height over a moving wave. Swimmers'
+`TOP_MARGIN` is now `WATERLINE + 26`, so nothing swims above the surface. Lantern x
+uses golden-ratio spacing (`spreadX`), which spreads four or five hashes evenly where
+`hash % w` clumps.
+
+Five tests pin it: on the waterline, clear of the header, spread across the width,
+bobbing over time, swimmers below the line. **128 clears a ~70px desktop header
+comfortably; on a notched phone (`safe-area-inset-top` ≈ 47px) the header is ~97px and
+the clearance is only a few pixels — if it collides there, raise `WATERLINE`.**
+
 ## Ownership deviations
 
 - **S1 edited `vite.config.ts`** (S0's file) to remove `passWithNoTests: true`, the

@@ -9,7 +9,7 @@
  * data and never a source of it.
  */
 
-export type CreatureKind = 'fish' | 'bubble' | 'ghost' | 'koi' | 'lantern' | 'pearl';
+export type CreatureKind = 'fish' | 'bubble' | 'ghost' | 'koi' | 'treat' | 'pearl';
 
 export type Creature = {
 	/** Task id, or a synthetic id for pearls and koi, which have no task of their own. */
@@ -29,8 +29,14 @@ export type Creature = {
 	depth: number;
 	/** Free-text condition, or one whose trigger target is gone. Drawn as a dashed outline. */
 	dashed?: boolean;
-	/** Lantern the current pearl balance cannot afford. Drawn dim. */
+	/** Treat the current pearl balance cannot afford. Drawn dim. */
 	locked?: boolean;
+	/**
+	 * A treat that has been paid for and is now swimming. Drawn as the amber prize
+	 * fish rather than an ordinary one — otherwise buying a guilty pleasure looks
+	 * like it deleted the thing you just bought.
+	 */
+	claimed?: boolean;
 	/** Lantern price in pearls. */
 	cost?: number;
 	/** Pointer picking radius — canvas offers no hit-testing, so each creature carries its own. */

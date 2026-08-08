@@ -1,6 +1,6 @@
 import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
-import type { Size } from './water';
+import { WATERLINE, surfaceOffset, type Size } from './water';
 
 /**
  * Drawing one creature at a time.
@@ -17,8 +17,14 @@ import type { Size } from './water';
 export type Placement = { x: number; y: number; flip: boolean };
 
 /** Water column available to swimmers, leaving the surface band and the planting alone. */
-const TOP_MARGIN = 28;
+const TOP_MARGIN = WATERLINE + 26;
 const BOTTOM_MARGIN = 40;
+
+/** How far below the waterline the treat fish cruises. */
+const TREAT_DRAFT = 34;
+
+/** Clearance above the tank floor for pearls, keeping them out from behind the add-pill. */
+const PEARL_LIFT = 96;
 
 // ----------------------------------------------------------------- species
 
@@ -33,7 +39,10 @@ type SpeciesSpec = {
 	tail: 'fan' | 'forked' | 'veil' | 'round';
 	pattern: 'bands' | 'stripe' | 'spots' | 'none';
 	patternColor: string;
-	/** Fin size multiplier — a betta's veils are the point of a betta. */
+	/**
+	 * Fin size, as a fraction of body length. Kept well under 1: fins larger than the
+	 * body stop reading as fins and start reading as debris floating alongside it.
+	 */
 	flow: number;
 };
 
@@ -44,71 +53,74 @@ type SpeciesSpec = {
  */
 const SPECIES: Record<Species, SpeciesSpec> = {
 	clown: {
-		length: 30,
-		height: 17,
-		body: ['#FF8A3D', '#E8543C'],
-		fin: '#FFB067',
+		length: 42,
+		height: 24,
+		body: ['#FF9A4D', '#E85A2C'],
+		fin: '#FFB877',
 		tail: 'round',
 		pattern: 'bands',
-		patternColor: '#FFF6E9',
-		flow: 1
+		patternColor: '#FFF4E4',
+		flow: 0.3
 	},
 	tang: {
-		length: 32,
-		height: 21,
-		body: ['#3FA9F5', '#1B5FC1'],
+		length: 44,
+		height: 28,
+		body: ['#49B6F7', '#1B5FC1'],
 		fin: '#FFD84D',
 		tail: 'forked',
 		pattern: 'none',
 		patternColor: '#0E3E86',
-		flow: 1
+		flow: 0.3
 	},
 	angel: {
-		length: 26,
-		height: 26,
-		body: ['#FFE1A8', '#F0A93C'],
-		fin: '#FFEFC9',
+		length: 36,
+		height: 32,
+		body: ['#FFE9BE', '#EFA63A'],
+		fin: '#FFF0D2',
 		tail: 'veil',
 		pattern: 'bands',
-		patternColor: '#3D2A18',
-		flow: 1.7
+		patternColor: '#6B4A22',
+		flow: 0.42
 	},
 	guppy: {
-		length: 22,
-		height: 13,
-		body: ['#8BE8FF', '#4A7BE8'],
-		fin: '#FF8FD0',
+		length: 34,
+		height: 19,
+		body: ['#93EBFF', '#4A7BE8'],
+		fin: '#FF93D2',
 		tail: 'fan',
 		pattern: 'spots',
 		patternColor: '#FFE066',
-		flow: 1.4
+		flow: 0.38
 	},
 	neon: {
-		length: 20,
-		height: 10,
-		body: ['#5FE6FF', '#1B7FD4'],
-		fin: '#BFF3FF',
+		length: 32,
+		height: 15,
+		body: ['#6BEAFF', '#1B7FD4'],
+		fin: '#CFF6FF',
 		tail: 'forked',
 		pattern: 'stripe',
 		patternColor: '#FF3B4E',
-		flow: 0.9
+		flow: 0.26
 	},
 	betta: {
-		length: 26,
-		height: 19,
-		body: ['#C86BFF', '#7A2BD1'],
-		fin: '#FF6FA8',
+		length: 36,
+		height: 24,
+		body: ['#CE7BFF', '#7A2BD1'],
+		fin: '#FF7FB4',
 		tail: 'veil',
 		pattern: 'none',
 		patternColor: '#4A1580',
-		flow: 2
+		flow: 0.45
 	}
 };
 
 const SPECIES_ORDER: Species[] = ['clown', 'tang', 'angel', 'guppy', 'neon', 'betta'];
 
 export function speciesFor(id: string): Species {
-	return SPECIES_ORDER[hash(id) % SPECIES_ORDER.length];
+	// Mixed, not `hash % n`: sequential ids step the raw hash by a constant, and when
+	// that stride shares a factor with the species count only a couple of species
+	// ever appear. A real tank has to look stocked.
+	return SPECIES_ORDER[Math.floor(mix32(hash(id)) * SPECIES_ORDER.length)];
 }
 
 // ---------------------------------------------------------------- placement
@@ -117,28 +129,86 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 	const seed = hash(creature.id);
 	const t = animate ? time / 1000 : 0;
 
-	// Lanterns rest on the waterline and pearls on the floor; neither swims.
-	if (creature.kind === 'lantern') {
-		return { x: laneX(seed, size, creature.depth), y: TOP_MARGIN * 0.6, flip: false };
+	// The treat fish cruises the surface lane and pearls rest on the floor.
+	if (creature.kind === 'treat') {
+		// A slow patrol just under the surface, wide of the swim area so it stays the
+		// thing your eye lands on rather than another fish in the shoal. Same warped
+		// clock as the shoal, so it saunters rather than tracking at a fixed rate.
+		const phase = mix32(seed ^ 0x77) * Math.PI * 2;
+		const cruise = (t + Math.sin(t * 0.29 + phase) * 1.2) * 0.1;
+
+		const x = spreadX(seed, size) + size.w * Math.sin(cruise) * 0.1;
+		const y =
+			WATERLINE +
+			surfaceOffset(x, t * 1000) +
+			TREAT_DRAFT +
+			Math.sin(cruise * 1.7 + phase) * 12;
+
+		return { x, y, flip: Math.cos(cruise) < 0 };
 	}
 	if (creature.kind === 'pearl') {
-		return { x: laneX(seed, size, 0.5), y: size.h - 12 - (seed % 7), flip: false };
+		// Well above the floor: the add-pill and the planting both sit along the
+		// bottom, and pearls resting on the sand were hidden behind them — the balance
+		// said 3 and you could see one. They nestle among the plant tops instead.
+		return {
+			x: size.w * (0.06 + mix32(seed) * 0.88),
+			y: size.h - PEARL_LIFT - mix32(seed ^ 0x5f5e) * 34,
+			flip: false
+		};
 	}
 
-	const speed = creature.kind === 'koi' ? 0.16 : creature.kind === 'ghost' ? 0.22 : 0.35;
-	const phase = seed % 1000;
+	const kindSpeed = creature.kind === 'koi' ? 0.5 : creature.kind === 'ghost' ? 0.62 : 1;
+	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
 
-	// A loose sinusoidal path: horizontal drift wrapping the tank, vertical bob
-	// around the resting depth the scene assigned.
-	const sweep = Math.sin(t * speed + phase);
-	const x = size.w * (0.5 + sweep * 0.42);
-	const bob = Math.sin(t * speed * 2.3 + phase) * 10;
+	// Per-fish tempo, so a tank of six does not move as one organism.
+	const pace = (0.17 + mix32(seed ^ 0x1f) * 0.2) * kindSpeed;
+
+	/**
+	 * Burst and glide, the way a real fish actually moves: warp the clock instead of
+	 * the path, so the same sinusoid is traversed quickly in places and slowly in
+	 * others. Kept strictly monotonic (the derivative bottoms out around 0.46 and
+	 * peaks near 1.54) — if it ever went negative the fish would twitch backwards
+	 * mid-stroke instead of easing.
+	 */
+	const warp = t + Math.sin(t * 0.37 + phase) * 0.9 + Math.sin(t * 0.13 + phase * 1.7) * 1.6;
+	const swim = warp * pace;
+
+	// Horizontal sweep. Each fish gets its own lane centre as well as its own
+	// amplitude — sweeping every one about the middle of the tank makes them all pass
+	// through the centre together and bunch there.
+	const centre = 0.5 + (mix32(seed ^ 0x5a) - 0.5) * 0.5;
+	const ampX = 0.2 + mix32(seed ^ 0x2b) * 0.12;
+	const across = Math.min(0.94, Math.max(0.06, centre + Math.sin(swim) * ampX));
+	const x = size.w * across;
 
 	const usable = Math.max(0, size.h - TOP_MARGIN - BOTTOM_MARGIN);
-	const y = TOP_MARGIN + creature.depth * usable + bob;
 
-	// Fish flip to face the way they are travelling: the derivative of the sweep.
-	const flip = Math.cos(t * speed + phase) < 0;
+	// Swimmers all share one resting depth from the scene, which lined them up in a
+	// single row like a conveyor. Scatter them within a band around it — depth still
+	// means what the scene said, it just is not a hairline.
+	// `seed >> 7` would drop exactly the low bits that differ between sibling ids, so
+	// every fish landed on the same line. Mix the seed properly first.
+	const isBubble = creature.kind === 'bubble';
+	const scatter = isBubble ? 0 : (mix32(seed) - 0.5) * 0.5;
+
+	/**
+	 * Vertical wander on a different frequency from the horizontal sweep, which turns
+	 * a flat rail into a lazy Lissajous loop — the fish climbs and dives as it
+	 * crosses. Bubbles are exempt: their depth is information (time until trigger),
+	 * so wandering it would be lying.
+	 */
+	const wanderRate = 0.55 + mix32(seed ^ 0x3c) * 0.6;
+	const ampY = isBubble ? 0 : 0.09 + mix32(seed ^ 0x4d) * 0.11;
+	const wander = Math.sin(swim * wanderRate + phase * 2.3) * ampY;
+
+	const depth = Math.min(0.97, Math.max(0.03, creature.depth + scatter + wander));
+	// A small fast bob on top of the slow wander, so it still looks alive when hovering.
+	const bob = Math.sin(t * 1.6 + phase) * (isBubble ? 2 : 3.5);
+	const y = TOP_MARGIN + depth * usable + bob;
+
+	// Face the way it is travelling. `warp` is monotonic, so the sign of the sweep's
+	// derivative is just the cosine.
+	const flip = Math.cos(swim) < 0;
 
 	return { x, y, flip };
 }
@@ -147,6 +217,16 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 function laneX(seed: number, size: Size, spread: number): number {
 	const jitter = (seed % 1000) / 1000;
 	return size.w * (0.1 + jitter * 0.8 * Math.max(spread, 0.4));
+}
+
+/**
+ * Golden-ratio spacing across the full width. Plain `hash % width` clumps badly at
+ * four or five items; multiplying by the golden ratio is the standard trick for
+ * spreading a small set of hashes evenly without knowing how many there are.
+ */
+function spreadX(seed: number, size: Size): number {
+	const position = ((seed % 1000) * 0.6180339887) % 1;
+	return size.w * (0.14 + position * 0.72);
 }
 
 // ------------------------------------------------------------------ drawing
@@ -163,7 +243,14 @@ export function drawCreature(
 
 	switch (creature.kind) {
 		case 'fish':
-			drawFish(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
+			// A bought treat keeps its exotic look, at a size that sits in the shoal.
+			// Turning it into an ordinary fish read as the prize vanishing on purchase.
+			if (creature.claimed) {
+				ctx.scale(0.72, 0.72);
+				drawTreatFish(ctx, { ...creature, locked: false }, at, time);
+			} else {
+				drawFish(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
+			}
 			break;
 		case 'ghost':
 			drawGhost(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
@@ -174,8 +261,8 @@ export function drawCreature(
 		case 'bubble':
 			drawBubble(ctx, creature, colors, time);
 			break;
-		case 'lantern':
-			drawLantern(ctx, creature, colors);
+		case 'treat':
+			drawTreatFish(ctx, creature, at, time);
 			break;
 		case 'pearl':
 			drawPearl(ctx, colors);
@@ -200,7 +287,7 @@ export function drawCreatures(
 		ghost: 2,
 		fish: 3,
 		koi: 4,
-		lantern: 5
+		treat: 5
 	};
 
 	for (const creature of [...creatures].sort((a, b) => order[a.kind] - order[b.kind])) {
@@ -259,6 +346,13 @@ function drawFish(
 	ctx.fillRect(-len, -hgt, len * 2, hgt * 2);
 	ctx.restore();
 
+	// Body outline, a shade darker. Without it the fish dissolves into the water at
+	// the edges instead of holding a silhouette.
+	bodyPath(ctx, len, hgt);
+	ctx.strokeStyle = withAlpha(spec.body[1], 0.55);
+	ctx.lineWidth = 1.2;
+	ctx.stroke();
+
 	// Gill arc.
 	ctx.beginPath();
 	ctx.moveTo(len * 0.16, -hgt * 0.45);
@@ -296,9 +390,16 @@ function drawGhost(
 	const { length: len, height: hgt } = spec;
 	const beat = Math.sin(time / 200 + seed);
 
-	ctx.globalAlpha = 0.4;
-	ctx.strokeStyle = withAlpha(spec.body[0], 0.9);
-	ctx.lineWidth = 1.6;
+	// A finished task should still be legible as one. At 0.4 the outline all but
+	// vanished against the water, so completing something looked like it deleted it.
+	ctx.globalAlpha = 0.62;
+	ctx.strokeStyle = withAlpha(spec.body[0], 0.95);
+	ctx.lineWidth = 2.2;
+
+	// A faint wash inside the outline, so the shape reads as a body rather than wire.
+	bodyPath(ctx, len, hgt);
+	ctx.fillStyle = withAlpha(spec.body[0], 0.16);
+	ctx.fill();
 
 	// Tail, outlined.
 	ctx.beginPath();
@@ -325,55 +426,84 @@ function drawGhost(
 	ctx.globalAlpha = 1;
 }
 
+/**
+ * The caudal fin, rooted exactly at the tail of the body so it reads as attached.
+ * Sized off `flow` as a fraction of body length — never longer than the fish.
+ */
 function drawTail(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number): void {
 	const { length: len, height: hgt, flow } = spec;
-	const root = -len / 2;
-	const sway = beat * 5 * flow;
+	const root = -len / 2 + 1;
+	const reach = len * flow;
+	const spread = hgt * (0.45 + flow * 0.7);
+	const sway = beat * 4;
 
-	ctx.fillStyle = withAlpha(spec.fin, 0.9);
+	// The root is a short vertical edge on the body, not a single point — a tail
+	// pinched to one vertex reads as a leaf stuck on the back.
+	const rootHalf = hgt * 0.22;
+
+	ctx.fillStyle = withAlpha(spec.fin, 0.8);
 	ctx.beginPath();
-	ctx.moveTo(root, 0);
+	ctx.moveTo(root, -rootHalf);
 
 	switch (spec.tail) {
 		case 'forked':
-			ctx.lineTo(root - len * 0.5, -hgt * 0.9 + sway);
-			ctx.quadraticCurveTo(root - len * 0.25, 0, root - len * 0.5, hgt * 0.9 + sway);
+			ctx.lineTo(root - reach, -spread + sway);
+			ctx.quadraticCurveTo(root - reach * 0.5, 0, root - reach, spread + sway);
+			ctx.lineTo(root, rootHalf);
 			break;
 		case 'fan':
-			ctx.quadraticCurveTo(root - len * 0.7, -hgt * 1.3 + sway, root - len * 0.75, sway * 0.6);
-			ctx.quadraticCurveTo(root - len * 0.7, hgt * 1.3 + sway, root, 0);
+			ctx.quadraticCurveTo(root - reach * 0.8, -spread * 0.95 + sway, root - reach, -spread * 0.5 + sway);
+			ctx.quadraticCurveTo(root - reach * 1.1, sway, root - reach, spread * 0.5 + sway);
+			ctx.quadraticCurveTo(root - reach * 0.8, spread * 0.95 + sway, root, rootHalf);
 			break;
 		case 'veil':
-			ctx.quadraticCurveTo(root - len * 0.9, -hgt * 1.1 + sway, root - len * 1.1, hgt * 0.2 + sway);
-			ctx.quadraticCurveTo(root - len * 0.6, hgt * 1.1 + sway, root, 0);
+			ctx.quadraticCurveTo(root - reach * 0.7, -spread * 0.85 + sway, root - reach * 1.1, -spread * 0.1 + sway * 1.6);
+			ctx.quadraticCurveTo(root - reach * 0.9, spread * 0.7 + sway * 1.4, root - reach * 0.45, spread * 0.55 + sway);
+			ctx.quadraticCurveTo(root - reach * 0.3, spread * 0.3, root, rootHalf);
 			break;
 		case 'round':
-			ctx.quadraticCurveTo(root - len * 0.4, -hgt * 0.8 + sway, root - len * 0.45, sway);
-			ctx.quadraticCurveTo(root - len * 0.4, hgt * 0.8 + sway, root, 0);
+			ctx.quadraticCurveTo(root - reach * 0.9, -spread * 0.9 + sway, root - reach, sway);
+			ctx.quadraticCurveTo(root - reach * 0.9, spread * 0.9 + sway, root, rootHalf);
 			break;
 	}
 
 	ctx.closePath();
 	ctx.fill();
+
+	// Fin rays, fanning from the root. Cheap, and it stops the tail reading as a
+	// flat paper cut-out.
+	ctx.strokeStyle = withAlpha(spec.body[1], 0.28);
+	ctx.lineWidth = 0.9;
+	for (const f of [-0.6, 0, 0.6]) {
+		ctx.beginPath();
+		ctx.moveTo(root, 0);
+		ctx.lineTo(root - reach * 0.85, spread * f + sway);
+		ctx.stroke();
+	}
 }
 
+/**
+ * Dorsal and anal fins, drawn as low ridges sitting *on* the body outline rather
+ * than as separate shapes hovering near it.
+ */
 function drawFins(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number): void {
 	const { length: len, height: hgt, flow } = spec;
-	ctx.fillStyle = withAlpha(spec.fin, 0.8);
+	ctx.fillStyle = withAlpha(spec.fin, 0.85);
 
-	// Dorsal.
+	// Dorsal: rises from the shoulder, peaks mid-back, settles at the tail root.
+	const peak = hgt * (0.55 + flow * 0.9);
 	ctx.beginPath();
-	ctx.moveTo(len * 0.22, -hgt * 0.8);
-	ctx.quadraticCurveTo(len * 0.02, -hgt * (0.9 + 0.55 * flow) + beat, -len * 0.34, -hgt * 0.75);
-	ctx.quadraticCurveTo(-len * 0.1, -hgt * 0.6, len * 0.22, -hgt * 0.8);
+	ctx.moveTo(len * 0.2, -hgt * 0.62);
+	ctx.quadraticCurveTo(len * 0.02, -peak + beat * 1.5, -len * 0.3, -hgt * 0.5);
+	ctx.quadraticCurveTo(-len * 0.05, -hgt * 0.72, len * 0.2, -hgt * 0.62);
 	ctx.closePath();
 	ctx.fill();
 
-	// Anal fin, mirroring below.
+	// Anal fin, shallower, mirroring below.
 	ctx.beginPath();
-	ctx.moveTo(-len * 0.05, hgt * 0.8);
-	ctx.quadraticCurveTo(-len * 0.2, hgt * (0.9 + 0.4 * flow) - beat, -len * 0.4, hgt * 0.7);
-	ctx.quadraticCurveTo(-len * 0.22, hgt * 0.6, -len * 0.05, hgt * 0.8);
+	ctx.moveTo(-len * 0.02, hgt * 0.66);
+	ctx.quadraticCurveTo(-len * 0.18, hgt * (0.78 + flow * 0.5) - beat, -len * 0.36, hgt * 0.5);
+	ctx.quadraticCurveTo(-len * 0.16, hgt * 0.66, -len * 0.02, hgt * 0.66);
 	ctx.closePath();
 	ctx.fill();
 }
@@ -390,16 +520,28 @@ function drawPattern(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, seed: num
 	ctx.fillStyle = spec.patternColor;
 
 	if (spec.pattern === 'bands') {
+		// Slim, slightly raked bands. Thick bars turn a fish into a bee.
+		ctx.globalAlpha = 0.85;
 		for (let i = 0; i < 3; i++) {
-			const x = len * 0.3 - i * len * 0.28;
+			const x = len * 0.26 - i * len * 0.26;
 			ctx.save();
 			ctx.translate(x, 0);
-			ctx.rotate(-0.18);
-			ctx.fillRect(-len * 0.055, -hgt * 1.2, len * 0.11, hgt * 2.4);
+			ctx.rotate(-0.14);
+			ctx.beginPath();
+			ctx.moveTo(-len * 0.035, -hgt);
+			ctx.quadraticCurveTo(0, 0, -len * 0.035, hgt);
+			ctx.lineTo(len * 0.035, hgt);
+			ctx.quadraticCurveTo(len * 0.012, 0, len * 0.035, -hgt);
+			ctx.closePath();
+			ctx.fill();
 			ctx.restore();
 		}
+		ctx.globalAlpha = 1;
 	} else if (spec.pattern === 'stripe') {
-		ctx.fillRect(-len, -hgt * 0.12, len * 2, hgt * 0.3);
+		// Neon: a bright lateral line rather than a slab across the whole flank.
+		ctx.globalAlpha = 0.9;
+		ctx.fillRect(-len * 0.45, -hgt * 0.06, len * 0.85, hgt * 0.18);
+		ctx.globalAlpha = 1;
 	} else if (spec.pattern === 'spots') {
 		for (let i = 0; i < 5; i++) {
 			const jitter = ((seed >> (i * 3)) % 100) / 100;
@@ -440,9 +582,10 @@ function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, le
 
 	for (let i = 0; i < 3; i++) {
 		const cycle = (((time / 900 + seed + i * 0.33) % 1) + 1) % 1;
-		ctx.globalAlpha = 0.5 * (1 - cycle);
+		ctx.globalAlpha = 0.45 * (1 - cycle);
 		ctx.beginPath();
-		ctx.arc(len * 0.55 + cycle * 12, -cycle * 20, 1.4 + i * 0.5, 0, Math.PI * 2);
+		// Behind the tail, not off the nose: a fish does not breathe backwards.
+		ctx.arc(-len * 0.75 - cycle * 10, -cycle * 20, 1.4 + i * 0.5, 0, Math.PI * 2);
 		ctx.stroke();
 	}
 
@@ -559,53 +702,155 @@ function drawBubble(
 	void colors;
 }
 
-function drawLantern(ctx: CanvasRenderingContext2D, creature: Creature, colors: Palette): void {
-	const lit = !creature.locked;
-	ctx.globalAlpha = lit ? 1 : 0.4;
+function drawTreatFish(
+	ctx: CanvasRenderingContext2D,
+	creature: Creature,
+	at: Placement,
+	time: number
+): void {
+	const affordable = !creature.locked;
+	const seed = hash(creature.id);
+	const len = 58;
+	const hgt = 40;
+	const beat = Math.sin(time / 220 + seed);
 
-	// Glow, only once it can be afforded.
-	if (lit) {
-		const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 40);
-		glow.addColorStop(0, 'rgba(255, 214, 140, 0.6)');
-		glow.addColorStop(1, 'rgba(255, 196, 107, 0)');
-		ctx.fillStyle = glow;
+	// Deliberately the largest and most ornate creature in the tank. A guilty
+	// pleasure has to be the thing your eye lands on first, or the whole mechanic
+	// is invisible — it is the only creature you buy rather than do.
+	if (affordable) {
+		const halo = ctx.createRadialGradient(0, 0, 4, 0, 0, len);
+		halo.addColorStop(0, 'rgba(255, 226, 150, 0.45)');
+		halo.addColorStop(0.6, 'rgba(255, 140, 220, 0.16)');
+		halo.addColorStop(1, 'rgba(255, 196, 107, 0)');
+		ctx.fillStyle = halo;
 		ctx.beginPath();
-		ctx.arc(0, 0, 40, 0, Math.PI * 2);
+		ctx.arc(0, 0, len, 0, Math.PI * 2);
 		ctx.fill();
 	}
 
-	// Paper body.
-	const body = ctx.createLinearGradient(-12, 0, 12, 0);
-	body.addColorStop(0, lit ? '#FFB347' : '#B9A88C');
-	body.addColorStop(0.45, lit ? '#FFE6A8' : '#D8CCB4');
-	body.addColorStop(1, lit ? '#F0932B' : '#A89778');
+	// Out of reach: drained towards the water, so it reads as a promise rather than
+	// a fish you already own. Never invisible — you should still want it.
+	ctx.globalAlpha = affordable ? 1 : 0.62;
+	if (at.flip) ctx.scale(-1, 1);
 
-	ctx.beginPath();
-	ctx.moveTo(-11, -12);
-	ctx.quadraticCurveTo(-15, 0, -11, 13);
-	ctx.lineTo(11, 13);
-	ctx.quadraticCurveTo(15, 0, 11, -12);
-	ctx.closePath();
-	ctx.fillStyle = body;
-	ctx.fill();
-
-	// Ribs.
-	ctx.strokeStyle = 'rgba(120, 70, 20, 0.28)';
-	ctx.lineWidth = 0.9;
-	for (const y of [-5, 1, 7]) {
+	// Trailing filaments from the tail, drifting behind the beat.
+	ctx.strokeStyle = affordable ? 'rgba(255, 208, 120, 0.85)' : 'rgba(206, 190, 222, 0.65)';
+	ctx.lineWidth = 1.6;
+	for (const f of [-0.5, 0, 0.5]) {
 		ctx.beginPath();
-		ctx.moveTo(-12.5, y);
-		ctx.lineTo(12.5, y);
+		ctx.moveTo(-len * 0.42, hgt * 0.06 * f);
+		ctx.quadraticCurveTo(
+			-len * 0.75,
+			hgt * (0.35 * f) + beat * 5,
+			-len * 0.98,
+			hgt * (0.55 * f) + beat * 9
+		);
 		ctx.stroke();
 	}
 
-	// Cap and base.
-	ctx.fillStyle = 'rgba(60, 40, 25, 0.75)';
-	ctx.fillRect(-13, -16, 26, 4);
-	ctx.fillRect(-9, 13, 18, 3);
+	// Veil tail.
+	ctx.fillStyle = affordable ? 'rgba(255, 168, 214, 0.72)' : 'rgba(214, 190, 226, 0.45)';
+	ctx.beginPath();
+	ctx.moveTo(-len * 0.4, -hgt * 0.2);
+	ctx.quadraticCurveTo(-len * 0.68, -hgt * 0.5 + beat * 4, -len * 0.84, beat * 7);
+	ctx.quadraticCurveTo(-len * 0.66, hgt * 0.5 + beat * 5, -len * 0.4, hgt * 0.2);
+	ctx.closePath();
+	ctx.fill();
+
+	// Tall sail fins, above and below — the silhouette that says "not an ordinary fish".
+	const dorsal = () => {
+		ctx.beginPath();
+		ctx.moveTo(len * 0.24, -hgt * 0.46);
+		ctx.quadraticCurveTo(len * 0.02, -hgt * 0.92 + beat * 3, -len * 0.28, -hgt * 0.44);
+		ctx.quadraticCurveTo(-len * 0.04, -hgt * 0.56, len * 0.24, -hgt * 0.46);
+		ctx.closePath();
+	};
+	const anal = () => {
+		ctx.beginPath();
+		ctx.moveTo(len * 0.14, hgt * 0.46);
+		ctx.quadraticCurveTo(-len * 0.06, hgt * 0.82 - beat * 3, -len * 0.32, hgt * 0.42);
+		ctx.quadraticCurveTo(-len * 0.06, hgt * 0.54, len * 0.14, hgt * 0.46);
+		ctx.closePath();
+	};
+
+	ctx.fillStyle = affordable ? 'rgba(255, 190, 120, 0.8)' : 'rgba(206, 196, 224, 0.5)';
+	dorsal();
+	ctx.fill();
+	anal();
+	ctx.fill();
+
+	// Rays, clipped to each sail. Unclipped they shoot past the fin edges and read as
+	// scratches on the glass.
+	ctx.strokeStyle = affordable ? 'rgba(214, 120, 40, 0.35)' : 'rgba(150, 150, 180, 0.3)';
+	ctx.lineWidth = 0.9;
+	for (const [shape, dir] of [
+		[dorsal, -1],
+		[anal, 1]
+	] as const) {
+		ctx.save();
+		shape();
+		ctx.clip();
+		for (let i = 0; i < 5; i++) {
+			const rx = len * 0.2 - i * len * 0.11;
+			ctx.beginPath();
+			ctx.moveTo(rx, dir * hgt * 0.4);
+			ctx.lineTo(rx - len * 0.03, dir * hgt);
+			ctx.stroke();
+		}
+		ctx.restore();
+	}
+
+	// Iridescent body: magenta shoulder into gold into deep violet.
+	const body = ctx.createLinearGradient(0, -hgt * 0.4, 0, hgt * 0.4);
+	if (affordable) {
+		body.addColorStop(0, '#FF6FC7');
+		body.addColorStop(0.42, '#FFD166');
+		body.addColorStop(1, '#7A3BD1');
+	} else {
+		body.addColorStop(0, '#C7A8D8');
+		body.addColorStop(0.45, '#D9CBE4');
+		body.addColorStop(1, '#8E7CB0');
+	}
+
+	bodyPath(ctx, len * 0.86, hgt * 0.56);
+	ctx.fillStyle = body;
+	ctx.fill();
+
+	// Scale shimmer, clipped to the body.
+	ctx.save();
+	bodyPath(ctx, len * 0.86, hgt * 0.56);
+	ctx.clip();
+	ctx.strokeStyle = affordable ? 'rgba(255, 255, 255, 0.32)' : 'rgba(255, 255, 255, 0.16)';
+	ctx.lineWidth = 1;
+	for (let i = -2; i < 4; i++) {
+		ctx.beginPath();
+		ctx.arc(len * 0.1 - i * 7, 0, 9, -0.9, 0.9);
+		ctx.stroke();
+	}
+	ctx.restore();
+
+	bodyPath(ctx, len * 0.86, hgt * 0.56);
+	ctx.strokeStyle = affordable ? 'rgba(122, 59, 209, 0.55)' : 'rgba(126, 110, 156, 0.5)';
+	ctx.lineWidth = 1.2;
+	ctx.stroke();
+
+	drawEye(ctx, { ...SPECIES.betta, length: len * 0.86, height: hgt * 0.56 });
+
+	// Sparkles, affordable only: the tell that you can have it now.
+	if (affordable) {
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+		for (let i = 0; i < 3; i++) {
+			const cycle = (((time / 1100 + i * 0.33 + seed) % 1) + 1) % 1;
+			ctx.globalAlpha = Math.sin(cycle * Math.PI);
+			const sx = len * 0.42 - i * 12;
+			const sy = -hgt * 0.5 - cycle * 10;
+			ctx.beginPath();
+			ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+			ctx.fill();
+		}
+	}
 
 	ctx.globalAlpha = 1;
-	void colors;
 }
 
 function drawPearl(ctx: CanvasRenderingContext2D, colors: Palette): void {
@@ -642,6 +887,19 @@ function withAlpha(hex: string, alpha: number): string {
 	const g = parseInt(hex.slice(3, 5), 16);
 	const b = parseInt(hex.slice(5, 7), 16);
 	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Avalanches a seed into [0, 1). Sibling ids like `t-aaa` and `t-bbb` differ only in
+ * their low bits; without mixing, anything derived from the high bits comes out
+ * identical for all of them.
+ */
+function mix32(seed: number): number {
+	let x = (seed ^ 0x9e3779b9) >>> 0;
+	x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+	x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+	x = (x ^ (x >>> 16)) >>> 0;
+	return x / 4294967296;
 }
 
 /** Stable per-id seed: the same creature is the same fish, in the same lane, on every reload. */

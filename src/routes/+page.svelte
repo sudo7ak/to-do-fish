@@ -176,6 +176,7 @@
 		tasks={$tasks}
 		onComplete={(id) => store.completeTask(id)}
 		onRelease={(id) => store.releaseBubble(id)}
+		onClaim={(id) => store.claimTreat(id)}
 		onEdit={openEdit}
 		onMove={(id, to) => store.moveToDate(id, to)}
 		onDelete={(id) => store.softDelete(id)}

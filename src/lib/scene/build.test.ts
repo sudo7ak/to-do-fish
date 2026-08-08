@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildScene, MAX_VISIBLE_LANTERNS } from './build';
+import { buildScene, MAX_VISIBLE_TREATS } from './build';
 import type { CreatureKind } from './types';
 import type { KoiRecord, Task } from '../types';
 
@@ -52,13 +52,13 @@ describe('buildScene — creature kinds', () => {
 	});
 
 	it('a waiting treat is a lantern', () => {
-		expect(countOf([task({ id: 'a', treatCost: 3, status: 'waiting' })], 'lantern')).toBe(1);
+		expect(countOf([task({ id: 'a', treatCost: 3, status: 'waiting' })], 'treat')).toBe(1);
 	});
 
 	it('a claimed treat is a fish, not a lantern — paying moves it into the water', () => {
 		const claimed = task({ id: 'a', treatCost: 3, status: 'open' });
 		expect(kinds([claimed])).toContain('fish');
-		expect(kinds([claimed])).not.toContain('lantern');
+		expect(kinds([claimed])).not.toContain('treat');
 	});
 
 	it('a completed treat is a ghost', () => {
@@ -173,18 +173,18 @@ describe('buildScene — lanterns', () => {
 	});
 
 	it('shows every lantern up to the cap', () => {
-		const treats = Array.from({ length: MAX_VISIBLE_LANTERNS }, (_, i) => treat(`t${i}`, 1));
-		expect(countOf(treats, 'lantern')).toBe(MAX_VISIBLE_LANTERNS);
+		const treats = Array.from({ length: MAX_VISIBLE_TREATS }, (_, i) => treat(`t${i}`, 1));
+		expect(countOf(treats, 'treat')).toBe(MAX_VISIBLE_TREATS);
 	});
 
 	it('collapses the remainder into a single overflow lantern', () => {
-		const treats = Array.from({ length: MAX_VISIBLE_LANTERNS + 3 }, (_, i) => treat(`t${i}`, 1));
-		expect(countOf(treats, 'lantern')).toBe(MAX_VISIBLE_LANTERNS + 1);
+		const treats = Array.from({ length: MAX_VISIBLE_TREATS + 3 }, (_, i) => treat(`t${i}`, 1));
+		expect(countOf(treats, 'treat')).toBe(MAX_VISIBLE_TREATS + 1);
 	});
 
 	it('the overflow lantern belongs to no single task', () => {
-		const treats = Array.from({ length: MAX_VISIBLE_LANTERNS + 3 }, (_, i) => treat(`t${i}`, 1));
-		const lanterns = buildScene(treats, [], DAY, NOON).creatures.filter((c) => c.kind === 'lantern');
+		const treats = Array.from({ length: MAX_VISIBLE_TREATS + 3 }, (_, i) => treat(`t${i}`, 1));
+		const lanterns = buildScene(treats, [], DAY, NOON).creatures.filter((c) => c.kind === 'treat');
 		expect(lanterns.at(-1)!.taskId).toBeUndefined();
 	});
 
@@ -213,6 +213,40 @@ describe('buildScene — pearls', () => {
 		const tasks = [task({ id: 'a', status: 'done' })];
 		const pearl = buildScene(tasks, [], DAY, NOON).creatures.find((c) => c.kind === 'pearl');
 		expect(pearl!.depth).toBe(1);
+	});
+});
+
+describe('buildScene — a cleared day keeps its ghosts, and gains a koi', () => {
+	const cleared = [{ date: DAY, earnedAt: 1 }];
+
+	it('keeps the day own ghosts once it has cleared', () => {
+		// Deleting them on the day itself emptied the tank the moment you finished:
+		// the reward for clearing a day was watching your work vanish.
+		const tasks = [task({ id: 'a', status: 'done' }), task({ id: 'b', status: 'done' })];
+
+		expect(countOf(tasks, 'ghost', cleared)).toBe(2);
+		expect(countOf(tasks, 'koi', cleared)).toBe(1);
+	});
+
+	it('shows only the koi on a later date — ghosts are date-scoped, so they merge on their own', () => {
+		const tasks = [task({ id: 'a', status: 'done', date: DAY })];
+		const later = buildScene(tasks, cleared, '2026-08-09', NOON).creatures;
+
+		expect(later.filter((c) => c.kind === 'ghost')).toHaveLength(0);
+		expect(later.filter((c) => c.kind === 'koi')).toHaveLength(1);
+	});
+
+	it('still shows a task added to an already-cleared day', () => {
+		const tasks = [task({ id: 'a', status: 'done' }), task({ id: 'late' })];
+
+		expect(countOf(tasks, 'fish', cleared)).toBe(1);
+		expect(countOf(tasks, 'koi', cleared)).toBe(1);
+	});
+
+	it('mints pearls regardless of the koi', () => {
+		const tasks = [task({ id: 'a', status: 'done' }), task({ id: 'b', status: 'done' })];
+
+		expect(buildScene(tasks, cleared, DAY, NOON).pearls).toBe(2);
 	});
 });
 

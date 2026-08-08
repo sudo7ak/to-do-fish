@@ -3,8 +3,13 @@ import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
 
+import { WATERLINE } from './water';
+
 const SIZE = { w: 400, h: 800 };
 const COLORS = palette('calm', 1);
+
+/** Roughly what the date header occupies. Nothing may be drawn behind it. */
+const HEADER_HEIGHT = 70;
 
 /**
  * Records canvas calls instead of painting. Pixels are verified by eye; what is
@@ -79,7 +84,7 @@ const creature = (kind: CreatureKind, over: Partial<Creature> = {}): Creature =>
 	...over
 });
 
-const ALL_KINDS: CreatureKind[] = ['fish', 'bubble', 'ghost', 'koi', 'lantern', 'pearl'];
+const ALL_KINDS: CreatureKind[] = ['fish', 'bubble', 'ghost', 'koi', 'treat', 'pearl'];
 
 describe('drawCreature — every kind', () => {
 	it.each(ALL_KINDS)('draws a %s', (kind) => {
@@ -161,12 +166,65 @@ describe('speciesFor', () => {
 });
 
 describe('place — where creatures sit', () => {
-	it('rests a lantern at the waterline', () => {
-		expect(place(creature('lantern', { depth: 0 }), SIZE, 0).y).toBeLessThan(40);
+	it('cruises the treat fish in the surface lane', () => {
+		const y = place(creature('treat', { depth: 0 }), SIZE, 0).y;
+
+		// Below the surface, not straddling it — a fish half out of the water reads as
+		// a rendering fault rather than a prize.
+		expect(y).toBeGreaterThan(WATERLINE);
+		expect(y).toBeLessThan(WATERLINE + 60);
 	});
 
-	it('settles a pearl on the floor', () => {
-		expect(place(creature('pearl', { depth: 1 }), SIZE, 0).y).toBeGreaterThan(SIZE.h - 30);
+	it('keeps the treat fish clear of the date header', () => {
+		// Treats used to sit at y=17, behind the header and clipped by the canvas top.
+		// The fish is ~40px tall, so its top edge must stay below the chrome.
+		const y = place(creature('treat', { depth: 0 }), SIZE, 0).y;
+
+		expect(y - 40).toBeGreaterThan(HEADER_HEIGHT);
+	});
+
+	it('spreads treat fish across the width instead of crowding one side', () => {
+		// Every treat carries depth 0; deriving the lane from depth put them all in
+		// the left third.
+		const xs = Array.from({ length: 5 }, (_, i) =>
+			place(creature('treat', { id: `treat-${i}`, depth: 0 }), SIZE, 0).x
+		);
+
+		expect(Math.max(...xs)).toBeGreaterThan(SIZE.w * 0.5);
+		expect(Math.min(...xs)).toBeLessThan(SIZE.w * 0.5);
+	});
+
+	it('swims the treat fish rather than parking it', () => {
+		const treat = creature('treat', { depth: 0 });
+
+		expect(place(treat, SIZE, 0).y).not.toBe(place(treat, SIZE, 2000).y);
+		expect(place(treat, SIZE, 0).x).not.toBe(place(treat, SIZE, 9000).x);
+	});
+
+	it('keeps swimmers below the waterline', () => {
+		const shallow = place(creature('fish', { depth: 0 }), SIZE, 0);
+
+		expect(shallow.y).toBeGreaterThan(WATERLINE);
+	});
+
+	it('keeps pearls clear of the add-pill along the bottom', () => {
+		// The pill and the planting both sit on the floor; pearls resting on the sand
+		// were invisible behind them, so the balance said 3 and you could see one.
+		const PILL_ZONE = 80;
+
+		for (let i = 0; i < 40; i++) {
+			const y = place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0).y;
+			expect(y).toBeLessThan(SIZE.h - PILL_ZONE);
+			expect(y).toBeGreaterThan(SIZE.h * 0.5);
+		}
+	});
+
+	it('spreads pearls along the bed rather than stacking them', () => {
+		const xs = Array.from({ length: 6 }, (_, i) =>
+			place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0).x
+		);
+
+		expect(new Set(xs.map(Math.round)).size).toBeGreaterThan(3);
 	});
 
 	it('puts a shallow creature above a deep one', () => {
@@ -176,16 +234,86 @@ describe('place — where creatures sit', () => {
 		expect(shallow.y).toBeLessThan(deep.y);
 	});
 
-	it('keeps every kind inside the tank', () => {
+	it('keeps every kind inside the tank, over a long swim', () => {
+		// Swept densely rather than spot-checked: the vertical wander and the warped
+		// pace both have room to push a fish through the glass at some phase.
 		for (const kind of ALL_KINDS) {
-			for (const time of [0, 1234, 98_765]) {
-				const at = place(creature(kind), SIZE, time);
-				expect(at.x).toBeGreaterThanOrEqual(0);
-				expect(at.x).toBeLessThanOrEqual(SIZE.w);
-				expect(at.y).toBeGreaterThanOrEqual(0);
-				expect(at.y).toBeLessThanOrEqual(SIZE.h);
+			for (let i = 0; i < 400; i++) {
+				const time = i * 617;
+				for (const id of ['a', 'seed-two', 'zzz-9']) {
+					const at = place(creature(kind, { id }), SIZE, time);
+					expect(at.x).toBeGreaterThanOrEqual(0);
+					expect(at.x).toBeLessThanOrEqual(SIZE.w);
+					expect(at.y).toBeGreaterThanOrEqual(0);
+					expect(at.y).toBeLessThanOrEqual(SIZE.h);
+				}
 			}
 		}
+	});
+
+	it('never swims a fish above the waterline, whatever the wander', () => {
+		for (let i = 0; i < 400; i++) {
+			const at = place(creature('fish', { id: 'shallow', depth: 0 }), SIZE, i * 617);
+			expect(at.y).toBeGreaterThan(WATERLINE);
+		}
+	});
+
+	it('moves vertically as well as horizontally', () => {
+		// A fish that only slides sideways reads as being on a rail.
+		const fish = creature('fish', { id: 'swimmer' });
+		const ys = [0, 2000, 4000, 6000, 8000, 12_000].map((ms) => place(fish, SIZE, ms).y);
+
+		expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
+	});
+
+	it('varies its pace instead of tracking at a constant rate', () => {
+		const fish = creature('fish', { id: 'swimmer' });
+		const step = 400;
+		const distances: number[] = [];
+
+		for (let ms = 0; ms < 24_000; ms += step) {
+			const a = place(fish, SIZE, ms);
+			const b = place(fish, SIZE, ms + step);
+			distances.push(Math.hypot(b.x - a.x, b.y - a.y));
+		}
+
+		const fastest = Math.max(...distances);
+		const slowest = Math.min(...distances);
+
+		// Burst and glide: the quick stretches are clearly quicker than the slow ones.
+		expect(fastest).toBeGreaterThan(slowest * 3);
+	});
+
+	it('gives two fish different paths, so the shoal does not move as one', () => {
+		const a = creature('fish', { id: 'fish-one' });
+		const b = creature('fish', { id: 'fish-two' });
+
+		const apart = [0, 3000, 6000, 9000].map((ms) => {
+			const pa = place(a, SIZE, ms);
+			const pb = place(b, SIZE, ms);
+			return Math.hypot(pa.x - pb.x, pa.y - pb.y);
+		});
+
+		expect(Math.max(...apart)).toBeGreaterThan(30);
+	});
+
+	it('holds a bubble at its assigned depth — depth is information, not decoration', () => {
+		// Time until trigger is encoded in depth, so a bubble must not wander off it.
+		const bubble = creature('bubble', { id: 'waiting', depth: 0.2 });
+		const ys = [0, 3000, 7000, 15_000].map((ms) => place(bubble, SIZE, ms).y);
+
+		expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(10);
+	});
+
+	it('faces the way it is travelling', () => {
+		const fish = creature('fish', { id: 'swimmer' });
+
+		// Sampling across a full crossing, it must face both ways at some point.
+		const flips = new Set(
+			Array.from({ length: 60 }, (_, i) => place(fish, SIZE, i * 700).flip)
+		);
+
+		expect(flips.size).toBe(2);
 	});
 
 	it('is stable across reloads — the same id lands in the same place', () => {

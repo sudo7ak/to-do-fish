@@ -52,7 +52,8 @@
 
 <script lang="ts">
 	import { shiftDate, formatDay } from './DateHeader.svelte';
-	import { describeCondition } from './CreatureSheet.svelte';
+	import { describeCondition, actionsFor } from './CreatureSheet.svelte';
+	import { pearlBalance } from '../store/pearls';
 
 	type Props = {
 		open: boolean;
@@ -60,14 +61,29 @@
 		tasks: Task[];
 		onComplete: (id: string) => void;
 		onRelease: (id: string) => void;
+		onClaim: (id: string) => void;
 		onEdit: (task: Task) => void;
 		onMove: (id: string, date: string) => void;
 		onDelete: (id: string) => void;
 		onClose: () => void;
 	};
 
-	const { open, date, tasks, onComplete, onRelease, onEdit, onMove, onDelete, onClose }: Props =
-		$props();
+	const {
+		open,
+		date,
+		tasks,
+		onComplete,
+		onRelease,
+		onClaim,
+		onEdit,
+		onMove,
+		onDelete,
+		onClose
+	}: Props = $props();
+
+	// Same balance the tank shows, so a treat that is affordable in one view is
+	// affordable in the other.
+	const balance = $derived(pearlBalance(tasks));
 
 	const groups = $derived(groupTasks(tasks, date));
 	let selected = $state(new Set<string>());
@@ -115,6 +131,8 @@
 			<ul>
 				{#each group.tasks as task (task.id)}
 					{@const condition = describeCondition(task)}
+					{@const affordable = task.treatCost !== undefined && balance >= task.treatCost}
+					{@const actions = actionsFor(task, affordable)}
 					<li>
 						<label class="pick">
 							<input
@@ -130,11 +148,18 @@
 							{#if condition}<span class="condition">{condition}</span>{/if}
 						</div>
 
+						<!-- Same action rules as the tank sheet, from one shared function: the
+						     list is a second view of the same data, not a second set of rules. -->
 						<div class="row-actions">
-							{#if task.status === 'waiting' && task.treatCost === undefined}
+							{#if actions.includes('claim')}
+								<button type="button" onclick={() => onClaim(task.id)}>Claim</button>
+							{:else if task.treatCost !== undefined && task.status === 'waiting'}
+								<span class="locked">Need {task.treatCost - balance} more</span>
+							{/if}
+							{#if actions.includes('release')}
 								<button type="button" onclick={() => onRelease(task.id)}>Let out</button>
 							{/if}
-							{#if task.status !== 'done'}
+							{#if actions.includes('complete')}
 								<button type="button" onclick={() => onComplete(task.id)}>Done</button>
 							{/if}
 							<button type="button" class="ghost" onclick={() => onEdit(task)}>Edit</button>
@@ -159,6 +184,8 @@
 	.list {
 		position: fixed;
 		inset: 0;
+		/* Layer 10: full-screen view. Sheets (20) open above it. */
+		z-index: 10;
 		overflow-y: auto;
 		padding: 1rem 1rem 6rem;
 		padding-top: max(1rem, env(safe-area-inset-top));
@@ -221,7 +248,14 @@
 
 	.row-actions {
 		display: flex;
+		align-items: center;
 		gap: 0.35rem;
+	}
+
+	.locked {
+		font-size: 0.75rem;
+		opacity: 0.6;
+		white-space: nowrap;
 	}
 
 	button {

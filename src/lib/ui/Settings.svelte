@@ -77,6 +77,7 @@
 	.backdrop {
 		position: fixed;
 		inset: 0;
+		z-index: 20;
 		border: 0;
 		padding: 0;
 		background: rgba(10, 30, 40, 0.35);
@@ -86,6 +87,7 @@
 	.sheet {
 		position: fixed;
 		inset: auto 0 0 0;
+		z-index: 21;
 		padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
 		border-radius: 1.25rem 1.25rem 0 0;
 		background: rgba(255, 255, 255, 0.85);
