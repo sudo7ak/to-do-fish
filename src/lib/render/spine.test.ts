@@ -13,7 +13,13 @@ describe('spineFor', () => {
 
 		expect(spine.length).toBeGreaterThan(4);
 		expect(spine[0].x).toBeCloseTo(LEN / 2, 5);
-		expect(spine.at(-1)!.x).toBeCloseTo(-LEN / 2, 5);
+		// The tail sits at -length/2 only when the body is straight. A bent chain of
+		// fixed-length segments spans less in x than its arc length — the body draws
+		// in as it curves (foreshortening), it does not stretch to keep reaching
+		// -length/2. So the tail can approach -length/2 but never pass it, and never
+		// reaches +x.
+		expect(spine.at(-1)!.x).toBeGreaterThanOrEqual(-LEN / 2 - 1e-6);
+		expect(spine.at(-1)!.x).toBeLessThan(0);
 	});
 
 	it('bends without stretching — every segment keeps its length', () => {
@@ -50,6 +56,18 @@ describe('spineFor', () => {
 		const a = spineFor(LEN, WAVE, 500, 0);
 		const b = spineFor(LEN, WAVE, 500, Math.PI);
 		expect(a.at(-1)!.y).not.toBeCloseTo(b.at(-1)!.y, 2);
+	});
+
+	it('keeps total arc length constant as the body bends over time', () => {
+		// The body does not stretch. Segment lengths equal *within* a frame is not
+		// enough: a chain whose step is derived from the bend breathes larger and
+		// smaller between frames, which reads as a rendering fault.
+		const totals = [0, 250, 600, 1400, 2300].map((time) => {
+			const points = spineFor(LEN, { ...WAVE, amplitude: 0.4 }, time, 0.3);
+			return segmentLengths(points).reduce((sum, l) => sum + l, 0);
+		});
+
+		for (const total of totals) expect(total).toBeCloseTo(totals[0], 6);
 	});
 
 	it('produces finite coordinates for degenerate input', () => {
