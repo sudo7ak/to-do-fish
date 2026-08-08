@@ -128,22 +128,31 @@ describe('drawCreature — every kind', () => {
 		expect(ctx.calls).toContain('setLineDash');
 	});
 
-	it('draws a ghost as a translucent outline rather than an opaque body', () => {
-		// A bare fish body (this task's intermediate state, before fins/eye return in
-		// later tasks) has the same shape of fill/stroke calls as a ghost's wash-and-outline,
-		// so fill count alone no longer tells them apart. Opacity still does: a ghost is
-		// drawn at reduced alpha throughout, a live fish never is.
+	it('draws a ghost as an outline of its own species', () => {
 		const ghost = fakeCtx();
 		const fish = fakeCtx();
+		const id = 'same-task';
 
-		drawCreature(ghost, creature('ghost'), place(creature('ghost'), SIZE, 0), COLORS, 0);
-		drawCreature(fish, creature('fish'), place(creature('fish'), SIZE, 0), COLORS, 0);
+		drawCreature(ghost, creature('ghost', { id }), place(creature('ghost', { id }), SIZE, 0), COLORS, 0);
+		drawCreature(fish, creature('fish', { id }), place(creature('fish', { id }), SIZE, 0), COLORS, 0);
 
+		// Outline, not fill: strokes present, and fewer fills than the live fish.
 		expect(ghost.calls.filter((c) => c === 'stroke').length).toBeGreaterThan(0);
-		// 0.62 is the ghost's whole-body wash alpha (`drawGhost`); a live fish's bubble
-		// trail also dips under 1 but never lands on that exact value.
-		expect(ghost.calls).toContain('alpha(0.62)');
-		expect(fish.calls).not.toContain('alpha(0.62)');
+		expect(fish.calls.filter((c) => c === 'fill').length).toBeGreaterThan(
+			ghost.calls.filter((c) => c === 'fill').length
+		);
+		expect(ghost.depth).toBe(0);
+	});
+
+	it('bends a ghost as it drifts, like a live fish', () => {
+		const early = fakeCtx();
+		const later = fakeCtx();
+		const c = creature('ghost', { id: 'drifter' });
+
+		drawCreature(early, c, place(c, SIZE, 0), COLORS, 0);
+		drawCreature(later, c, place(c, SIZE, 1100), COLORS, 1100);
+
+		expect(early.calls.join()).not.toBe(later.calls.join());
 	});
 });
 

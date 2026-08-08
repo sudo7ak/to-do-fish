@@ -275,7 +275,7 @@ export function drawCreature(
 			}
 			break;
 		case 'ghost':
-			drawGhost(ctx, at, LEGACY_SPECIES[speciesFor(creature.id) as Swimmer], time, hash(creature.id));
+			drawGhost(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
 			break;
 		case 'koi':
 			drawKoi(ctx, at, time);
@@ -565,46 +565,34 @@ function drawFish(
 function drawGhost(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
-	spec: LegacySpeciesSpec,
+	spec: SpeciesSpec,
 	time: number,
 	seed: number
 ): void {
 	if (at.flip) ctx.scale(-1, 1);
 
-	const { length: len, height: hgt } = spec;
-	const beat = Math.sin(time / 200 + seed);
+	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
+	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const loop = outline(spine, spec.profile, spec.length);
 
-	// A finished task should still be legible as one. At 0.4 the outline all but
-	// vanished against the water, so completing something looked like it deleted it.
+	// Legible, but plainly spent. At 0.4 the outline vanished against the water and
+	// completing a task looked like deleting it.
 	ctx.globalAlpha = 0.62;
-	ctx.strokeStyle = withAlpha(spec.body[0], 0.95);
-	ctx.lineWidth = 2.2;
 
-	// A faint wash inside the outline, so the shape reads as a body rather than wire.
-	bodyPath(ctx, len, hgt);
-	ctx.fillStyle = withAlpha(spec.body[0], 0.16);
+	tracePath(ctx, loop);
+	ctx.fillStyle = withAlpha(spec.palette.back, 0.16);
 	ctx.fill();
 
-	// Tail, outlined.
-	ctx.beginPath();
-	ctx.moveTo(-len / 2, 0);
-	ctx.quadraticCurveTo(-len * 0.8, -hgt * 0.7 + beat * 3, -len, -hgt * 0.5 + beat * 4);
-	ctx.quadraticCurveTo(-len * 0.7, 0, -len, hgt * 0.5 + beat * 4);
-	ctx.quadraticCurveTo(-len * 0.8, hgt * 0.7 + beat * 3, -len / 2, 0);
-	ctx.stroke();
-
-	bodyPath(ctx, len, hgt);
-	ctx.stroke();
-
-	// Dorsal, outlined.
-	ctx.beginPath();
-	ctx.moveTo(len * 0.2, -hgt * 0.85);
-	ctx.quadraticCurveTo(0, -hgt * 1.5, -len * 0.3, -hgt * 0.8);
+	tracePath(ctx, loop);
+	ctx.strokeStyle = withAlpha(spec.palette.back, 0.95);
+	ctx.lineWidth = 2.2;
 	ctx.stroke();
 
 	// One dot of eye, so the outline still reads as facing somewhere.
+	const eye = pointAt(spine, 0.14);
+	const half = profileAt(spec.profile, 0.14) * spec.length;
 	ctx.beginPath();
-	ctx.arc(len * 0.3, -hgt * 0.18, 1.6, 0, Math.PI * 2);
+	ctx.arc(eye.x, eye.y - half * 0.25, Math.max(1.6, half * 0.22), 0, Math.PI * 2);
 	ctx.stroke();
 
 	ctx.globalAlpha = 1;
