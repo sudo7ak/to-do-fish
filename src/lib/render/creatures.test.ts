@@ -3,6 +3,7 @@ import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
 import { SPECIES, SWIMMERS } from './species';
+import { profilePeak } from './spine';
 
 import { WATERLINE } from './water';
 
@@ -49,7 +50,10 @@ function fakeCtx() {
 			depth--;
 			calls.push('restore');
 		},
-		createLinearGradient: () => gradient,
+		createLinearGradient: (...args: number[]) => {
+			calls.push(`linearGradient(${args.map((a) => a.toFixed(1)).join(',')})`);
+			return gradient;
+		},
 		createRadialGradient: () => gradient,
 		// Tracked so a translucent wash (a ghost) is distinguishable from an opaque fill
 		// (a live fish) even though `fakeCtx` never touches real pixels.
@@ -254,6 +258,36 @@ describe('body drawing follows the spine', () => {
 
 			expect(ctx.calls.filter((call) => call === 'fill').length).toBeGreaterThan(0);
 			expect(ctx.depth).toBe(0);
+		}
+	});
+});
+
+describe('body shading', () => {
+	it('spans the back-to-belly ramp over the body depth, not half the length', () => {
+		// `createLinearGradient(0, -length/2, 0, length/2)` made every species but the
+		// angel sample only the middle of the ramp, so slim fish rendered as one flat
+		// mid-tone. The gradient must span the species' own deepest half-height.
+		for (const name of SWIMMERS) {
+			let id = '';
+			for (let i = 0; i < 400 && !id; i++) if (speciesFor(`id-${i}`) === name) id = `id-${i}`;
+
+			const ctx = fakeCtx();
+			const c = creature('fish', { id });
+			drawCreature(ctx, c, place(c, SIZE, 0), COLORS, 0);
+
+			const spec = SPECIES[name];
+			const half = profilePeak(spec.profile) * spec.length;
+
+			expect(ctx.calls).toContain(
+				`linearGradient(0.0,${(-half).toFixed(1)},0.0,${half.toFixed(1)})`
+			);
+			// And explicitly not the old length-based span, except where they coincide.
+			if (Math.abs(profilePeak(spec.profile) - 0.5) > 0.001) {
+				const wrong = spec.length * 0.5;
+				expect(ctx.calls).not.toContain(
+					`linearGradient(0.0,${(-wrong).toFixed(1)},0.0,${wrong.toFixed(1)})`
+				);
+			}
 		}
 	});
 });

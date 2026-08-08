@@ -3,7 +3,15 @@ import type { Palette } from './palette';
 import { WATERLINE, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
 import { speciesFor, SPECIES, type Species, type SpeciesSpec, type FinSpec } from './species';
-import { spineFor, outline, pointAt, tangentAt, profileAt, type Spine } from './spine';
+import {
+	spineFor,
+	outline,
+	pointAt,
+	tangentAt,
+	profileAt,
+	profilePeak,
+	type Spine
+} from './spine';
 
 export { speciesFor };
 export type { Species };
@@ -250,7 +258,11 @@ function tracePath(ctx: CanvasRenderingContext2D, points: { x: number; y: number
 /** Fills the body outline, lit from above, with a rim so it holds its edge in the water. */
 function drawBody(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine, alpha = 1): void {
 	const loop = outline(spine, spec.profile, spec.length);
-	const half = spec.length * 0.5;
+
+	// The ramp has to span the body's real depth, not half its *length*. At `length/2`
+	// every species but the angel — whose profile happens to peak at 0.5 — sampled only
+	// the middle third of the gradient and came out a flat mid-tone.
+	const half = profilePeak(spec.profile) * spec.length;
 
 	const shade = ctx.createLinearGradient(0, -half, 0, half);
 	shade.addColorStop(0, spec.palette.back);

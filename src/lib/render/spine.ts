@@ -88,6 +88,19 @@ export function profileAt(profile: Profile, t: number): number {
 	return profile[profile.length - 1][1];
 }
 
+/**
+ * The largest half-height in a profile, as a fraction of length.
+ *
+ * This is the body's true half-depth — 0.17 for the neon, 0.5 for the angel — and it
+ * is what a back-to-belly gradient has to span. Spanning `length/2` instead makes
+ * every species but the angel sample the middle of the ramp and render flat.
+ */
+export function profilePeak(profile: Profile): number {
+	let peak = 0;
+	for (const [, half] of profile) peak = Math.max(peak, half);
+	return peak;
+}
+
 /** The point at `t` along the spine, 0 at the nose and 1 at the tail. */
 export function pointAt(spine: Spine, t: number): Point {
 	const clamped = Math.min(1, Math.max(0, t));

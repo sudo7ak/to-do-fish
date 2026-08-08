@@ -5,6 +5,7 @@ import {
 	pointAt,
 	tangentAt,
 	outline,
+	profilePeak,
 	type Wave,
 	type Spine,
 	type Profile
@@ -113,10 +114,22 @@ describe('profileAt', () => {
 		expect(profileAt(PROFILE, 2)).toBeCloseTo(0.02, 6);
 	});
 
-	it('is never negative — a negative half-height turns the body inside out', () => {
+	it('stays non-negative across a well-formed profile — a negative half-height turns the body inside out', () => {
+		// Only a claim about valid data: `profileAt` interpolates whatever it is handed,
+		// so a profile with a negative control point would still yield negative values.
 		for (let t = 0; t <= 1; t += 0.02) {
 			expect(profileAt(PROFILE, t)).toBeGreaterThanOrEqual(0);
 		}
+	});
+});
+
+describe('profilePeak', () => {
+	it('finds the deepest point of the body', () => {
+		expect(profilePeak(PROFILE)).toBeCloseTo(0.2, 6);
+	});
+
+	it('ignores where along the body the peak sits', () => {
+		expect(profilePeak([[0, 0.4], [0.5, 0.1], [1, 0.05]])).toBeCloseTo(0.4, 6);
 	});
 });
 
