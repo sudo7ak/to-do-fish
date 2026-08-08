@@ -110,6 +110,48 @@ open the list.
 Still unverified: ghosts against the busiest possible tank, and the claimed treat fish
 in more than one arrangement.
 
+### 4.1 Fish anatomy rewrite (spine + species profiles) — verified 2026-08-08
+
+Every creature now derives from a spine (centreline + travelling wave) offset by a
+per-species profile, with data-driven fins, eyes, mouths and markings; ghosts, koi and
+treats all route through the same path. Full verification (414 unit tests, 0 typecheck
+errors, clean build, 57/57 E2E, screenshots at normal and 4× zoom, a 20-task busy
+tank) closed:
+
+- The six swimmer species (`clown`, `tang`, `angel`, `guppy`, `neon`, `betta`) read as
+  distinct silhouettes by outline alone — the tang's deep disc does not read as the
+  clown's rounded oval.
+- Bodies visibly flex frame to frame (confirmed by comparing two captures ~400ms
+  apart); nothing slides as a rigid sprite.
+- Fins stay anchored to the body edge through the swim cycle, including on the
+  overlapping/clustered fish in a busy tank.
+- Eyes render with a visible pupil and glint on every species checked.
+- Ghosts (pale, unfilled outline) are legible as spent but still present, including
+  in the 20-task busy tank.
+
+Two things this rewrite did **not** close, found during this verification pass:
+
+- **Angel fin colour is washed out.** The angel's fin palette (`#fff0d2`) is close to
+  white/cream, and against its own cream-tan body (`back: #ffe9be`) and next to the
+  similarly cream-and-orange koi, the fins nearly disappear into the surrounding
+  shapes when the two overlap. This is the "washed out fins" concern the anatomy plan
+  called out as a known risk, and it is still present. The other five species' fins
+  (yellow, pink, red-striped) read fine.
+- **The koi no longer reads as unmistakably special.** The explicit bright-gold rim
+  stroke was dropped in the port in favour of the generic body outline every fish
+  gets. In an open scene the koi's size and slow wave are enough to notice it, but
+  when it swims near or overlaps the angel (both cream/orange, both spotted or
+  banded) the two blend into one mass and the koi stops reading as "the special
+  fish" — it reads as another orange fish. Re-adding a distinguishing rim or glow is
+  worth doing.
+- **A fish's tail can clip the tank's right edge in a busy tank.** In the 20-task
+  scene, one clownfish's caudal fin was cut off by the canvas boundary — the body
+  stayed in bounds but the fin trailed past it. Not a crash and not most fish, but
+  "no fish leaves the tank" is not fully true at 20 tasks.
+
+Confirmed still out of scope by design, not oversight: scale texture, iridescent
+sheen, and gradients within a fin are all invisible at the ~40px fish size used here.
+
 ## 4b. UX added alongside
 
 - **Empty days say so.** A date with nothing in it rendered an empty tank, which is

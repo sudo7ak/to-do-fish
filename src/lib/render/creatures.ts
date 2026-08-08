@@ -1,6 +1,21 @@
 import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
 import { WATERLINE, surfaceOffset, type Size } from './water';
+import { hash, mix32 } from './rng';
+import { speciesFor, SPECIES, type Species, type SpeciesSpec, type FinSpec } from './species';
+import {
+	spineFor,
+	outline,
+	pointAt,
+	tangentAt,
+	profileAt,
+	profilePeak,
+	type Point,
+	type Spine
+} from './spine';
+
+export { speciesFor };
+export type { Species };
 
 /**
  * Drawing one creature at a time.
@@ -20,6 +35,12 @@ export type Placement = { x: number; y: number; flip: boolean };
 const TOP_MARGIN = WATERLINE + 26;
 const BOTTOM_MARGIN = 40;
 
+/**
+ * Where the eye sits along the spine, as the spec specifies. Shared by the live head
+ * and the ghost's single dot so the two cannot drift apart.
+ */
+const EYE_T = 0.12;
+
 /** How far below the waterline the treat fish cruises. */
 const TREAT_DRAFT = 34;
 
@@ -29,102 +50,17 @@ const TREAT_DRAFT = 34;
  */
 const PILL_EDGE = 0.74;
 
-// ----------------------------------------------------------------- species
-
-export type Species = 'clown' | 'tang' | 'angel' | 'guppy' | 'neon' | 'betta';
-
-type SpeciesSpec = {
-	length: number;
-	height: number;
-	/** Body gradient, back to belly. */
-	body: [string, string];
-	fin: string;
-	tail: 'fan' | 'forked' | 'veil' | 'round';
-	pattern: 'bands' | 'stripe' | 'spots' | 'none';
-	patternColor: string;
-	/**
-	 * Fin size, as a fraction of body length. Kept well under 1: fins larger than the
-	 * body stop reading as fins and start reading as debris floating alongside it.
-	 */
-	flow: number;
-};
-
 /**
- * Which task is which fish is arbitrary, but it must be *stable*: the same task is
- * the same fish every time you open the tank, because that is what lets you
- * recognise it without reading the label.
+ * The exotic, drained of its colour: what a treat you cannot yet afford is drawn as.
+ *
+ * A module constant rather than a per-frame spread, so it is the same object on every
+ * frame and the per-species caches below (gradient, half-height, drawn width) hit
+ * instead of growing one entry per frame.
  */
-const SPECIES: Record<Species, SpeciesSpec> = {
-	clown: {
-		length: 42,
-		height: 24,
-		body: ['#FF9A4D', '#E85A2C'],
-		fin: '#FFB877',
-		tail: 'round',
-		pattern: 'bands',
-		patternColor: '#FFF4E4',
-		flow: 0.3
-	},
-	tang: {
-		length: 44,
-		height: 28,
-		body: ['#49B6F7', '#1B5FC1'],
-		fin: '#FFD84D',
-		tail: 'forked',
-		pattern: 'none',
-		patternColor: '#0E3E86',
-		flow: 0.3
-	},
-	angel: {
-		length: 36,
-		height: 32,
-		body: ['#FFE9BE', '#EFA63A'],
-		fin: '#FFF0D2',
-		tail: 'veil',
-		pattern: 'bands',
-		patternColor: '#6B4A22',
-		flow: 0.42
-	},
-	guppy: {
-		length: 34,
-		height: 19,
-		body: ['#93EBFF', '#4A7BE8'],
-		fin: '#FF93D2',
-		tail: 'fan',
-		pattern: 'spots',
-		patternColor: '#FFE066',
-		flow: 0.38
-	},
-	neon: {
-		length: 32,
-		height: 15,
-		body: ['#6BEAFF', '#1B7FD4'],
-		fin: '#CFF6FF',
-		tail: 'forked',
-		pattern: 'stripe',
-		patternColor: '#FF3B4E',
-		flow: 0.26
-	},
-	betta: {
-		length: 36,
-		height: 24,
-		body: ['#CE7BFF', '#7A2BD1'],
-		fin: '#FF7FB4',
-		tail: 'veil',
-		pattern: 'none',
-		patternColor: '#4A1580',
-		flow: 0.45
-	}
+const LOCKED_EXOTIC: SpeciesSpec = {
+	...SPECIES.exotic,
+	palette: { ...SPECIES.exotic.palette, back: '#c7a8d8', belly: '#8e7cb0', fin: '#cec4e0' }
 };
-
-const SPECIES_ORDER: Species[] = ['clown', 'tang', 'angel', 'guppy', 'neon', 'betta'];
-
-export function speciesFor(id: string): Species {
-	// Mixed, not `hash % n`: sequential ids step the raw hash by a constant, and when
-	// that stride shares a factor with the species count only a couple of species
-	// ever appear. A real tank has to look stocked.
-	return SPECIES_ORDER[Math.floor(mix32(hash(id)) * SPECIES_ORDER.length)];
-}
 
 // ---------------------------------------------------------------- placement
 
@@ -234,16 +170,18 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 	return { x, y, flip };
 }
 
-/** Spreads same-depth creatures across the width so they do not stack in one column. */
-function laneX(seed: number, size: Size, spread: number): number {
-	const jitter = (seed % 1000) / 1000;
-	return size.w * (0.1 + jitter * 0.8 * Math.max(spread, 0.4));
-}
-
 /**
  * Golden-ratio spacing across the full width. Plain `hash % width` clumps badly at
  * four or five items; multiplying by the golden ratio is the standard trick for
  * spreading a small set of hashes evenly without knowing how many there are.
+ *
+ * `seed % 1000` is the one place in this file that uses the raw hash rather than
+ * mixing it through `mix32`, and it stays that way on purpose. Taking the low bits of
+ * a hash normally correlates sibling ids, which is why the rule exists — but here the
+ * result is immediately multiplied by the golden ratio and wrapped, which is itself a
+ * decorrelating step, and it only chooses which lane two or three treats cruise in.
+ * Mixing it would be tidier and would also move every existing treat, and `place` is
+ * shared with pointer hit-testing, so its output is not free to change.
  */
 function spreadX(seed: number, size: Size): number {
 	const position = ((seed % 1000) * 0.6180339887) % 1;
@@ -252,6 +190,33 @@ function spreadX(seed: number, size: Size): number {
 
 // ------------------------------------------------------------------ drawing
 
+/**
+ * The species a creature wears, and the scale it is drawn at — or `null` for the
+ * creatures that have no fish body.
+ *
+ * One place, because `drawCreature` and the fin-clipping inset must agree about what
+ * is on screen; deciding it twice is how the inset ends up sized for the wrong fish.
+ */
+function bodyOf(creature: Creature): { spec: SpeciesSpec; scale: number } | null {
+	switch (creature.kind) {
+		case 'fish':
+			// A bought treat keeps its exotic look, at a size that sits in the shoal.
+			// Turning it into an ordinary fish read as the prize vanishing on purchase.
+			return creature.claimed
+				? { spec: SPECIES.exotic, scale: 0.72 }
+				: { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
+		case 'ghost':
+			return { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
+		case 'koi':
+			return { spec: SPECIES.koi, scale: 1 };
+		case 'treat':
+			return { spec: creature.locked ? LOCKED_EXOTIC : SPECIES.exotic, scale: 1 };
+		default:
+			// A bubble's fish is clipped to the sphere; a pearl has no fins at all.
+			return null;
+	}
+}
+
 export function drawCreature(
 	ctx: CanvasRenderingContext2D,
 	creature: Creature,
@@ -259,28 +224,26 @@ export function drawCreature(
 	colors: Palette,
 	time: number
 ): void {
+	const body = bodyOf(creature);
+
 	ctx.save();
 	ctx.translate(at.x, at.y);
+	if (body && body.scale !== 1) ctx.scale(body.scale, body.scale);
 
+	// `bodyOf` returns a spec for every kind that has one, so the assertions below hold
+	// by construction — the compiler just cannot see across the switch.
 	switch (creature.kind) {
 		case 'fish':
-			// A bought treat keeps its exotic look, at a size that sits in the shoal.
-			// Turning it into an ordinary fish read as the prize vanishing on purchase.
-			if (creature.claimed) {
-				ctx.scale(0.72, 0.72);
-				drawTreatFish(ctx, { ...creature, locked: false }, at, time);
-			} else {
-				drawFish(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
-			}
+			drawFish(ctx, at, body!.spec, time, hash(creature.id));
 			break;
 		case 'ghost':
-			drawGhost(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
+			drawGhost(ctx, at, body!.spec, time, hash(creature.id));
 			break;
 		case 'koi':
-			drawKoi(ctx, at, time);
+			drawKoi(ctx, at, time, hash(creature.id));
 			break;
 		case 'bubble':
-			drawBubble(ctx, creature, colors, time);
+			drawBubble(ctx, creature, time);
 			break;
 		case 'treat':
 			drawTreatFish(ctx, creature, at, time);
@@ -293,6 +256,81 @@ export function drawCreature(
 	ctx.restore();
 }
 
+/**
+ * How far a species reaches horizontally from its own origin, in local pixels.
+ *
+ * `place` clamps the *body* centre to [0.06, 0.94] of the width, which leaves about
+ * 24px of slack on a phone — but an exotic or betta caudal is 0.70–0.75 of body
+ * length, over 30px, so the tail clipped through the glass in a busy tank. `place`
+ * cannot grow the margin: pointer hit-testing shares it, and moving every fish inward
+ * to suit the widest tail would waste the tank.
+ *
+ * So the drawing layer insets instead, and it insets by what each species actually
+ * needs rather than one constant — a single margin either under-shoots the betta or
+ * over-shoots the neon by 20px.
+ *
+ * On a straight spine the fin transform is the identity, a fin root sits at
+ * `length * (0.5 - anchor)`, and the fin's own path runs from `-span * sweep` to
+ * `+span * 0.15`. Bending only pulls the extremes inward, so this is an upper bound.
+ */
+function speciesReach(spec: SpeciesSpec): number {
+	const cached = reachCache.get(spec);
+	if (cached !== undefined) return cached;
+
+	let reach = spec.length * 0.5; // nose and tail of the body itself
+
+	for (const fin of spec.fins) {
+		const root = spec.length * (0.5 - fin.anchor);
+		const span = fin.span * spec.length;
+		reach = Math.max(reach, Math.abs(root - span * fin.sweep), Math.abs(root + span * 0.15));
+	}
+
+	// The bubble trail streams further back than any tail, and the treat's halo is a
+	// disc of one body length. Both are faint, but a hard vertical cut through a glow
+	// at the edge of the glass is more obvious than the glow itself.
+	const total = Math.max(
+		reach,
+		spec.length * TRAIL_ANCHOR + TRAIL_DRIFT + TRAIL_RADIUS,
+		spec.length
+	);
+
+	reachCache.set(spec, total);
+	return total;
+}
+
+/**
+ * The placement to draw at: the body's own position, pulled in only far enough that
+ * the fins stay inside the glass.
+ *
+ * This deliberately diverges from `place` at the very edges. `place` answers "where is
+ * this creature", which hit-testing needs to keep agreeing with itself; this answers
+ * "where can it be painted without clipping", and only differs for a fish already
+ * pressed against the wall.
+ */
+function insetForFins(at: Placement, creature: Creature, size: Size): Placement {
+	const body = bodyOf(creature);
+	if (!body) return at;
+
+	const margin = Math.min(size.w * 0.5, speciesReach(body.spec) * body.scale);
+	const x = Math.min(size.w - margin, Math.max(margin, at.x));
+
+	return x === at.x ? at : { ...at, x };
+}
+
+/**
+ * Back to front: bubbles and pearls behind, koi in front. Module scope, because
+ * `drawCreatures` runs inside a `requestAnimationFrame` loop and had been allocating
+ * this record sixty times a second.
+ */
+const DRAW_ORDER: Record<Creature['kind'], number> = {
+	pearl: 0,
+	bubble: 1,
+	ghost: 2,
+	fish: 3,
+	koi: 4,
+	treat: 5
+};
+
 /** Paints every creature in one pass, back to front: bubbles and pearls behind, koi in front. */
 export function drawCreatures(
 	ctx: CanvasRenderingContext2D,
@@ -302,100 +340,348 @@ export function drawCreatures(
 	time: number,
 	animate = true
 ): void {
-	const order: Record<Creature['kind'], number> = {
-		pearl: 0,
-		bubble: 1,
-		ghost: 2,
-		fish: 3,
-		koi: 4,
-		treat: 5
-	};
-
-	for (const creature of [...creatures].sort((a, b) => order[a.kind] - order[b.kind])) {
-		drawCreature(ctx, creature, place(creature, size, time, animate), colors, time);
+	for (const creature of [...creatures].sort((a, b) => DRAW_ORDER[a.kind] - DRAW_ORDER[b.kind])) {
+		const at = insetForFins(place(creature, size, time, animate), creature, size);
+		drawCreature(ctx, creature, at, colors, time);
 	}
 }
 
 // ------------------------------------------------------------------- shapes
 
-/** The body outline, shared by every species so the silhouette family stays coherent. */
-function bodyPath(ctx: CanvasRenderingContext2D, len: number, hgt: number): void {
-	const half = len / 2;
+/** Traces a closed outline as a smooth loop through its points. */
+function tracePath(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[]): void {
 	ctx.beginPath();
-	ctx.moveTo(half, 0);
-	// Back: nose up over the dorsal line to the tail root.
-	ctx.bezierCurveTo(half * 0.5, -hgt, -half * 0.5, -hgt * 0.9, -half, 0);
-	// Belly: fuller than the back, which is what makes it read as a fish.
-	ctx.bezierCurveTo(-half * 0.5, hgt * 0.95, half * 0.5, hgt, half, 0);
+	ctx.moveTo(points[0].x, points[0].y);
+	for (let i = 1; i < points.length; i++) {
+		const previous = points[i - 1];
+		const point = points[i];
+		// Midpoint quadratics: a smooth curve through every point without needing
+		// hand-placed control points per species.
+		ctx.quadraticCurveTo(previous.x, previous.y, (previous.x + point.x) / 2, (previous.y + point.y) / 2);
+	}
 	ctx.closePath();
 }
 
+/**
+ * Per-species values that never change but were being recomputed for every fish on
+ * every frame, sixty times a second: the body gradient, the profile's peak, and the
+ * horizontal reach used to keep fins off the glass.
+ *
+ * Keyed by the spec object, and every spec is a module constant, so this is bounded by
+ * the number of species. The gradient is additionally keyed by context, because a
+ * `CanvasGradient` belongs to the canvas that made it.
+ */
+const gradientCache = new WeakMap<CanvasRenderingContext2D, Map<SpeciesSpec, CanvasGradient>>();
+const peakCache = new Map<SpeciesSpec, number>();
+const reachCache = new Map<SpeciesSpec, number>();
+
+function bodyGradient(ctx: CanvasRenderingContext2D, spec: SpeciesSpec): CanvasGradient {
+	let perSpecies = gradientCache.get(ctx);
+	if (!perSpecies) {
+		perSpecies = new Map();
+		gradientCache.set(ctx, perSpecies);
+	}
+
+	const cached = perSpecies.get(spec);
+	if (cached) return cached;
+
+	// The ramp has to span the body's real depth, not half its *length*. At `length/2`
+	// every species but the angel — whose profile happens to peak at 0.5 — sampled only
+	// the middle third of the gradient and came out a flat mid-tone.
+	const half = bodyHalf(spec);
+	const shade = ctx.createLinearGradient(0, -half, 0, half);
+	shade.addColorStop(0, spec.palette.back);
+	shade.addColorStop(1, spec.palette.belly);
+
+	perSpecies.set(spec, shade);
+	return shade;
+}
+
+/** The species' deepest half-height, in pixels. */
+function bodyHalf(spec: SpeciesSpec): number {
+	let half = peakCache.get(spec);
+	if (half === undefined) {
+		half = profilePeak(spec.profile) * spec.length;
+		peakCache.set(spec, half);
+	}
+	return half;
+}
+
+/** Fills the body outline, lit from above, with a rim so it holds its edge in the water. */
+function drawBody(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	loop: Point[],
+	alpha = 1
+): void {
+	const shade = bodyGradient(ctx, spec);
+
+	// Multiply, never assign: a caller may already have dimmed the context (a locked
+	// treat, a ghost), and assigning would repaint the body at full brightness inside
+	// an otherwise drained fish — leaving only the fins looking spent.
+	const outer = ctx.globalAlpha;
+	ctx.globalAlpha = outer * alpha;
+
+	tracePath(ctx, loop);
+	ctx.fillStyle = shade;
+	ctx.fill();
+
+	tracePath(ctx, loop);
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
+	ctx.lineWidth = 1.2;
+	ctx.stroke();
+	ctx.globalAlpha = outer;
+}
+
+/**
+ * Which sides a fin is drawn on: a tail lobes both ways, a dorsal stands up, and
+ * everything else hangs below.
+ */
+function finSides(fin: FinSpec): (1 | -1)[] {
+	if (fin.kind === 'caudal') return [1, -1];
+	return fin.kind === 'dorsal' ? [-1] : [1];
+}
+
+/**
+ * Lays down one fin's path, anchored at its spine fraction and rotated to the local
+ * tangent, so it follows the body's bend without any special handling.
+ *
+ * Leaves the path current and the fin's own transform in force: the caller decides
+ * whether to fill it (a live fish) or merely stroke it (a ghost), and must `restore`.
+ *
+ * `lag` offsets the fin's own flutter behind the body wave — fins moving in perfect
+ * lockstep with the body read as rigid cardboard — and doubles as the flutter's
+ * amplitude, which is why long trailing veils ripple most. See `FinSpec.lag`.
+ */
+function traceFin(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	fin: FinSpec,
+	spine: Spine,
+	time: number,
+	phase: number,
+	side: 1 | -1
+): { half: number; span: number } {
+	const root = pointAt(spine, fin.anchor);
+	const heading = tangentAt(spine, fin.anchor);
+	const half = profileAt(spec.profile, fin.anchor) * spec.length;
+	const span = fin.span * spec.length;
+
+	const flutter =
+		Math.sin((time / 1000) * spec.wave.speed + phase - fin.lag) * 0.18 * (fin.lag + 0.4);
+
+	ctx.save();
+	ctx.translate(root.x, root.y);
+	ctx.rotate(heading + Math.PI); // face the nose
+	ctx.scale(1, side);
+
+	ctx.beginPath();
+	ctx.moveTo(0, half * 0.6);
+	ctx.quadraticCurveTo(-span * 0.3, half + span * 0.5, -span * fin.sweep, half + span);
+	ctx.quadraticCurveTo(span * 0.1, half + span * 0.4 + flutter * span, span * 0.15, half * 0.5);
+	ctx.closePath();
+
+	return { half, span };
+}
+
+/** One fin, filled and rayed. */
+function drawFin(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	fin: FinSpec,
+	spine: Spine,
+	time: number,
+	phase: number,
+	side: 1 | -1
+): void {
+	const { half, span } = traceFin(ctx, spec, fin, spine, time, phase, side);
+
+	ctx.fillStyle = withAlpha(spec.palette.fin, 0.82);
+	ctx.fill();
+
+	// Rays, so the fin reads as a fin and not a petal.
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.25);
+	ctx.lineWidth = 0.8;
+	for (const k of [0.25, 0.5, 0.75]) {
+		ctx.beginPath();
+		ctx.moveTo(0, half * 0.6);
+		ctx.lineTo(-span * fin.sweep * k, half + span * k);
+		ctx.stroke();
+	}
+
+	ctx.restore();
+}
+
+/**
+ * The fins behind the body: caudal, dorsal, anal, pelvic.
+ *
+ * Drawn before the body so the body's fill covers where they meet it — a fin whose
+ * root is visible looks glued on.
+ */
+function drawRearFins(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	time: number,
+	phase: number
+): void {
+	for (const fin of spec.fins) {
+		if (fin.kind === 'pectoral') continue;
+		for (const side of finSides(fin)) drawFin(ctx, spec, fin, spine, time, phase, side);
+	}
+}
+
+/**
+ * The near-side pectoral, drawn *after* the body so it overlaps it.
+ *
+ * That overlap is the whole point: it is the one part of the fish that is nearer the
+ * viewer than the flank, and drawing it underneath flattened the fish into a decal.
+ */
+function drawPectoral(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	time: number,
+	phase: number
+): void {
+	for (const fin of spec.fins) {
+		if (fin.kind !== 'pectoral') continue;
+		for (const side of finSides(fin)) drawFin(ctx, spec, fin, spine, time, phase, side);
+	}
+}
+
+/** Eye and mouth, placed off the spine so they ride the head as it turns. */
+function drawHead(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	time: number,
+	phase: number
+): void {
+	const at = pointAt(spine, EYE_T);
+	const half = profileAt(spec.profile, EYE_T) * spec.length;
+	const radius = Math.max(2.2, half * 0.34);
+
+	// Eye white.
+	ctx.beginPath();
+	ctx.arc(at.x, at.y - half * 0.25, radius, 0, Math.PI * 2);
+	ctx.fillStyle = '#ffffff';
+	ctx.fill();
+
+	// Iris and pupil.
+	ctx.beginPath();
+	ctx.arc(at.x + radius * 0.18, at.y - half * 0.25, radius * 0.62, 0, Math.PI * 2);
+	ctx.fillStyle = spec.palette.iris;
+	ctx.fill();
+
+	// Catchlight — small, and most of what sells it.
+	ctx.beginPath();
+	ctx.arc(at.x - radius * 0.3, at.y - half * 0.25 - radius * 0.3, radius * 0.26, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+	ctx.fill();
+
+	// Lid: the belly tone, which reads as shadow against the lit back.
+	ctx.beginPath();
+	ctx.arc(at.x, at.y - half * 0.25, radius, Math.PI * 1.05, Math.PI * 1.95);
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
+	ctx.lineWidth = 1;
+	ctx.stroke();
+
+	// Mouth: a notch at the nose that opens on the swim cycle.
+	const nose = pointAt(spine, 0.02);
+	const gape = (Math.sin((time / 1000) * spec.wave.speed * 0.5 + phase) * 0.5 + 0.5) * radius * 0.5;
+	ctx.beginPath();
+	ctx.moveTo(nose.x, nose.y - gape * 0.3);
+	ctx.quadraticCurveTo(nose.x - radius * 0.7, nose.y, nose.x, nose.y + gape);
+	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.65);
+	ctx.lineWidth = 1.1;
+	ctx.stroke();
+}
+
+/**
+ * Species markings, clipped to the body outline.
+ *
+ * Bands follow the local normal rather than running straight down the screen, so they
+ * wrap the body as it bends instead of sitting on it like a decal.
+ */
+function drawMarkings(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	loop: Point[],
+	seed: number
+): void {
+	if (spec.pattern === 'none') return;
+
+	ctx.save();
+	tracePath(ctx, loop);
+	ctx.clip();
+	ctx.fillStyle = spec.palette.marking;
+	ctx.strokeStyle = spec.palette.marking;
+
+	if (spec.pattern === 'bands') {
+		ctx.lineWidth = spec.length * 0.07;
+		for (const t of [0.24, 0.48, 0.72]) {
+			const at = pointAt(spine, t);
+			const half = profileAt(spec.profile, t) * spec.length * 1.6;
+			const angle = tangentAt(spine, t) + Math.PI / 2;
+
+			ctx.beginPath();
+			ctx.moveTo(at.x + Math.cos(angle) * half, at.y + Math.sin(angle) * half);
+			ctx.lineTo(at.x - Math.cos(angle) * half, at.y - Math.sin(angle) * half);
+			ctx.stroke();
+		}
+	} else if (spec.pattern === 'stripe') {
+		ctx.lineWidth = spec.length * 0.06;
+		ctx.beginPath();
+		for (let i = 0; i < spine.length; i++) {
+			const p = spine[i];
+			if (i === 0) ctx.moveTo(p.x, p.y);
+			else ctx.lineTo(p.x, p.y);
+		}
+		ctx.stroke();
+	} else if (spec.pattern === 'spots') {
+		for (let i = 0; i < 5; i++) {
+			const t = 0.2 + i * 0.14;
+			const at = pointAt(spine, t);
+			const jitter = mix32(seed ^ (i * 977));
+			const half = profileAt(spec.profile, t) * spec.length;
+
+			ctx.beginPath();
+			ctx.arc(at.x, at.y + (jitter - 0.5) * half, spec.length * 0.045, 0, Math.PI * 2);
+			ctx.fill();
+		}
+	}
+
+	ctx.restore();
+}
+
+/**
+ * Returns the spine and outline it built, so a caller that needs to draw over the
+ * finished fish — the koi's rim and barbels — does not rebuild them. Both were being
+ * computed twice per koi per frame.
+ */
 function drawFish(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
 	spec: SpeciesSpec,
 	time: number,
 	seed: number
-): void {
+): { spine: Spine; loop: Point[] } {
 	if (at.flip) ctx.scale(-1, 1);
 
-	const { length: len, height: hgt } = spec;
-	const beat = Math.sin(time / 130 + seed);
+	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
+	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const loop = outline(spine, spec.profile, spec.length);
 
-	drawTail(ctx, spec, beat);
-	drawFins(ctx, spec, beat);
+	drawRearFins(ctx, spec, spine, time, phase);
+	drawBody(ctx, spec, loop);
+	drawMarkings(ctx, spec, spine, loop, seed);
+	drawPectoral(ctx, spec, spine, time, phase);
+	drawHead(ctx, spec, spine, time, phase);
+	drawTrail(ctx, time, seed, spec.length);
 
-	// Body, lit from above: back saturated, belly pale.
-	const shade = ctx.createLinearGradient(0, -hgt, 0, hgt);
-	shade.addColorStop(0, spec.body[0]);
-	shade.addColorStop(1, spec.body[1]);
-
-	bodyPath(ctx, len, hgt);
-	ctx.fillStyle = shade;
-	ctx.fill();
-
-	drawPattern(ctx, spec, seed);
-
-	// Belly highlight, a soft crescent along the underside.
-	ctx.save();
-	bodyPath(ctx, len, hgt);
-	ctx.clip();
-	const belly = ctx.createLinearGradient(0, hgt * 0.1, 0, hgt);
-	belly.addColorStop(0, 'rgba(255, 255, 255, 0)');
-	belly.addColorStop(1, 'rgba(255, 255, 255, 0.45)');
-	ctx.fillStyle = belly;
-	ctx.fillRect(-len, -hgt, len * 2, hgt * 2);
-	ctx.restore();
-
-	// Body outline, a shade darker. Without it the fish dissolves into the water at
-	// the edges instead of holding a silhouette.
-	bodyPath(ctx, len, hgt);
-	ctx.strokeStyle = withAlpha(spec.body[1], 0.55);
-	ctx.lineWidth = 1.2;
-	ctx.stroke();
-
-	// Gill arc.
-	ctx.beginPath();
-	ctx.moveTo(len * 0.16, -hgt * 0.45);
-	ctx.quadraticCurveTo(len * 0.06, 0, len * 0.16, hgt * 0.45);
-	ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
-	ctx.lineWidth = 1.2;
-	ctx.stroke();
-
-	// Pectoral fin, fanning with the swim cycle.
-	ctx.save();
-	ctx.translate(len * 0.08, hgt * 0.12);
-	ctx.rotate(beat * 0.25);
-	ctx.beginPath();
-	ctx.moveTo(0, 0);
-	ctx.quadraticCurveTo(-len * 0.2, hgt * 0.5, -len * 0.05, hgt * 0.62);
-	ctx.quadraticCurveTo(len * 0.04, hgt * 0.3, 0, 0);
-	ctx.fillStyle = withAlpha(spec.fin, 0.85);
-	ctx.fill();
-	ctx.restore();
-
-	drawEye(ctx, spec);
-	drawTrail(ctx, time, seed, len);
+	return { spine, loop };
 }
 
 /** A resolved task keeps swimming, drained to a translucent outline of the same fish. */
@@ -408,273 +694,117 @@ function drawGhost(
 ): void {
 	if (at.flip) ctx.scale(-1, 1);
 
-	const { length: len, height: hgt } = spec;
-	const beat = Math.sin(time / 200 + seed);
+	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
+	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const loop = outline(spine, spec.profile, spec.length);
 
-	// A finished task should still be legible as one. At 0.4 the outline all but
-	// vanished against the water, so completing something looked like it deleted it.
-	ctx.globalAlpha = 0.62;
-	ctx.strokeStyle = withAlpha(spec.body[0], 0.95);
-	ctx.lineWidth = 2.2;
+	// Legible, but plainly spent. At 0.4 the outline vanished against the water and
+	// completing a task looked like deleting it.
+	const outer = ctx.globalAlpha;
+	ctx.globalAlpha = outer * 0.62;
 
-	// A faint wash inside the outline, so the shape reads as a body rather than wire.
-	bodyPath(ctx, len, hgt);
-	ctx.fillStyle = withAlpha(spec.body[0], 0.16);
+	/**
+	 * Fins first, and stroked rather than filled.
+	 *
+	 * A ghost is an outline of *its own* species, and for half the tank the species
+	 * lives entirely in the fins: a guppy is a small body behind an oversized fan
+	 * tail, a betta is trailing veils, an angel is a diamond of dorsal and anal. Body
+	 * outline alone made those three indistinguishable from each other.
+	 */
+	ctx.strokeStyle = withAlpha(spec.palette.fin, 0.8);
+	ctx.lineWidth = 1.4;
+	for (const fin of spec.fins) {
+		for (const side of finSides(fin)) {
+			traceFin(ctx, spec, fin, spine, time, phase, side);
+			ctx.stroke();
+			ctx.restore();
+		}
+	}
+
+	tracePath(ctx, loop);
+	ctx.fillStyle = withAlpha(spec.palette.back, 0.16);
 	ctx.fill();
 
-	// Tail, outlined.
-	ctx.beginPath();
-	ctx.moveTo(-len / 2, 0);
-	ctx.quadraticCurveTo(-len * 0.8, -hgt * 0.7 + beat * 3, -len, -hgt * 0.5 + beat * 4);
-	ctx.quadraticCurveTo(-len * 0.7, 0, -len, hgt * 0.5 + beat * 4);
-	ctx.quadraticCurveTo(-len * 0.8, hgt * 0.7 + beat * 3, -len / 2, 0);
-	ctx.stroke();
-
-	bodyPath(ctx, len, hgt);
-	ctx.stroke();
-
-	// Dorsal, outlined.
-	ctx.beginPath();
-	ctx.moveTo(len * 0.2, -hgt * 0.85);
-	ctx.quadraticCurveTo(0, -hgt * 1.5, -len * 0.3, -hgt * 0.8);
+	tracePath(ctx, loop);
+	ctx.strokeStyle = withAlpha(spec.palette.back, 0.95);
+	ctx.lineWidth = 2.2;
 	ctx.stroke();
 
 	// One dot of eye, so the outline still reads as facing somewhere.
+	const eye = pointAt(spine, EYE_T);
+	const half = profileAt(spec.profile, EYE_T) * spec.length;
 	ctx.beginPath();
-	ctx.arc(len * 0.3, -hgt * 0.18, 1.6, 0, Math.PI * 2);
+	ctx.arc(eye.x, eye.y - half * 0.25, Math.max(1.6, half * 0.22), 0, Math.PI * 2);
 	ctx.stroke();
 
-	ctx.globalAlpha = 1;
+	ctx.globalAlpha = outer;
 }
 
 /**
- * The caudal fin, rooted exactly at the tail of the body so it reads as attached.
- * Sized off `flow` as a fraction of body length — never longer than the fish.
+ * Where the bubble trail sits behind the tail, as a fraction of body length, how far
+ * it drifts back over its cycle, and the largest bubble radius. Named because
+ * `speciesReach` has to know how far a fish's drawn geometry actually extends.
  */
-function drawTail(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number): void {
-	const { length: len, height: hgt, flow } = spec;
-	const root = -len / 2 + 1;
-	const reach = len * flow;
-	const spread = hgt * (0.45 + flow * 0.7);
-	const sway = beat * 4;
-
-	// The root is a short vertical edge on the body, not a single point — a tail
-	// pinched to one vertex reads as a leaf stuck on the back.
-	const rootHalf = hgt * 0.22;
-
-	ctx.fillStyle = withAlpha(spec.fin, 0.8);
-	ctx.beginPath();
-	ctx.moveTo(root, -rootHalf);
-
-	switch (spec.tail) {
-		case 'forked':
-			ctx.lineTo(root - reach, -spread + sway);
-			ctx.quadraticCurveTo(root - reach * 0.5, 0, root - reach, spread + sway);
-			ctx.lineTo(root, rootHalf);
-			break;
-		case 'fan':
-			ctx.quadraticCurveTo(root - reach * 0.8, -spread * 0.95 + sway, root - reach, -spread * 0.5 + sway);
-			ctx.quadraticCurveTo(root - reach * 1.1, sway, root - reach, spread * 0.5 + sway);
-			ctx.quadraticCurveTo(root - reach * 0.8, spread * 0.95 + sway, root, rootHalf);
-			break;
-		case 'veil':
-			ctx.quadraticCurveTo(root - reach * 0.7, -spread * 0.85 + sway, root - reach * 1.1, -spread * 0.1 + sway * 1.6);
-			ctx.quadraticCurveTo(root - reach * 0.9, spread * 0.7 + sway * 1.4, root - reach * 0.45, spread * 0.55 + sway);
-			ctx.quadraticCurveTo(root - reach * 0.3, spread * 0.3, root, rootHalf);
-			break;
-		case 'round':
-			ctx.quadraticCurveTo(root - reach * 0.9, -spread * 0.9 + sway, root - reach, sway);
-			ctx.quadraticCurveTo(root - reach * 0.9, spread * 0.9 + sway, root, rootHalf);
-			break;
-	}
-
-	ctx.closePath();
-	ctx.fill();
-
-	// Fin rays, fanning from the root. Cheap, and it stops the tail reading as a
-	// flat paper cut-out.
-	ctx.strokeStyle = withAlpha(spec.body[1], 0.28);
-	ctx.lineWidth = 0.9;
-	for (const f of [-0.6, 0, 0.6]) {
-		ctx.beginPath();
-		ctx.moveTo(root, 0);
-		ctx.lineTo(root - reach * 0.85, spread * f + sway);
-		ctx.stroke();
-	}
-}
-
-/**
- * Dorsal and anal fins, drawn as low ridges sitting *on* the body outline rather
- * than as separate shapes hovering near it.
- */
-function drawFins(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, beat: number): void {
-	const { length: len, height: hgt, flow } = spec;
-	ctx.fillStyle = withAlpha(spec.fin, 0.85);
-
-	// Dorsal: rises from the shoulder, peaks mid-back, settles at the tail root.
-	const peak = hgt * (0.55 + flow * 0.9);
-	ctx.beginPath();
-	ctx.moveTo(len * 0.2, -hgt * 0.62);
-	ctx.quadraticCurveTo(len * 0.02, -peak + beat * 1.5, -len * 0.3, -hgt * 0.5);
-	ctx.quadraticCurveTo(-len * 0.05, -hgt * 0.72, len * 0.2, -hgt * 0.62);
-	ctx.closePath();
-	ctx.fill();
-
-	// Anal fin, shallower, mirroring below.
-	ctx.beginPath();
-	ctx.moveTo(-len * 0.02, hgt * 0.66);
-	ctx.quadraticCurveTo(-len * 0.18, hgt * (0.78 + flow * 0.5) - beat, -len * 0.36, hgt * 0.5);
-	ctx.quadraticCurveTo(-len * 0.16, hgt * 0.66, -len * 0.02, hgt * 0.66);
-	ctx.closePath();
-	ctx.fill();
-}
-
-/** Markings, clipped to the body so nothing spills over the silhouette. */
-function drawPattern(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, seed: number): void {
-	if (spec.pattern === 'none') return;
-
-	const { length: len, height: hgt } = spec;
-
-	ctx.save();
-	bodyPath(ctx, len, hgt);
-	ctx.clip();
-	ctx.fillStyle = spec.patternColor;
-
-	if (spec.pattern === 'bands') {
-		// Slim, slightly raked bands. Thick bars turn a fish into a bee.
-		ctx.globalAlpha = 0.85;
-		for (let i = 0; i < 3; i++) {
-			const x = len * 0.26 - i * len * 0.26;
-			ctx.save();
-			ctx.translate(x, 0);
-			ctx.rotate(-0.14);
-			ctx.beginPath();
-			ctx.moveTo(-len * 0.035, -hgt);
-			ctx.quadraticCurveTo(0, 0, -len * 0.035, hgt);
-			ctx.lineTo(len * 0.035, hgt);
-			ctx.quadraticCurveTo(len * 0.012, 0, len * 0.035, -hgt);
-			ctx.closePath();
-			ctx.fill();
-			ctx.restore();
-		}
-		ctx.globalAlpha = 1;
-	} else if (spec.pattern === 'stripe') {
-		// Neon: a bright lateral line rather than a slab across the whole flank.
-		ctx.globalAlpha = 0.9;
-		ctx.fillRect(-len * 0.45, -hgt * 0.06, len * 0.85, hgt * 0.18);
-		ctx.globalAlpha = 1;
-	} else if (spec.pattern === 'spots') {
-		for (let i = 0; i < 5; i++) {
-			const jitter = ((seed >> (i * 3)) % 100) / 100;
-			ctx.beginPath();
-			ctx.arc(len * 0.3 - i * len * 0.14, (jitter - 0.5) * hgt, 1.5 + jitter, 0, Math.PI * 2);
-			ctx.fill();
-		}
-	}
-
-	ctx.restore();
-}
-
-function drawEye(ctx: CanvasRenderingContext2D, spec: SpeciesSpec): void {
-	const x = spec.length * 0.3;
-	const y = -spec.height * 0.18;
-
-	ctx.beginPath();
-	ctx.arc(x, y, 3.1, 0, Math.PI * 2);
-	ctx.fillStyle = '#FFFFFF';
-	ctx.fill();
-
-	ctx.beginPath();
-	ctx.arc(x + 0.5, y, 1.7, 0, Math.PI * 2);
-	ctx.fillStyle = '#12222B';
-	ctx.fill();
-
-	// Catchlight. Small, but it is most of what makes the fish look alive.
-	ctx.beginPath();
-	ctx.arc(x - 0.7, y - 1, 0.7, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-	ctx.fill();
-}
+const TRAIL_ANCHOR = 0.75;
+const TRAIL_DRIFT = 10;
+const TRAIL_RADIUS = 2.4;
 
 /** The bubble trail behind a live fish. Three bubbles rising and fading on a loop. */
 function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, len: number): void {
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
 	ctx.lineWidth = 0.8;
 
+	const outer = ctx.globalAlpha;
 	for (let i = 0; i < 3; i++) {
 		const cycle = (((time / 900 + seed + i * 0.33) % 1) + 1) % 1;
-		ctx.globalAlpha = 0.45 * (1 - cycle);
+		ctx.globalAlpha = outer * 0.45 * (1 - cycle);
 		ctx.beginPath();
 		// Behind the tail, not off the nose: a fish does not breathe backwards.
-		ctx.arc(-len * 0.75 - cycle * 10, -cycle * 20, 1.4 + i * 0.5, 0, Math.PI * 2);
+		ctx.arc(-len * TRAIL_ANCHOR - cycle * TRAIL_DRIFT, -cycle * 20, 1.4 + i * 0.5, 0, Math.PI * 2);
 		ctx.stroke();
 	}
 
-	ctx.globalAlpha = 1;
+	ctx.globalAlpha = outer;
 }
 
-function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number): void {
-	if (at.flip) ctx.scale(-1, 1);
+/** The cleared-day koi: an ordinary fish body with barbels and a gold rim. */
+function drawKoi(ctx: CanvasRenderingContext2D, at: Placement, time: number, seed: number): void {
+	const spec = SPECIES.koi;
+	const { spine, loop } = drawFish(ctx, at, spec, time, seed);
 
-	const len = 46;
-	const hgt = 17;
-	const beat = Math.sin(time / 300);
-
-	// Trailing veil fins first, so the body sits over them.
-	ctx.fillStyle = 'rgba(255, 226, 168, 0.75)';
-	ctx.beginPath();
-	ctx.moveTo(-len / 2, 0);
-	ctx.quadraticCurveTo(-len * 0.85, -hgt * 1.1 + beat * 6, -len * 1.05, -hgt * 0.3 + beat * 8);
-	ctx.quadraticCurveTo(-len * 0.7, 0, -len * 1.05, hgt * 0.5 + beat * 8);
-	ctx.quadraticCurveTo(-len * 0.85, hgt * 1.1 + beat * 6, -len / 2, 0);
-	ctx.closePath();
-	ctx.fill();
-
-	const gradient = ctx.createLinearGradient(0, -hgt, 0, hgt);
-	gradient.addColorStop(0, '#FFF0C4');
-	gradient.addColorStop(0.45, '#FFC46B');
-	gradient.addColorStop(1, '#E08A2B');
-
-	bodyPath(ctx, len, hgt);
-	ctx.fillStyle = gradient;
-	ctx.fill();
-
-	// The red kohaku blotches that make a koi a koi.
+	/**
+	 * A bright gold rim with a soft bloom behind it.
+	 *
+	 * The koi is what you get for clearing a whole day, so it has to be unmistakable —
+	 * but it shares its cream and gold with the angel, and once the two overlapped the
+	 * generic body outline was not enough to tell them apart. Stroked twice through the
+	 * shadow so the bloom builds without a second path.
+	 */
 	ctx.save();
-	bodyPath(ctx, len, hgt);
-	ctx.clip();
-	ctx.fillStyle = 'rgba(226, 78, 47, 0.85)';
-	ctx.beginPath();
-	ctx.arc(len * 0.16, -hgt * 0.35, 7, 0, Math.PI * 2);
-	ctx.fill();
-	ctx.beginPath();
-	ctx.arc(-len * 0.2, hgt * 0.1, 5.5, 0, Math.PI * 2);
-	ctx.fill();
+	ctx.shadowColor = 'rgba(255, 206, 94, 0.9)';
+	ctx.shadowBlur = 9;
+	ctx.strokeStyle = 'rgba(255, 233, 156, 0.95)';
+	ctx.lineWidth = 1.8;
+	tracePath(ctx, loop);
+	ctx.stroke();
+	ctx.stroke();
 	ctx.restore();
 
-	// Gold rim, which is what separates it from an ordinary orange fish.
-	bodyPath(ctx, len, hgt);
-	ctx.strokeStyle = 'rgba(255, 240, 196, 0.9)';
-	ctx.lineWidth = 1.4;
-	ctx.stroke();
+	// Barbels, the detail that separates a koi from a large goldfish. Drawn after the
+	// body so they sit over the head.
+	const nose = pointAt(spine, 0.04);
 
-	// Barbels.
-	ctx.beginPath();
-	ctx.moveTo(len * 0.46, hgt * 0.1);
-	ctx.quadraticCurveTo(len * 0.58, hgt * 0.3, len * 0.52, hgt * 0.5);
-	ctx.strokeStyle = 'rgba(255, 240, 196, 0.8)';
+	ctx.strokeStyle = 'rgba(255, 240, 196, 0.85)';
 	ctx.lineWidth = 1;
-	ctx.stroke();
-
-	drawEye(ctx, { ...SPECIES.clown, length: len, height: hgt });
+	for (const side of [-1, 1]) {
+		ctx.beginPath();
+		ctx.moveTo(nose.x, nose.y + side * 2);
+		ctx.quadraticCurveTo(nose.x + 7, nose.y + side * 5, nose.x + 4, nose.y + side * 9);
+		ctx.stroke();
+	}
 }
 
-function drawBubble(
-	ctx: CanvasRenderingContext2D,
-	creature: Creature,
-	colors: Palette,
-	time: number
-): void {
+function drawBubble(ctx: CanvasRenderingContext2D, creature: Creature, time: number): void {
 	const seed = hash(creature.id);
 	const radius = 24;
 	const wobble = Math.sin(time / 700 + seed) * 1.5;
@@ -719,8 +849,6 @@ function drawBubble(
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
 	ctx.lineWidth = 2.4;
 	ctx.stroke();
-
-	void colors;
 }
 
 function drawTreatFish(
@@ -731,147 +859,42 @@ function drawTreatFish(
 ): void {
 	const affordable = !creature.locked;
 	const seed = hash(creature.id);
-	const len = 58;
-	const hgt = 40;
-	const beat = Math.sin(time / 220 + seed);
+	const spec = SPECIES.exotic;
 
-	// Deliberately the largest and most ornate creature in the tank. A guilty
-	// pleasure has to be the thing your eye lands on first, or the whole mechanic
-	// is invisible — it is the only creature you buy rather than do.
+	// The largest, most ornate creature in the tank. A guilty pleasure you cannot see
+	// is a mechanic that does not exist.
 	if (affordable) {
-		const halo = ctx.createRadialGradient(0, 0, 4, 0, 0, len);
+		const halo = ctx.createRadialGradient(0, 0, 4, 0, 0, spec.length);
 		halo.addColorStop(0, 'rgba(255, 226, 150, 0.45)');
 		halo.addColorStop(0.6, 'rgba(255, 140, 220, 0.16)');
 		halo.addColorStop(1, 'rgba(255, 196, 107, 0)');
 		ctx.fillStyle = halo;
 		ctx.beginPath();
-		ctx.arc(0, 0, len, 0, Math.PI * 2);
+		ctx.arc(0, 0, spec.length, 0, Math.PI * 2);
 		ctx.fill();
 	}
 
-	// Out of reach: drained towards the water, so it reads as a promise rather than
-	// a fish you already own. Never invisible — you should still want it.
-	ctx.globalAlpha = affordable ? 1 : 0.62;
-	if (at.flip) ctx.scale(-1, 1);
+	// Out of reach reads as a promise, not a corpse: drained, never invisible. The dim
+	// is multiplied in and put back rather than assigned, so every layer of the fish —
+	// body, markings, eye, fins — drains together.
+	const outer = ctx.globalAlpha;
+	ctx.globalAlpha = outer * (affordable ? 1 : 0.62);
 
-	// Trailing filaments from the tail, drifting behind the beat.
-	ctx.strokeStyle = affordable ? 'rgba(255, 208, 120, 0.85)' : 'rgba(206, 190, 222, 0.65)';
-	ctx.lineWidth = 1.6;
-	for (const f of [-0.5, 0, 0.5]) {
-		ctx.beginPath();
-		ctx.moveTo(-len * 0.42, hgt * 0.06 * f);
-		ctx.quadraticCurveTo(
-			-len * 0.75,
-			hgt * (0.35 * f) + beat * 5,
-			-len * 0.98,
-			hgt * (0.55 * f) + beat * 9
-		);
-		ctx.stroke();
-	}
-
-	// Veil tail.
-	ctx.fillStyle = affordable ? 'rgba(255, 168, 214, 0.72)' : 'rgba(214, 190, 226, 0.45)';
-	ctx.beginPath();
-	ctx.moveTo(-len * 0.4, -hgt * 0.2);
-	ctx.quadraticCurveTo(-len * 0.68, -hgt * 0.5 + beat * 4, -len * 0.84, beat * 7);
-	ctx.quadraticCurveTo(-len * 0.66, hgt * 0.5 + beat * 5, -len * 0.4, hgt * 0.2);
-	ctx.closePath();
-	ctx.fill();
-
-	// Tall sail fins, above and below — the silhouette that says "not an ordinary fish".
-	const dorsal = () => {
-		ctx.beginPath();
-		ctx.moveTo(len * 0.24, -hgt * 0.46);
-		ctx.quadraticCurveTo(len * 0.02, -hgt * 0.92 + beat * 3, -len * 0.28, -hgt * 0.44);
-		ctx.quadraticCurveTo(-len * 0.04, -hgt * 0.56, len * 0.24, -hgt * 0.46);
-		ctx.closePath();
-	};
-	const anal = () => {
-		ctx.beginPath();
-		ctx.moveTo(len * 0.14, hgt * 0.46);
-		ctx.quadraticCurveTo(-len * 0.06, hgt * 0.82 - beat * 3, -len * 0.32, hgt * 0.42);
-		ctx.quadraticCurveTo(-len * 0.06, hgt * 0.54, len * 0.14, hgt * 0.46);
-		ctx.closePath();
-	};
-
-	ctx.fillStyle = affordable ? 'rgba(255, 190, 120, 0.8)' : 'rgba(206, 196, 224, 0.5)';
-	dorsal();
-	ctx.fill();
-	anal();
-	ctx.fill();
-
-	// Rays, clipped to each sail. Unclipped they shoot past the fin edges and read as
-	// scratches on the glass.
-	ctx.strokeStyle = affordable ? 'rgba(214, 120, 40, 0.35)' : 'rgba(150, 150, 180, 0.3)';
-	ctx.lineWidth = 0.9;
-	for (const [shape, dir] of [
-		[dorsal, -1],
-		[anal, 1]
-	] as const) {
-		ctx.save();
-		shape();
-		ctx.clip();
-		for (let i = 0; i < 5; i++) {
-			const rx = len * 0.2 - i * len * 0.11;
-			ctx.beginPath();
-			ctx.moveTo(rx, dir * hgt * 0.4);
-			ctx.lineTo(rx - len * 0.03, dir * hgt);
-			ctx.stroke();
-		}
-		ctx.restore();
-	}
-
-	// Iridescent body: magenta shoulder into gold into deep violet.
-	const body = ctx.createLinearGradient(0, -hgt * 0.4, 0, hgt * 0.4);
-	if (affordable) {
-		body.addColorStop(0, '#FF6FC7');
-		body.addColorStop(0.42, '#FFD166');
-		body.addColorStop(1, '#7A3BD1');
-	} else {
-		body.addColorStop(0, '#C7A8D8');
-		body.addColorStop(0.45, '#D9CBE4');
-		body.addColorStop(1, '#8E7CB0');
-	}
-
-	bodyPath(ctx, len * 0.86, hgt * 0.56);
-	ctx.fillStyle = body;
-	ctx.fill();
-
-	// Scale shimmer, clipped to the body.
-	ctx.save();
-	bodyPath(ctx, len * 0.86, hgt * 0.56);
-	ctx.clip();
-	ctx.strokeStyle = affordable ? 'rgba(255, 255, 255, 0.32)' : 'rgba(255, 255, 255, 0.16)';
-	ctx.lineWidth = 1;
-	for (let i = -2; i < 4; i++) {
-		ctx.beginPath();
-		ctx.arc(len * 0.1 - i * 7, 0, 9, -0.9, 0.9);
-		ctx.stroke();
-	}
-	ctx.restore();
-
-	bodyPath(ctx, len * 0.86, hgt * 0.56);
-	ctx.strokeStyle = affordable ? 'rgba(122, 59, 209, 0.55)' : 'rgba(126, 110, 156, 0.5)';
-	ctx.lineWidth = 1.2;
-	ctx.stroke();
-
-	drawEye(ctx, { ...SPECIES.betta, length: len * 0.86, height: hgt * 0.56 });
+	drawFish(ctx, at, affordable ? spec : LOCKED_EXOTIC, time, seed);
+	ctx.globalAlpha = outer;
 
 	// Sparkles, affordable only: the tell that you can have it now.
 	if (affordable) {
 		ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
 		for (let i = 0; i < 3; i++) {
 			const cycle = (((time / 1100 + i * 0.33 + seed) % 1) + 1) % 1;
-			ctx.globalAlpha = Math.sin(cycle * Math.PI);
-			const sx = len * 0.42 - i * 12;
-			const sy = -hgt * 0.5 - cycle * 10;
+			ctx.globalAlpha = outer * Math.sin(cycle * Math.PI);
 			ctx.beginPath();
-			ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+			ctx.arc(spec.length * 0.3 - i * 12, -spec.length * 0.35 - cycle * 10, 1.8, 0, Math.PI * 2);
 			ctx.fill();
 		}
+		ctx.globalAlpha = outer;
 	}
-
-	ctx.globalAlpha = 1;
 }
 
 /**
@@ -966,26 +989,4 @@ function withAlpha(hex: string, alpha: number): string {
 	const g = parseInt(hex.slice(3, 5), 16);
 	const b = parseInt(hex.slice(5, 7), 16);
 	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-/**
- * Avalanches a seed into [0, 1). Sibling ids like `t-aaa` and `t-bbb` differ only in
- * their low bits; without mixing, anything derived from the high bits comes out
- * identical for all of them.
- */
-function mix32(seed: number): number {
-	let x = (seed ^ 0x9e3779b9) >>> 0;
-	x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
-	x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
-	x = (x ^ (x >>> 16)) >>> 0;
-	return x / 4294967296;
-}
-
-/** Stable per-id seed: the same creature is the same fish, in the same lane, on every reload. */
-function hash(id: string): number {
-	let value = 0;
-	for (let i = 0; i < id.length; i++) {
-		value = (value * 31 + id.charCodeAt(i)) >>> 0;
-	}
-	return value;
 }
