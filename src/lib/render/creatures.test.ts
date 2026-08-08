@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
-import { SPECIES, SWIMMERS } from './species';
+import { SPECIES, SWIMMERS, type SpeciesSpec } from './species';
 import { profilePeak } from './spine';
 
 import { WATERLINE } from './water';
@@ -195,7 +195,7 @@ describe('speciesFor', () => {
 	});
 
 	it('only ever returns a known species', () => {
-		const known = ['clown', 'tang', 'angel', 'guppy', 'neon', 'betta'];
+		const known = ['clown', 'tang', 'angel', 'guppy', 'neon', 'betta', 'eel', 'puffer', 'discus'];
 
 		for (let i = 0; i < 200; i++) {
 			expect(known).toContain(speciesFor(`id-${i}`));
@@ -248,7 +248,7 @@ describe('body drawing follows the spine', () => {
 	it('draws every species with a filled body and a balanced context', () => {
 		const perSpecies = new Map<string, string>();
 		for (let i = 0; i < 300; i++) perSpecies.set(speciesFor(`id-${i}`), `id-${i}`);
-		expect(perSpecies.size).toBe(6);
+		expect(perSpecies.size).toBe(SWIMMERS.length);
 
 		for (const id of perSpecies.values()) {
 			const ctx = fakeCtx();
@@ -813,10 +813,17 @@ describe('koi', () => {
 		expect(SPECIES.koi.wave.speed).toBeLessThan(SPECIES.clown.wave.speed);
 	});
 
-	it('is longer than every swimmer', () => {
+	it('stays unmistakable now that the eel is longer than it', () => {
+		// Length used to carry the koi's identity, until a ribbon eel out-measured it.
+		// What still separates it: nothing moves more slowly, and the eel that beats it
+		// on length is a thin ribbon where the koi is a deep gold body.
 		for (const name of SWIMMERS) {
-			expect(SPECIES.koi.length).toBeGreaterThan(SPECIES[name].length);
+			expect(SPECIES.koi.wave.speed).toBeLessThanOrEqual(SPECIES[name].wave.speed);
 		}
+
+		const depth = (spec: SpeciesSpec) =>
+			Math.max(...spec.profile.map((point: [number, number]) => point[1])) * spec.length;
+		expect(depth(SPECIES.koi)).toBeGreaterThan(depth(SPECIES.eel) * 2);
 	});
 });
 

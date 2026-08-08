@@ -5,8 +5,18 @@ import { profileAt } from './spine';
 const ALL = Object.keys(SPECIES) as Species[];
 
 describe('species data', () => {
-	it('defines the six swimmers plus koi and the exotic treat', () => {
-		expect(SWIMMERS).toEqual(['clown', 'tang', 'angel', 'guppy', 'neon', 'betta']);
+	it('defines the swimmers plus koi and the exotic treat', () => {
+		expect(SWIMMERS).toEqual([
+			'clown',
+			'tang',
+			'angel',
+			'guppy',
+			'neon',
+			'betta',
+			'eel',
+			'puffer',
+			'discus'
+		]);
 		expect(ALL).toContain('koi');
 		expect(ALL).toContain('exotic');
 	});
@@ -19,10 +29,13 @@ describe('species data', () => {
 		}
 	});
 
-	it('keeps every profile non-negative and closed at the nose', () => {
+	it('keeps every profile non-negative and narrow at the nose', () => {
+		// Not *closed*: a pufferfish's snout is genuinely blunt. What matters is that the
+		// nose is far narrower than the body, so the fish has a front rather than a wall.
 		for (const name of ALL) {
 			const { profile } = SPECIES[name];
-			expect(profile[0][1]).toBeCloseTo(0, 1);
+			const peak = Math.max(...profile.map(([, h]) => h));
+			expect(profile[0][1]).toBeLessThan(peak * 0.35);
 			for (let t = 0; t <= 1; t += 0.02) {
 				expect(profileAt(profile, t)).toBeGreaterThanOrEqual(0);
 			}

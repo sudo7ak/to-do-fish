@@ -9,7 +9,18 @@ import type { Profile, Wave } from './spine';
  * runs from 0.35 to 1.15 across the six swimmers, and that spread is deliberate.
  */
 
-export type Species = 'clown' | 'tang' | 'angel' | 'guppy' | 'neon' | 'betta' | 'koi' | 'exotic';
+export type Species =
+	| 'clown'
+	| 'tang'
+	| 'angel'
+	| 'guppy'
+	| 'neon'
+	| 'betta'
+	| 'eel'
+	| 'puffer'
+	| 'discus'
+	| 'koi'
+	| 'exotic';
 
 export type FinKind = 'dorsal' | 'anal' | 'pectoral' | 'pelvic' | 'caudal';
 
@@ -227,6 +238,90 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 		wave: { amplitude: 0.14, wavelength: 1.2, speed: 5 }
 	},
 
+	// Nearly three times the neon's length and a tenth its depth: the longest, thinnest
+	// silhouette in the tank. A short wavelength puts more than one crest along the
+	// body, so it ripples end to end instead of sweeping like a fish.
+	eel: {
+		length: 86,
+		profile: [
+			[0, 0.012],
+			[0.1, 0.04],
+			[0.45, 0.045],
+			[0.82, 0.034],
+			[1, 0.012]
+		],
+		fins: [
+			caudal(0.1, 0.5, 1.2),
+			{ anchor: 0.45, kind: 'dorsal', span: 0.05, sweep: 0.5, lag: 1 },
+			{ anchor: 0.2, kind: 'pectoral', span: 0.05, sweep: 0.9, lag: 0.4 }
+		],
+		palette: {
+			back: '#3f6fe0',
+			belly: '#12246b',
+			fin: '#ffd84d',
+			marking: '#0b1436',
+			iris: '#0b1436'
+		},
+		pattern: 'none',
+		wave: { amplitude: 0.3, wavelength: 0.5, speed: 5 }
+	},
+
+	// Round. Nothing else in the tank is, which is the whole point — it reads at a
+	// glance even against a crowd. Barely bends, and drifts rather than swims.
+	puffer: {
+		length: 38,
+		profile: [
+			[0, 0.05],
+			[0.18, 0.33],
+			[0.45, 0.4],
+			[0.75, 0.27],
+			[1, 0.05]
+		],
+		fins: [
+			caudal(0.22, 0.5, 1.1),
+			{ anchor: 0.4, kind: 'dorsal', span: 0.13, sweep: 0.6, lag: 0.7 },
+			{ anchor: 0.63, kind: 'anal', span: 0.11, sweep: 0.6, lag: 0.8 },
+			{ anchor: 0.26, kind: 'pectoral', span: 0.12, sweep: 0.9, lag: 0.3 }
+		],
+		palette: {
+			back: '#f0c96a',
+			belly: '#c9832b',
+			fin: '#ffe7b0',
+			marking: '#7a4a12',
+			iris: '#2a1a06'
+		},
+		pattern: 'spots',
+		wave: { amplitude: 0.05, wavelength: 1.8, speed: 3 }
+	},
+
+	// Taller than it is long, and vertically barred: the deepest body in the tank, and
+	// the counterweight to the eel at the other end of the range.
+	discus: {
+		length: 32,
+		profile: [
+			[0, 0.03],
+			[0.12, 0.32],
+			[0.42, 0.5],
+			[0.75, 0.3],
+			[1, 0.04]
+		],
+		fins: [
+			caudal(0.24, 0.5, 1),
+			{ anchor: 0.4, kind: 'dorsal', span: 0.32, sweep: 0.45, lag: 1.1 },
+			{ anchor: 0.6, kind: 'anal', span: 0.3, sweep: 0.45, lag: 1.2 },
+			{ anchor: 0.24, kind: 'pectoral', span: 0.13, sweep: 0.9, lag: 0.3 }
+		],
+		palette: {
+			back: '#5ad2c0',
+			belly: '#1d7fa8',
+			fin: '#bff3ea',
+			marking: '#0e4a5e',
+			iris: '#0d2a33'
+		},
+		pattern: 'bands',
+		wave: { amplitude: 0.07, wavelength: 1.6, speed: 4 }
+	},
+
 	// The cleared-day koi: long body, barbels, veil tail, unhurried.
 	koi: {
 		length: 52,
@@ -286,7 +381,17 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 };
 
 /** The species a task can be assigned. Koi and exotic are chosen by creature kind. */
-export const SWIMMERS: Species[] = ['clown', 'tang', 'angel', 'guppy', 'neon', 'betta'];
+export const SWIMMERS: Species[] = [
+	'clown',
+	'tang',
+	'angel',
+	'guppy',
+	'neon',
+	'betta',
+	'eel',
+	'puffer',
+	'discus'
+];
 
 /**
  * Which task is which fish is arbitrary, but it must be stable: the same task is the
