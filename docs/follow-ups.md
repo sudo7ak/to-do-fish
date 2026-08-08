@@ -1,5 +1,10 @@
 # Follow-ups
 
+> **Historical record of the v1.1 pass.** For what is still open, read
+> [`pending.md`](pending.md) — it supersedes the open items below and is current.
+> This file is kept for the DONE sections, which record *why* things were changed and
+> what verification closed them.
+
 Open items after v1.1. Nothing here blocks using the app; each is a known gap, a
 deferred decision, or a piece of debt with a named reason.
 
