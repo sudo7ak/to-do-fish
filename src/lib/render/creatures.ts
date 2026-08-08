@@ -2,6 +2,10 @@ import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
 import { WATERLINE, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
+import { speciesFor, type Species } from './species';
+
+export { speciesFor };
+export type { Species };
 
 /**
  * Drawing one creature at a time.
@@ -31,8 +35,17 @@ const TREAT_DRAFT = 34;
 const PILL_EDGE = 0.74;
 
 // ----------------------------------------------------------------- species
+//
+// Species *selection* (the `Species` union and `speciesFor`) now lives in
+// `species.ts`, imported and re-exported above. What remains here is the legacy
+// per-species drawing spec (flat colours, canned tail shapes) that the shape
+// functions below still consume. It is keyed on the six swimmer species only —
+// `species.ts` additionally carries `koi` and `exotic`, which are drawn by their
+// own dedicated functions (`drawKoi`, `drawTreatFish`) and never indexed through
+// this table.
 
-export type Species = 'clown' | 'tang' | 'angel' | 'guppy' | 'neon' | 'betta';
+/** The six species this legacy drawing table has entries for. */
+type Swimmer = Exclude<Species, 'koi' | 'exotic'>;
 
 type SpeciesSpec = {
 	length: number;
@@ -50,12 +63,7 @@ type SpeciesSpec = {
 	flow: number;
 };
 
-/**
- * Which task is which fish is arbitrary, but it must be *stable*: the same task is
- * the same fish every time you open the tank, because that is what lets you
- * recognise it without reading the label.
- */
-const SPECIES: Record<Species, SpeciesSpec> = {
+const SPECIES: Record<Swimmer, SpeciesSpec> = {
 	clown: {
 		length: 42,
 		height: 24,
@@ -117,15 +125,6 @@ const SPECIES: Record<Species, SpeciesSpec> = {
 		flow: 0.45
 	}
 };
-
-const SPECIES_ORDER: Species[] = ['clown', 'tang', 'angel', 'guppy', 'neon', 'betta'];
-
-export function speciesFor(id: string): Species {
-	// Mixed, not `hash % n`: sequential ids step the raw hash by a constant, and when
-	// that stride shares a factor with the species count only a couple of species
-	// ever appear. A real tank has to look stocked.
-	return SPECIES_ORDER[Math.floor(mix32(hash(id)) * SPECIES_ORDER.length)];
-}
 
 // ---------------------------------------------------------------- placement
 
@@ -271,11 +270,11 @@ export function drawCreature(
 				ctx.scale(0.72, 0.72);
 				drawTreatFish(ctx, { ...creature, locked: false }, at, time);
 			} else {
-				drawFish(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
+				drawFish(ctx, at, SPECIES[speciesFor(creature.id) as Swimmer], time, hash(creature.id));
 			}
 			break;
 		case 'ghost':
-			drawGhost(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
+			drawGhost(ctx, at, SPECIES[speciesFor(creature.id) as Swimmer], time, hash(creature.id));
 			break;
 		case 'koi':
 			drawKoi(ctx, at, time);
@@ -699,7 +698,7 @@ function drawBubble(
 	ctx.clip();
 	ctx.scale(0.62, 0.62);
 	ctx.translate(Math.sin(time / 800 + seed) * 7, Math.cos(time / 1100 + seed) * 4);
-	drawFish(ctx, { x: 0, y: 0, flip: false }, SPECIES[speciesFor(creature.id)], time, seed);
+	drawFish(ctx, { x: 0, y: 0, flip: false }, SPECIES[speciesFor(creature.id) as Swimmer], time, seed);
 	ctx.restore();
 
 	ctx.beginPath();
