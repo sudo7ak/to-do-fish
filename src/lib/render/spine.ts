@@ -67,3 +67,71 @@ export function spineFor(
 
 	return points;
 }
+
+/** `(t, halfHeight ÷ length)` control points, `t` ascending from 0 (nose) to 1 (tail). */
+export type Profile = [number, number][];
+
+/** Half-height at `t`, linearly interpolated and clamped at both ends. */
+export function profileAt(profile: Profile, t: number): number {
+	if (t <= profile[0][0]) return profile[0][1];
+
+	for (let i = 1; i < profile.length; i++) {
+		const [t1, h1] = profile[i];
+		if (t <= t1) {
+			const [t0, h0] = profile[i - 1];
+			const span = t1 - t0;
+			const k = span === 0 ? 0 : (t - t0) / span;
+			return h0 + (h1 - h0) * k;
+		}
+	}
+
+	return profile[profile.length - 1][1];
+}
+
+/** The point at `t` along the spine, 0 at the nose and 1 at the tail. */
+export function pointAt(spine: Spine, t: number): Point {
+	const clamped = Math.min(1, Math.max(0, t));
+	const scaled = clamped * (spine.length - 1);
+	const i = Math.min(spine.length - 2, Math.floor(scaled));
+	const k = scaled - i;
+
+	return {
+		x: spine[i].x + (spine[i + 1].x - spine[i].x) * k,
+		y: spine[i].y + (spine[i + 1].y - spine[i].y) * k
+	};
+}
+
+/** Heading of the spine at `t`, in radians. */
+export function tangentAt(spine: Spine, t: number): number {
+	const clamped = Math.min(1, Math.max(0, t));
+	const scaled = clamped * (spine.length - 1);
+	const i = Math.min(spine.length - 2, Math.floor(scaled));
+
+	return Math.atan2(spine[i + 1].y - spine[i].y, spine[i + 1].x - spine[i].x);
+}
+
+/**
+ * The body outline: the spine offset by ±profile along the local normal.
+ *
+ * Offsetting along the normal rather than straight up and down is what makes the
+ * body look like it bends instead of shearing.
+ */
+export function outline(spine: Spine, profile: Profile, length: number): Point[] {
+	const top: Point[] = [];
+	const bottom: Point[] = [];
+
+	for (let i = 0; i < spine.length; i++) {
+		const t = i / (spine.length - 1);
+		const half = Math.max(0, profileAt(profile, t)) * length;
+
+		// Normal to the local tangent.
+		const angle = tangentAt(spine, t) + Math.PI / 2;
+		const nx = Math.cos(angle) * half;
+		const ny = Math.sin(angle) * half;
+
+		top.push({ x: spine[i].x + nx, y: spine[i].y + ny });
+		bottom.push({ x: spine[i].x - nx, y: spine[i].y - ny });
+	}
+
+	return [...top, ...bottom.reverse()];
+}

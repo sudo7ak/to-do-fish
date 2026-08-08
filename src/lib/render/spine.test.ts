@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { spineFor, type Wave } from './spine';
+import {
+	spineFor,
+	profileAt,
+	pointAt,
+	tangentAt,
+	outline,
+	type Wave,
+	type Spine,
+	type Profile
+} from './spine';
 
 const WAVE: Wave = { amplitude: 0.12, wavelength: 0.9, speed: 6 };
 const LEN = 40;
@@ -76,6 +85,98 @@ describe('spineFor', () => {
 				expect(Number.isFinite(p.x)).toBe(true);
 				expect(Number.isFinite(p.y)).toBe(true);
 			}
+		}
+	});
+});
+
+const PROFILE: Profile = [
+	[0, 0],
+	[0.2, 0.16],
+	[0.5, 0.2],
+	[0.85, 0.05],
+	[1, 0.02]
+];
+
+describe('profileAt', () => {
+	it('returns the exact value at a control point', () => {
+		expect(profileAt(PROFILE, 0.5)).toBeCloseTo(0.2, 6);
+	});
+
+	it('interpolates between control points', () => {
+		const mid = profileAt(PROFILE, 0.35);
+		expect(mid).toBeGreaterThan(0.16);
+		expect(mid).toBeLessThan(0.2);
+	});
+
+	it('clamps outside the range rather than extrapolating', () => {
+		expect(profileAt(PROFILE, -1)).toBeCloseTo(0, 6);
+		expect(profileAt(PROFILE, 2)).toBeCloseTo(0.02, 6);
+	});
+
+	it('is never negative — a negative half-height turns the body inside out', () => {
+		for (let t = 0; t <= 1; t += 0.02) {
+			expect(profileAt(PROFILE, t)).toBeGreaterThanOrEqual(0);
+		}
+	});
+});
+
+describe('pointAt and tangentAt', () => {
+	const straight: Spine = [
+		{ x: 20, y: 0 },
+		{ x: 10, y: 0 },
+		{ x: 0, y: 0 },
+		{ x: -10, y: 0 },
+		{ x: -20, y: 0 }
+	];
+
+	it('finds the nose at t=0 and the tail at t=1', () => {
+		expect(pointAt(straight, 0)).toEqual({ x: 20, y: 0 });
+		expect(pointAt(straight, 1)).toEqual({ x: -20, y: 0 });
+	});
+
+	it('interpolates along the chain', () => {
+		expect(pointAt(straight, 0.5).x).toBeCloseTo(0, 5);
+	});
+
+	it('reports the heading of a straight spine as pointing along -x', () => {
+		// The chain runs nose (+x) to tail (-x), so the tangent points backwards.
+		expect(Math.abs(tangentAt(straight, 0.5))).toBeCloseTo(Math.PI, 2);
+	});
+});
+
+describe('outline', () => {
+	const straight: Spine = [
+		{ x: 20, y: 0 },
+		{ x: 0, y: 0 },
+		{ x: -20, y: 0 }
+	];
+
+	it('closes: the same number of points above and below', () => {
+		const loop = outline(straight, PROFILE, 40);
+		expect(loop.length).toBe(straight.length * 2);
+	});
+
+	it('is symmetric about a straight spine', () => {
+		const loop = outline(straight, PROFILE, 40);
+		const top = loop.slice(0, straight.length);
+		const bottom = loop.slice(straight.length).reverse();
+
+		for (let i = 0; i < top.length; i++) {
+			expect(top[i].y).toBeCloseTo(-bottom[i].y, 5);
+		}
+	});
+
+	it('is widest where the profile peaks', () => {
+		const loop = outline(straight, PROFILE, 40);
+		const heights = loop.slice(0, straight.length).map((p) => Math.abs(p.y));
+		expect(Math.max(...heights)).toBeCloseTo(0.2 * 40, 4);
+	});
+
+	it('produces finite points for a bent spine', () => {
+		const bent = spineFor(40, WAVE, 700, 0.4);
+		for (const p of outline(bent, PROFILE, 40)) {
+			expect(Number.isFinite(p.x)).toBe(true);
+			expect(Number.isFinite(p.y)).toBe(true);
 		}
 	});
 });
