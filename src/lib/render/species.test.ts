@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SPECIES, SWIMMERS, speciesFor, type Species } from './species';
+import { SPECIES, SWIMMERS, TREATS, speciesFor, treatSpeciesFor, type Species } from './species';
 import { profileAt } from './spine';
 
 const ALL = Object.keys(SPECIES) as Species[];
@@ -21,11 +21,21 @@ describe('species data', () => {
 		expect(ALL).toContain('exotic');
 	});
 
-	it('never gives a swimmer id the koi or treat body', () => {
-		// Those two are assigned by creature kind. A task turning into a koi would be
-		// a lie about the day being cleared.
+	it('never gives a swimmer id a koi or a prize body', () => {
+		// Those are assigned by creature kind. A task turning into a koi would be a lie
+		// about the day being cleared; one turning into a prize would be a lie about
+		// having paid for it. Derived from TREATS so adding a prize cannot slip past.
+		const reserved = ['koi', ...TREATS];
+
 		for (let i = 0; i < 300; i++) {
-			expect(['koi', 'exotic']).not.toContain(speciesFor(`id-${i}`));
+			expect(reserved).not.toContain(speciesFor(`id-${i}`));
+		}
+	});
+
+	it('gives the prizes their own bodies, none of them a swimmer', () => {
+		for (const name of TREATS) {
+			expect(SWIMMERS).not.toContain(name);
+			expect(SPECIES[name].finStyle).toBe('veil');
 		}
 	});
 
@@ -94,6 +104,22 @@ describe('species data', () => {
 				expect(p[key]).toMatch(/^#[0-9a-f]{6}$/i);
 			}
 		}
+	});
+});
+
+describe('treatSpeciesFor', () => {
+	it('is stable for a task — the treat you are saving for looks the same tomorrow', () => {
+		expect(treatSpeciesFor('treat-abc')).toBe(treatSpeciesFor('treat-abc'));
+	});
+
+	it('only ever returns a prize', () => {
+		for (let i = 0; i < 200; i++) expect(TREATS).toContain(treatSpeciesFor(`t-${i}`));
+	});
+
+	it('uses every prize, so a day of treats is not a row of clones', () => {
+		// The complaint that prompted this: several treats all rendered as one fish.
+		const seen = new Set(Array.from({ length: 120 }, (_, i) => treatSpeciesFor(`treat-${i}`)));
+		expect(seen.size).toBe(TREATS.length);
 	});
 });
 

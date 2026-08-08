@@ -20,7 +20,9 @@ export type Species =
 	| 'puffer'
 	| 'discus'
 	| 'koi'
-	| 'exotic';
+	| 'exotic'
+	| 'lionfish'
+	| 'mandarin';
 
 export type FinKind = 'dorsal' | 'anal' | 'pectoral' | 'pelvic' | 'caudal';
 
@@ -48,6 +50,12 @@ export type FinSpec = {
 
 export type SpeciesSpec = {
 	length: number;
+	/**
+	 * `veil` widens the fins into ray-veined membranes instead of the default narrow
+	 * blade. Reserved for the treats: a guilty pleasure has to look like a prize, and
+	 * ornate fins are what separate one from an ordinary fish wearing a bright colour.
+	 */
+	finStyle?: 'blade' | 'veil';
 	profile: Profile;
 	fins: FinSpec[];
 	palette: { back: string; belly: string; fin: string; marking: string; iris: string };
@@ -322,6 +330,65 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 		wave: { amplitude: 0.07, wavelength: 1.6, speed: 4 }
 	},
 
+	// Prize #2. Banded, with a crown of long rays — the most obviously "do not touch"
+	// silhouette available, and nothing like the magenta exotic beside it.
+	lionfish: {
+		length: 40,
+		finStyle: 'veil',
+		profile: [
+			[0, 0.03],
+			[0.16, 0.2],
+			[0.42, 0.26],
+			[0.74, 0.16],
+			[1, 0.04]
+		],
+		fins: [
+			caudal(0.4, 0.4, 1.3),
+			{ anchor: 0.3, kind: 'dorsal', span: 0.72, sweep: 0.25, lag: 1.5 },
+			{ anchor: 0.46, kind: 'dorsal', span: 0.8, sweep: 0.3, lag: 1.7 },
+			{ anchor: 0.62, kind: 'anal', span: 0.66, sweep: 0.3, lag: 1.6 },
+			{ anchor: 0.34, kind: 'pectoral', span: 0.6, sweep: 0.5, lag: 1.2 }
+		],
+		palette: {
+			back: '#ff7a4d',
+			belly: '#8c1f14',
+			fin: '#ffd9c2',
+			marking: '#fff1e4',
+			iris: '#2b0a05'
+		},
+		pattern: 'bands',
+		wave: { amplitude: 0.07, wavelength: 1.7, speed: 3 }
+	},
+
+	// Prize #3. Small, round and electric — the colour does the work here rather than
+	// the fins, so the three prizes do not all read as "fish with big fins".
+	mandarin: {
+		length: 34,
+		finStyle: 'veil',
+		profile: [
+			[0, 0.04],
+			[0.2, 0.24],
+			[0.48, 0.3],
+			[0.78, 0.18],
+			[1, 0.05]
+		],
+		fins: [
+			caudal(0.42, 0.45, 1.2),
+			{ anchor: 0.38, kind: 'dorsal', span: 0.42, sweep: 0.4, lag: 1.3 },
+			{ anchor: 0.62, kind: 'anal', span: 0.36, sweep: 0.4, lag: 1.4 },
+			{ anchor: 0.28, kind: 'pectoral', span: 0.34, sweep: 0.6, lag: 0.9 }
+		],
+		palette: {
+			back: '#2fd0c8',
+			belly: '#1b4fa8',
+			fin: '#ffb03a',
+			marking: '#ff5a2b',
+			iris: '#07202e'
+		},
+		pattern: 'spots',
+		wave: { amplitude: 0.1, wavelength: 1.5, speed: 5 }
+	},
+
 	// The cleared-day koi: long body, barbels, veil tail, unhurried.
 	koi: {
 		length: 52,
@@ -353,6 +420,7 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 	// The guilty pleasure: oversized sails, the most ornate thing in the tank.
 	exotic: {
 		length: 44,
+		finStyle: 'veil',
 		profile: [
 			[0, 0.02],
 			[0.14, 0.22],
@@ -402,6 +470,17 @@ export const SWIMMERS: Species[] = [
  * that stride shares a factor with the species count only a couple of species ever
  * appear.
  */
+/** The prizes. Chosen by task id, so two treats on one day are not clones. */
+export const TREATS: Species[] = ['exotic', 'lionfish', 'mandarin'];
+
+/**
+ * Which prize a treat is. Stable per task, like `speciesFor` — the guilty pleasure you
+ * are saving up for should look the same tomorrow.
+ */
+export function treatSpeciesFor(id: string): Species {
+	return TREATS[Math.floor(mix32(hash(id) ^ 0x5eed) * TREATS.length)];
+}
+
 export function speciesFor(id: string): Species {
 	return SWIMMERS[Math.floor(mix32(hash(id)) * SWIMMERS.length)];
 }

@@ -2,7 +2,15 @@ import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
 import { WATERLINE, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
-import { speciesFor, SPECIES, type Species, type SpeciesSpec, type FinSpec } from './species';
+import {
+	speciesFor,
+	treatSpeciesFor,
+	SPECIES,
+	TREATS,
+	type Species,
+	type SpeciesSpec,
+	type FinSpec
+} from './species';
 import {
 	spineFor,
 	outline,
@@ -91,10 +99,22 @@ const PILL_EDGE = 0.74;
  * frame and the per-species caches below (gradient, half-height, drawn width) hit
  * instead of growing one entry per frame.
  */
-const LOCKED_EXOTIC: SpeciesSpec = {
-	...SPECIES.exotic,
-	palette: { ...SPECIES.exotic.palette, back: '#c7a8d8', belly: '#8e7cb0', fin: '#cec4e0' }
-};
+/**
+ * The out-of-reach version of each prize: drained toward violet-grey but never greyed
+ * out. It has to read as "not yet", not as a dead fish.
+ *
+ * Built once per prize and cached, because the per-species draw caches are keyed on
+ * the spec object — minting a fresh one each frame would grow them without bound.
+ */
+const LOCKED_TREATS: Record<string, SpeciesSpec> = Object.fromEntries(
+	TREATS.map((name) => [
+		name,
+		{
+			...SPECIES[name],
+			palette: { ...SPECIES[name].palette, back: '#c7a8d8', belly: '#8e7cb0', fin: '#cec4e0' }
+		}
+	])
+);
 
 // ---------------------------------------------------------------- placement
 
@@ -271,14 +291,19 @@ function bodyOf(creature: Creature): { spec: SpeciesSpec; scale: number } | null
 			// A bought treat keeps its exotic look, at a size that sits in the shoal.
 			// Turning it into an ordinary fish read as the prize vanishing on purchase.
 			return creature.claimed
-				? { spec: SPECIES.exotic, scale: 0.72 }
+				? { spec: SPECIES[treatSpeciesFor(creature.id)], scale: 0.72 }
 				: { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
 		case 'ghost':
 			return { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
 		case 'koi':
 			return { spec: SPECIES.koi, scale: 1 };
 		case 'treat':
-			return { spec: creature.locked ? LOCKED_EXOTIC : SPECIES.exotic, scale: 1 };
+			return {
+				spec: creature.locked
+					? LOCKED_TREATS[treatSpeciesFor(creature.id)]
+					: SPECIES[treatSpeciesFor(creature.id)],
+				scale: 1
+			};
 		default:
 			// A bubble's fish is clipped to the sphere; a pearl has no fins at all.
 			return null;
@@ -578,9 +603,24 @@ function traceFin(
 	ctx.scale(1, side);
 
 	ctx.beginPath();
-	ctx.moveTo(0, half * 0.6);
-	ctx.quadraticCurveTo(-span * 0.3, half + span * 0.5, -span * fin.sweep, half + span);
-	ctx.quadraticCurveTo(span * 0.1, half + span * 0.4 + flutter * span, span * 0.15, half * 0.5);
+	if (spec.finStyle === 'veil') {
+		// Rooted along a stretch of the body rather than at a point, and bellied out on
+		// the way to the tip. A fin joined at one point can only ever look stuck on,
+		// which is what made the prizes read as ordinary fish in a bright colour.
+		const base = span * 0.34;
+		ctx.moveTo(base * 0.55, half * 0.92);
+		ctx.quadraticCurveTo(-span * 0.36, half + span * 0.78, -span * fin.sweep, half + span);
+		ctx.quadraticCurveTo(
+			-span * 0.1,
+			half + span * (0.34 + flutter),
+			-base * 0.75,
+			half * 0.94
+		);
+	} else {
+		ctx.moveTo(0, half * 0.6);
+		ctx.quadraticCurveTo(-span * 0.3, half + span * 0.5, -span * fin.sweep, half + span);
+		ctx.quadraticCurveTo(span * 0.1, half + span * 0.4 + flutter * span, span * 0.15, half * 0.5);
+	}
 	ctx.closePath();
 
 	return { half, span };
@@ -602,9 +642,9 @@ function drawFin(
 	ctx.fill();
 
 	// Rays, so the fin reads as a fin and not a petal.
-	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.25);
+	ctx.strokeStyle = withAlpha(spec.palette.belly, spec.finStyle === 'veil' ? 0.34 : 0.25);
 	ctx.lineWidth = 0.8;
-	for (const k of [0.25, 0.5, 0.75]) {
+	for (const k of spec.finStyle === 'veil' ? [0.2, 0.4, 0.6, 0.8] : [0.25, 0.5, 0.75]) {
 		ctx.beginPath();
 		ctx.moveTo(0, half * 0.6);
 		ctx.lineTo(-span * fin.sweep * k, half + span * k);
@@ -961,7 +1001,7 @@ function drawTreatFish(
 ): void {
 	const affordable = !creature.locked;
 	const seed = hash(creature.id);
-	const spec = SPECIES.exotic;
+	const spec = SPECIES[treatSpeciesFor(creature.id)];
 
 	// The largest, most ornate creature in the tank. A guilty pleasure you cannot see
 	// is a mechanic that does not exist.
@@ -982,7 +1022,7 @@ function drawTreatFish(
 	const outer = ctx.globalAlpha;
 	ctx.globalAlpha = outer * (affordable ? 1 : 0.62);
 
-	drawFish(ctx, at, affordable ? spec : LOCKED_EXOTIC, time, seed);
+	drawFish(ctx, at, affordable ? spec : LOCKED_TREATS[treatSpeciesFor(creature.id)], time, seed);
 	ctx.globalAlpha = outer;
 
 	// Sparkles, affordable only: the tell that you can have it now.
