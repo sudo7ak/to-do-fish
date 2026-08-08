@@ -1,14 +1,15 @@
 import type { Palette } from './palette';
 
 /**
- * The tank itself: water, surface, caustics, planting.
+ * The tank itself: water, light, substrate, planting, surface.
  *
- * Everything here is per-pixel work — a gradient, light shafts, a wavy top edge —
- * which is why the tank is one canvas rather than forty animated SVG nodes.
+ * Everything here is per-pixel work — gradients, light shafts, a wavy top edge,
+ * drifting motes — which is why the tank is one canvas rather than forty animated
+ * SVG nodes.
  *
- * Positions are derived from `time` on every frame and never stored, so nothing
- * here holds state between calls. Under reduced motion the caller passes a frozen
- * `time`, and the same code draws a still tank.
+ * Positions are derived from `time` and a deterministic per-element hash on every
+ * frame, and never stored. Under reduced motion the caller passes a frozen `time`
+ * and the same code draws a still tank.
  */
 
 export type Size = { w: number; h: number };
@@ -16,10 +17,19 @@ export type Size = { w: number; h: number };
 /** Height of the wavy surface band, in CSS pixels. */
 const SURFACE_HEIGHT = 18;
 
+/** Deterministic pseudo-random in [0, 1) for element `i`. Same tank on every reload. */
+function noise(i: number, salt = 0): number {
+	const value = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+	return value - Math.floor(value);
+}
+
 /** Paints the water column. Everything else is drawn over this. */
 export function drawWater(ctx: CanvasRenderingContext2D, size: Size, colors: Palette): void {
+	// Three stops, not two: real water darkens fastest just below the surface, and a
+	// linear fade reads as a flat backdrop instead of depth.
 	const gradient = ctx.createLinearGradient(0, 0, 0, size.h);
 	gradient.addColorStop(0, colors.waterTop);
+	gradient.addColorStop(0.45, colors.waterMid);
 	gradient.addColorStop(1, colors.waterBottom);
 
 	ctx.fillStyle = gradient;
@@ -27,8 +37,9 @@ export function drawWater(ctx: CanvasRenderingContext2D, size: Size, colors: Pal
 }
 
 /**
- * The animated wavy surface under the status bar, which gives the tank a real top
- * edge. Two offset sine waves so the crests never line up into an obvious pattern.
+ * The animated wavy surface, which gives the tank a real top edge. Two offset sine
+ * waves so the crests never line up into an obvious repeat, plus a bright meniscus
+ * line where the light catches.
  */
 export function drawSurface(
 	ctx: CanvasRenderingContext2D,
@@ -37,29 +48,35 @@ export function drawSurface(
 	time: number
 ): void {
 	const t = time / 1000;
+	const waveAt = (x: number) =>
+		SURFACE_HEIGHT + Math.sin(x / 90 + t * 0.9) * 5 + Math.sin(x / 37 - t * 1.4) * 2.5;
 
-	ctx.save();
+	// Body of the surface band.
 	ctx.beginPath();
 	ctx.moveTo(0, 0);
-
-	for (let x = 0; x <= size.w; x += 4) {
-		const y =
-			SURFACE_HEIGHT +
-			Math.sin(x / 90 + t * 0.9) * 5 +
-			Math.sin(x / 37 - t * 1.4) * 2.5;
-		ctx.lineTo(x, y);
-	}
-
+	for (let x = 0; x <= size.w; x += 4) ctx.lineTo(x, waveAt(x));
 	ctx.lineTo(size.w, 0);
 	ctx.closePath();
 
-	ctx.fillStyle = colors.glass;
+	const band = ctx.createLinearGradient(0, 0, 0, SURFACE_HEIGHT + 8);
+	band.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+	band.addColorStop(1, 'rgba(255, 255, 255, 0.08)');
+	ctx.fillStyle = band;
 	ctx.fill();
-	ctx.restore();
+
+	// Meniscus: the bright line at the waterline itself.
+	ctx.beginPath();
+	for (let x = 0; x <= size.w; x += 4) {
+		if (x === 0) ctx.moveTo(x, waveAt(x));
+		else ctx.lineTo(x, waveAt(x));
+	}
+	ctx.strokeStyle = `rgba(255, 255, 255, ${0.5 * colors.light + 0.25})`;
+	ctx.lineWidth = 2;
+	ctx.stroke();
 }
 
 /**
- * Caustic light shafts falling from the surface. Drawn with `lighter` so they add
+ * Caustic light shafts falling from the surface, drawn with `lighter` so they add
  * light rather than painting over the creatures beneath them.
  */
 export function drawCaustics(
@@ -74,32 +91,98 @@ export function drawCaustics(
 	ctx.save();
 	ctx.globalCompositeOperation = 'lighter';
 
-	for (let i = 0; i < 5; i++) {
+	// Broad god rays.
+	for (let i = 0; i < 6; i++) {
 		const drift = Math.sin(t * 0.25 + i * 1.7) * size.w * 0.08;
-		const x = ((i + 0.5) / 5) * size.w + drift;
-		const width = size.w * 0.06;
+		const x = ((i + 0.5) / 6) * size.w + drift;
+		const width = size.w * 0.05;
+		const sway = Math.sin(t * 0.4 + i) * 0.35;
 
 		const shaft = ctx.createLinearGradient(x, 0, x + width, size.h);
-		shaft.addColorStop(0, `rgba(255, 255, 255, ${0.16 * strength})`);
+		shaft.addColorStop(0, `rgba(255, 253, 235, ${0.2 * strength})`);
+		shaft.addColorStop(0.5, `rgba(220, 250, 255, ${0.07 * strength})`);
 		shaft.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
 		ctx.fillStyle = shaft;
 		ctx.beginPath();
 		ctx.moveTo(x - width, 0);
 		ctx.lineTo(x + width, 0);
-		ctx.lineTo(x + width * 2.6, size.h);
-		ctx.lineTo(x - width * 1.6, size.h);
+		ctx.lineTo(x + width * (2.6 + sway), size.h);
+		ctx.lineTo(x - width * (1.6 - sway), size.h);
 		ctx.closePath();
 		ctx.fill();
+	}
+
+	// Rippling caustic net across the upper water, the moving lace you get under a
+	// real surface.
+	ctx.strokeStyle = `rgba(255, 255, 255, ${0.16 * strength})`;
+	ctx.lineWidth = 2;
+	for (let row = 0; row < 5; row++) {
+		const y = 40 + row * 34;
+		ctx.beginPath();
+		for (let x = 0; x <= size.w; x += 6) {
+			const wave = Math.sin(x / 45 + t * 1.1 + row) * 6 + Math.sin(x / 19 - t * 0.7) * 3;
+			if (x === 0) ctx.moveTo(x, y + wave);
+			else ctx.lineTo(x, y + wave);
+		}
+		ctx.stroke();
 	}
 
 	ctx.restore();
 }
 
+/** Sand bed and a couple of rounded stones, so the tank has a floor to sit on. */
+export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors: Palette): void {
+	const bedHeight = Math.min(70, size.h * 0.12);
+	const top = size.h - bedHeight;
+
+	// Dune profile rather than a straight edge.
+	ctx.beginPath();
+	ctx.moveTo(0, size.h);
+	ctx.lineTo(0, top + 10);
+	for (let x = 0; x <= size.w; x += 12) {
+		ctx.lineTo(x, top + Math.sin(x / 70) * 6 + Math.sin(x / 23) * 2);
+	}
+	ctx.lineTo(size.w, size.h);
+	ctx.closePath();
+
+	const bed = ctx.createLinearGradient(0, top - 10, 0, size.h);
+	bed.addColorStop(0, colors.sand);
+	bed.addColorStop(1, shade(colors.sand, 0.55));
+	ctx.fillStyle = bed;
+	ctx.fill();
+
+	// Grain.
+	ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+	for (let i = 0; i < 60; i++) {
+		const x = noise(i) * size.w;
+		const y = top + 8 + noise(i, 3) * (bedHeight - 8);
+		ctx.beginPath();
+		ctx.arc(x, y, 0.8, 0, Math.PI * 2);
+		ctx.fill();
+	}
+
+	// Stones.
+	for (let i = 0; i < 3; i++) {
+		const x = (0.2 + i * 0.3) * size.w + noise(i, 7) * 40;
+		const r = 14 + noise(i, 11) * 16;
+		const stone = ctx.createLinearGradient(x, top - r, x, top + r * 0.4);
+		stone.addColorStop(0, colors.rock);
+		stone.addColorStop(1, shade(colors.rock, 0.6));
+
+		ctx.beginPath();
+		ctx.moveTo(x - r, top + 6);
+		ctx.quadraticCurveTo(x - r * 0.8, top - r * 0.9, x, top - r * 0.75);
+		ctx.quadraticCurveTo(x + r * 0.85, top - r * 0.8, x + r, top + 6);
+		ctx.closePath();
+		ctx.fillStyle = stone;
+		ctx.fill();
+	}
+}
+
 /**
- * Foreground planting along the tank floor, swaying with the current. Lush in the
- * calm palette and faded in the loaded one — the colour does that work, so the same
- * geometry serves both.
+ * Planting in two layers: a hazed background stand and a saturated foreground one.
+ * Depth is what stops a tank looking like a sticker on a gradient.
  */
 export function drawPlants(
 	ctx: CanvasRenderingContext2D,
@@ -107,31 +190,111 @@ export function drawPlants(
 	colors: Palette,
 	time: number
 ): void {
+	drawPlantLayer(ctx, size, colors.plantsDeep, time, { scale: 0.72, alpha: 0.55, salt: 5 });
+	drawPlantLayer(ctx, size, colors.plants, time, { scale: 1, alpha: 0.95, salt: 0 });
+}
+
+function drawPlantLayer(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	color: string,
+	time: number,
+	opts: { scale: number; alpha: number; salt: number }
+): void {
 	const t = time / 1000;
-	const base = size.h;
-	const blades = Math.max(8, Math.round(size.w / 28));
+	const base = size.h - 6;
+	const blades = Math.max(10, Math.round(size.w / 30));
 
 	ctx.save();
-	ctx.strokeStyle = colors.plants;
+	ctx.globalAlpha = opts.alpha;
+	ctx.fillStyle = color;
+	ctx.strokeStyle = color;
 	ctx.lineCap = 'round';
 
 	for (let i = 0; i < blades; i++) {
-		// Deterministic per-blade variation: the same tank every time, no stored state.
-		const seed = Math.sin(i * 12.9898) * 43758.5453;
-		const jitter = seed - Math.floor(seed);
+		const jitter = noise(i, opts.salt);
+		const x = (i / blades) * size.w + jitter * 18;
+		const height = size.h * (0.14 + jitter * 0.22) * opts.scale;
+		const sway = Math.sin(t * 0.7 + i) * (7 + jitter * 7);
 
-		const x = (i / blades) * size.w + jitter * 12;
-		const height = size.h * (0.12 + jitter * 0.16);
-		const sway = Math.sin(t * 0.8 + i) * (6 + jitter * 6);
+		if (jitter > 0.62) {
+			// Broad-leaf: a tapered blade with a midrib.
+			ctx.beginPath();
+			ctx.moveTo(x - 4 * opts.scale, base);
+			ctx.quadraticCurveTo(x + sway * 0.5 - 6, base - height * 0.6, x + sway, base - height);
+			ctx.quadraticCurveTo(x + sway * 0.5 + 6, base - height * 0.6, x + 4 * opts.scale, base);
+			ctx.closePath();
+			ctx.fill();
 
-		ctx.lineWidth = 3 + jitter * 3;
-		ctx.beginPath();
-		ctx.moveTo(x, base);
-		ctx.quadraticCurveTo(x + sway * 0.4, base - height * 0.6, x + sway, base - height);
-		ctx.stroke();
+			ctx.globalAlpha = opts.alpha * 0.5;
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+			ctx.moveTo(x, base);
+			ctx.quadraticCurveTo(x + sway * 0.5, base - height * 0.6, x + sway, base - height);
+			ctx.stroke();
+			ctx.globalAlpha = opts.alpha;
+		} else {
+			// Grass: a simple stroked blade.
+			ctx.lineWidth = (2.5 + jitter * 3) * opts.scale;
+			ctx.beginPath();
+			ctx.moveTo(x, base);
+			ctx.quadraticCurveTo(x + sway * 0.4, base - height * 0.6, x + sway, base - height);
+			ctx.stroke();
+		}
 	}
 
 	ctx.restore();
+}
+
+/** Fine particulate drifting in the light. Cheap, and it makes the water feel occupied. */
+export function drawMotes(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	time: number,
+	strength = 1
+): void {
+	if (strength <= 0) return;
+	const t = time / 1000;
+
+	ctx.save();
+	for (let i = 0; i < 40; i++) {
+		const speed = 4 + noise(i, 2) * 10;
+		const x = (noise(i) * size.w + Math.sin(t * 0.2 + i) * 20) % size.w;
+		// Motes rise slowly and wrap, so the field never empties.
+		const y = (size.h - ((t * speed + noise(i, 4) * size.h) % size.h)) % size.h;
+
+		ctx.globalAlpha = (0.1 + noise(i, 6) * 0.22) * strength;
+		ctx.fillStyle = '#FFFFFF';
+		ctx.beginPath();
+		ctx.arc(x, y, 0.6 + noise(i, 8) * 1.2, 0, Math.PI * 2);
+		ctx.fill();
+	}
+	ctx.restore();
+}
+
+/**
+ * Depth haze at the bottom and a soft vignette at the edges. Both push the middle
+ * of the tank forward, which is where the fish are.
+ */
+export function drawDepth(ctx: CanvasRenderingContext2D, size: Size, colors: Palette): void {
+	const haze = ctx.createLinearGradient(0, size.h * 0.55, 0, size.h);
+	haze.addColorStop(0, 'rgba(0, 0, 0, 0)');
+	haze.addColorStop(1, withAlpha(colors.waterBottom, 0.55));
+	ctx.fillStyle = haze;
+	ctx.fillRect(0, size.h * 0.55, size.w, size.h * 0.45);
+
+	const vignette = ctx.createRadialGradient(
+		size.w / 2,
+		size.h / 2,
+		Math.min(size.w, size.h) * 0.35,
+		size.w / 2,
+		size.h / 2,
+		Math.max(size.w, size.h) * 0.75
+	);
+	vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+	vignette.addColorStop(1, 'rgba(3, 32, 48, 0.35)');
+	ctx.fillStyle = vignette;
+	ctx.fillRect(0, 0, size.w, size.h);
 }
 
 /** Paints the whole tank background in the right order, back to front. */
@@ -142,7 +305,36 @@ export function drawTank(
 	time: number
 ): void {
 	drawWater(ctx, size, colors);
-	drawCaustics(ctx, size, time);
+	drawCaustics(ctx, size, time, colors.light);
+	drawSubstrate(ctx, size, colors);
 	drawPlants(ctx, size, colors, time);
+	drawMotes(ctx, size, time, colors.light);
 	drawSurface(ctx, size, colors, time);
+}
+
+/** Drawn after the creatures, so haze and vignette sit over everything. */
+export function drawForeground(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	colors: Palette
+): void {
+	drawDepth(ctx, size, colors);
+}
+
+// ------------------------------------------------------------------ helpers
+
+function withAlpha(hex: string, alpha: number): string {
+	const r = parseInt(hex.slice(1, 3), 16);
+	const g = parseInt(hex.slice(3, 5), 16);
+	const b = parseInt(hex.slice(5, 7), 16);
+	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** Darkens a hex colour towards black by `factor` (1 = unchanged). */
+function shade(hex: string, factor: number): string {
+	const to = (i: number) =>
+		Math.round(parseInt(hex.slice(i, i + 2), 16) * factor)
+			.toString(16)
+			.padStart(2, '0');
+	return `#${to(1)}${to(3)}${to(5)}`;
 }

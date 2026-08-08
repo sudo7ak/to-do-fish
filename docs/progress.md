@@ -30,6 +30,29 @@ Story list: `docs/stories.md`. One story per loop iteration.
 
 _none_
 
+## Art pass (post-S20, user-requested)
+
+Reworked `render/palette.ts`, `render/creatures.ts`, `render/water.ts` for vibrance and
+fish variety; `+page.svelte` now also calls `drawForeground` after the creatures.
+
+- **Six species** (`clown`/`tang`/`angel`/`guppy`/`neon`/`betta`) as data specs — body
+  gradient, fin colour, tail style, pattern, fin-flow — driving **one** drawer, so a
+  seventh species is a table entry, not another function. `speciesFor(id)` is a hash of
+  the creature id: **the same task is the same fish on every reload**, which is what
+  lets you recognise it without reading the label.
+- Per-fish detail: dorsal/anal/pectoral fins, four tail shapes, clipped patterns
+  (bands/stripe/spots), belly-light gradient, gill arc, and an eye with a catchlight.
+- Palette gained `waterMid`, `plantsDeep`, `sand`, `rock`, and `light` (0–1). CALM is
+  markedly more saturated; LOADED keeps the same hues drained towards slate, so the
+  Progress shift still reads as the water clouding rather than a different tank.
+- Tank gained a three-stop column, sand bed with grain and stones, two planting layers
+  (hazed back, saturated front), god rays plus a rippling caustic net, drifting motes,
+  a bright meniscus, and depth haze + vignette drawn over the creatures.
+- Spec tokens `fish`/`lantern`/`pearl` unchanged. All scenery variation is
+  `noise(i)`/`hash(id)`, so nothing random and nothing persisted.
+- **Verified: 340 tests, clean typecheck and build, `render/` still imports nothing
+  outside itself. NOT verified by eye — Chrome extension still not connected.**
+
 ## Ownership deviations
 
 - **S1 edited `vite.config.ts`** (S0's file) to remove `passWithNoTests: true`, the

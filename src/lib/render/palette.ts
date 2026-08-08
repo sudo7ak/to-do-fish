@@ -18,17 +18,50 @@ export type Environment = 'progress' | 'calm';
 
 export type Palette = {
 	waterTop: string;
+	/** Mid-water, so the column is a three-stop gradient rather than a flat wash. */
+	waterMid: string;
 	waterBottom: string;
 	plants: string;
+	/** Second planting tone, for the layer sitting further back. */
+	plantsDeep: string;
+	sand: string;
+	rock: string;
+	/** Strength of the caustics and god rays, 0–1. Murky water scatters less light. */
+	light: number;
 	fish: string;
 	lantern: string;
 	pearl: string;
 	glass: string;
 };
 
-/** The two ends of the Progress interpolation. */
-export const CALM = { waterTop: '#7FD4E8', waterBottom: '#4FC3D9', plants: '#6FBF73' } as const;
-export const LOADED = { waterTop: '#5A7A85', waterBottom: '#3E5560', plants: '#4A7A4E' } as const;
+/**
+ * The two ends of the Progress interpolation.
+ *
+ * Calm is deliberately saturated: this is a lit aquarium, not a pond. Loaded keeps
+ * the same hues but drains them towards slate, so the shift reads as the water
+ * clouding rather than as a different tank.
+ */
+export const CALM = {
+	waterTop: '#8FE3F2',
+	waterMid: '#43C4E0',
+	waterBottom: '#1E86AE',
+	plants: '#5FD16B',
+	plantsDeep: '#2F9E62',
+	sand: '#F0DFB4',
+	rock: '#6E8A94',
+	light: 1
+} as const;
+
+export const LOADED = {
+	waterTop: '#5A7A85',
+	waterMid: '#47646F',
+	waterBottom: '#2C4450',
+	plants: '#4A7A4E',
+	plantsDeep: '#2E5540',
+	sand: '#9A9078',
+	rock: '#4A5A62',
+	light: 0.35
+} as const;
 
 /** Creature colours hold steady — a fish is the same red whether the day is loaded or clear. */
 const FIXED = {
@@ -44,8 +77,13 @@ export function palette(environment: Environment, clearedPct: number): Palette {
 
 	return {
 		waterTop: mix(LOADED.waterTop, CALM.waterTop, t),
+		waterMid: mix(LOADED.waterMid, CALM.waterMid, t),
 		waterBottom: mix(LOADED.waterBottom, CALM.waterBottom, t),
 		plants: mix(LOADED.plants, CALM.plants, t),
+		plantsDeep: mix(LOADED.plantsDeep, CALM.plantsDeep, t),
+		sand: mix(LOADED.sand, CALM.sand, t),
+		rock: mix(LOADED.rock, CALM.rock, t),
+		light: LOADED.light + (CALM.light - LOADED.light) * t,
 		...FIXED
 	};
 }

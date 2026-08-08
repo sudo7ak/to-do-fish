@@ -7,7 +7,7 @@
 	import { pearlBalance, canAfford } from '$lib/store/pearls';
 	import { buildScene } from '$lib/scene/build';
 	import { palette } from '$lib/render/palette';
-	import { drawTank } from '$lib/render/water';
+	import { drawTank, drawForeground } from '$lib/render/water';
 	import { drawCreatures } from '$lib/render/creatures';
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
@@ -70,6 +70,8 @@
 
 		drawTank(ctx, size, colors, time);
 		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate);
+		// Haze and vignette last, so they sit over the creatures and give the tank depth.
+		drawForeground(ctx, size, colors);
 	}
 
 	function tapTank(event: PointerEvent) {

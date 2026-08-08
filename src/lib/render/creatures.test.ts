@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { place, drawCreature, drawCreatures } from './creatures';
+import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
 
@@ -47,10 +47,14 @@ function fakeCtx() {
 	for (const method of [
 		'translate',
 		'scale',
+		'rotate',
+		'clip',
 		'beginPath',
 		'moveTo',
 		'lineTo',
 		'quadraticCurveTo',
+		'bezierCurveTo',
+		'ellipse',
 		'closePath',
 		'arc',
 		'fill',
@@ -116,6 +120,43 @@ describe('drawCreature — every kind', () => {
 		expect(fish.calls.filter((c) => c === 'fill').length).toBeGreaterThan(
 			ghost.calls.filter((c) => c === 'fill').length
 		);
+	});
+});
+
+describe('speciesFor', () => {
+	it('gives the same task the same fish on every reload', () => {
+		expect(speciesFor('task-abc')).toBe(speciesFor('task-abc'));
+	});
+
+	it('spreads a realistic tank across several species', () => {
+		const ids = Array.from({ length: 60 }, (_, i) => `task-${i}`);
+		const kinds = new Set(ids.map(speciesFor));
+
+		expect(kinds.size).toBeGreaterThan(3);
+	});
+
+	it('only ever returns a known species', () => {
+		const known = ['clown', 'tang', 'angel', 'guppy', 'neon', 'betta'];
+
+		for (let i = 0; i < 200; i++) {
+			expect(known).toContain(speciesFor(`id-${i}`));
+		}
+	});
+
+	it('draws every species without complaint', () => {
+		// One id per species, found by sweeping — each must paint and stay balanced.
+		const perSpecies = new Map<string, string>();
+		for (let i = 0; i < 200; i++) perSpecies.set(speciesFor(`id-${i}`), `id-${i}`);
+
+		for (const id of perSpecies.values()) {
+			const ctx = fakeCtx();
+			const c = creature('fish', { id });
+
+			drawCreature(ctx, c, place(c, SIZE, 0), COLORS, 0);
+
+			expect(ctx.calls.filter((call) => call === 'fill').length).toBeGreaterThan(0);
+			expect(ctx.depth).toBe(0);
+		}
 	});
 });
 
