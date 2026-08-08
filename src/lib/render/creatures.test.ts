@@ -501,3 +501,39 @@ describe('drawCreatures — the whole tank', () => {
 		expect(creatures.map((c) => c.id)).toEqual(before);
 	});
 });
+
+describe('markings', () => {
+	it('clips markings to the body so they cannot spill past the silhouette', () => {
+		const ctx = fakeCtx();
+		// `clown` has bands; find an id that maps to it.
+		let banded = 'id-0';
+		for (let i = 0; i < 300; i++) {
+			if (speciesFor(`id-${i}`) === 'clown') {
+				banded = `id-${i}`;
+				break;
+			}
+		}
+		const c = creature('fish', { id: banded });
+
+		drawCreature(ctx, c, place(c, SIZE, 0), COLORS, 0);
+
+		expect(ctx.calls).toContain('clip');
+	});
+
+	it('draws no markings for a species that has none', () => {
+		let plain = 'id-0';
+		for (let i = 0; i < 300; i++) {
+			if (speciesFor(`id-${i}`) === 'betta') {
+				plain = `id-${i}`;
+				break;
+			}
+		}
+		const withMarks = fakeCtx();
+		const c = creature('fish', { id: plain });
+
+		drawCreature(withMarks, c, place(c, SIZE, 0), COLORS, 0);
+
+		// Betta is `pattern: 'none'`, so nothing should be clipped for markings.
+		expect(withMarks.calls.filter((call) => call === 'clip').length).toBe(0);
+	});
+});

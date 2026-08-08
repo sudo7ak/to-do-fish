@@ -485,6 +485,63 @@ function drawHead(
 	ctx.stroke();
 }
 
+/**
+ * Species markings, clipped to the body outline.
+ *
+ * Bands follow the local normal rather than running straight down the screen, so they
+ * wrap the body as it bends instead of sitting on it like a decal.
+ */
+function drawMarkings(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	spine: Spine,
+	seed: number
+): void {
+	if (spec.pattern === 'none') return;
+
+	ctx.save();
+	tracePath(ctx, outline(spine, spec.profile, spec.length));
+	ctx.clip();
+	ctx.fillStyle = spec.palette.marking;
+	ctx.strokeStyle = spec.palette.marking;
+
+	if (spec.pattern === 'bands') {
+		ctx.lineWidth = spec.length * 0.07;
+		for (const t of [0.24, 0.48, 0.72]) {
+			const at = pointAt(spine, t);
+			const half = profileAt(spec.profile, t) * spec.length * 1.6;
+			const angle = tangentAt(spine, t) + Math.PI / 2;
+
+			ctx.beginPath();
+			ctx.moveTo(at.x + Math.cos(angle) * half, at.y + Math.sin(angle) * half);
+			ctx.lineTo(at.x - Math.cos(angle) * half, at.y - Math.sin(angle) * half);
+			ctx.stroke();
+		}
+	} else if (spec.pattern === 'stripe') {
+		ctx.lineWidth = spec.length * 0.06;
+		ctx.beginPath();
+		for (let i = 0; i < spine.length; i++) {
+			const p = spine[i];
+			if (i === 0) ctx.moveTo(p.x, p.y);
+			else ctx.lineTo(p.x, p.y);
+		}
+		ctx.stroke();
+	} else if (spec.pattern === 'spots') {
+		for (let i = 0; i < 5; i++) {
+			const t = 0.2 + i * 0.14;
+			const at = pointAt(spine, t);
+			const jitter = mix32(seed ^ (i * 977));
+			const half = profileAt(spec.profile, t) * spec.length;
+
+			ctx.beginPath();
+			ctx.arc(at.x, at.y + (jitter - 0.5) * half, spec.length * 0.045, 0, Math.PI * 2);
+			ctx.fill();
+		}
+	}
+
+	ctx.restore();
+}
+
 function drawFish(
 	ctx: CanvasRenderingContext2D,
 	at: Placement,
@@ -499,6 +556,7 @@ function drawFish(
 
 	drawFins(ctx, spec, spine, time, phase);
 	drawBody(ctx, spec, spine);
+	drawMarkings(ctx, spec, spine, seed);
 	drawHead(ctx, spec, spine, time, phase);
 	drawTrail(ctx, time, seed, spec.length);
 }
@@ -550,52 +608,6 @@ function drawGhost(
 	ctx.stroke();
 
 	ctx.globalAlpha = 1;
-}
-
-/** Markings, clipped to the body so nothing spills over the silhouette. */
-function drawPattern(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec, seed: number): void {
-	if (spec.pattern === 'none') return;
-
-	const { length: len, height: hgt } = spec;
-
-	ctx.save();
-	bodyPath(ctx, len, hgt);
-	ctx.clip();
-	ctx.fillStyle = spec.patternColor;
-
-	if (spec.pattern === 'bands') {
-		// Slim, slightly raked bands. Thick bars turn a fish into a bee.
-		ctx.globalAlpha = 0.85;
-		for (let i = 0; i < 3; i++) {
-			const x = len * 0.26 - i * len * 0.26;
-			ctx.save();
-			ctx.translate(x, 0);
-			ctx.rotate(-0.14);
-			ctx.beginPath();
-			ctx.moveTo(-len * 0.035, -hgt);
-			ctx.quadraticCurveTo(0, 0, -len * 0.035, hgt);
-			ctx.lineTo(len * 0.035, hgt);
-			ctx.quadraticCurveTo(len * 0.012, 0, len * 0.035, -hgt);
-			ctx.closePath();
-			ctx.fill();
-			ctx.restore();
-		}
-		ctx.globalAlpha = 1;
-	} else if (spec.pattern === 'stripe') {
-		// Neon: a bright lateral line rather than a slab across the whole flank.
-		ctx.globalAlpha = 0.9;
-		ctx.fillRect(-len * 0.45, -hgt * 0.06, len * 0.85, hgt * 0.18);
-		ctx.globalAlpha = 1;
-	} else if (spec.pattern === 'spots') {
-		for (let i = 0; i < 5; i++) {
-			const jitter = ((seed >> (i * 3)) % 100) / 100;
-			ctx.beginPath();
-			ctx.arc(len * 0.3 - i * len * 0.14, (jitter - 0.5) * hgt, 1.5 + jitter, 0, Math.PI * 2);
-			ctx.fill();
-		}
-	}
-
-	ctx.restore();
 }
 
 function drawEye(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec): void {
