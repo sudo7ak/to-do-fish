@@ -35,98 +35,6 @@ const TREAT_DRAFT = 34;
  */
 const PILL_EDGE = 0.74;
 
-// ----------------------------------------------------------------- species
-//
-// Species *selection* (the `Species` union and `speciesFor`) now lives in
-// `species.ts`, imported and re-exported above. What remains here is the legacy
-// per-species drawing spec (flat colours, canned tail shapes) that the shape
-// functions below still consume. It is keyed on the six swimmer species only —
-// `species.ts` additionally carries `koi` and `exotic`, which are drawn by their
-// own dedicated functions (`drawKoi`, `drawTreatFish`) and never indexed through
-// this table.
-
-/** The six species this legacy drawing table has entries for. */
-type Swimmer = Exclude<Species, 'koi' | 'exotic'>;
-
-type LegacySpeciesSpec = {
-	length: number;
-	height: number;
-	/** Body gradient, back to belly. */
-	body: [string, string];
-	fin: string;
-	tail: 'fan' | 'forked' | 'veil' | 'round';
-	pattern: 'bands' | 'stripe' | 'spots' | 'none';
-	patternColor: string;
-	/**
-	 * Fin size, as a fraction of body length. Kept well under 1: fins larger than the
-	 * body stop reading as fins and start reading as debris floating alongside it.
-	 */
-	flow: number;
-};
-
-const LEGACY_SPECIES: Record<Swimmer, LegacySpeciesSpec> = {
-	clown: {
-		length: 42,
-		height: 24,
-		body: ['#FF9A4D', '#E85A2C'],
-		fin: '#FFB877',
-		tail: 'round',
-		pattern: 'bands',
-		patternColor: '#FFF4E4',
-		flow: 0.3
-	},
-	tang: {
-		length: 44,
-		height: 28,
-		body: ['#49B6F7', '#1B5FC1'],
-		fin: '#FFD84D',
-		tail: 'forked',
-		pattern: 'none',
-		patternColor: '#0E3E86',
-		flow: 0.3
-	},
-	angel: {
-		length: 36,
-		height: 32,
-		body: ['#FFE9BE', '#EFA63A'],
-		fin: '#FFF0D2',
-		tail: 'veil',
-		pattern: 'bands',
-		patternColor: '#6B4A22',
-		flow: 0.42
-	},
-	guppy: {
-		length: 34,
-		height: 19,
-		body: ['#93EBFF', '#4A7BE8'],
-		fin: '#FF93D2',
-		tail: 'fan',
-		pattern: 'spots',
-		patternColor: '#FFE066',
-		flow: 0.38
-	},
-	neon: {
-		length: 32,
-		height: 15,
-		body: ['#6BEAFF', '#1B7FD4'],
-		fin: '#CFF6FF',
-		tail: 'forked',
-		pattern: 'stripe',
-		patternColor: '#FF3B4E',
-		flow: 0.26
-	},
-	betta: {
-		length: 36,
-		height: 24,
-		body: ['#CE7BFF', '#7A2BD1'],
-		fin: '#FF7FB4',
-		tail: 'veil',
-		pattern: 'none',
-		patternColor: '#4A1580',
-		flow: 0.45
-	}
-};
-
 // ---------------------------------------------------------------- placement
 
 export function place(creature: Creature, size: Size, time: number, animate = true): Placement {
@@ -235,12 +143,6 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 	return { x, y, flip };
 }
 
-/** Spreads same-depth creatures across the width so they do not stack in one column. */
-function laneX(seed: number, size: Size, spread: number): number {
-	const jitter = (seed % 1000) / 1000;
-	return size.w * (0.1 + jitter * 0.8 * Math.max(spread, 0.4));
-}
-
 /**
  * Golden-ratio spacing across the full width. Plain `hash % width` clumps badly at
  * four or five items; multiplying by the golden ratio is the standard trick for
@@ -269,7 +171,7 @@ export function drawCreature(
 			// Turning it into an ordinary fish read as the prize vanishing on purchase.
 			if (creature.claimed) {
 				ctx.scale(0.72, 0.72);
-				drawTreatFish(ctx, { ...creature, locked: false }, at, time);
+				drawFish(ctx, at, SPECIES.exotic, time, hash(creature.id));
 			} else {
 				drawFish(ctx, at, SPECIES[speciesFor(creature.id)], time, hash(creature.id));
 			}
@@ -318,18 +220,6 @@ export function drawCreatures(
 }
 
 // ------------------------------------------------------------------- shapes
-
-/** The body outline, shared by every species so the silhouette family stays coherent. */
-function bodyPath(ctx: CanvasRenderingContext2D, len: number, hgt: number): void {
-	const half = len / 2;
-	ctx.beginPath();
-	ctx.moveTo(half, 0);
-	// Back: nose up over the dorsal line to the tail root.
-	ctx.bezierCurveTo(half * 0.5, -hgt, -half * 0.5, -hgt * 0.9, -half, 0);
-	// Belly: fuller than the back, which is what makes it read as a fish.
-	ctx.bezierCurveTo(-half * 0.5, hgt * 0.95, half * 0.5, hgt, half, 0);
-	ctx.closePath();
-}
 
 /** Traces a closed outline as a smooth loop through its points. */
 function tracePath(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[]): void {
@@ -598,27 +488,6 @@ function drawGhost(
 	ctx.globalAlpha = 1;
 }
 
-function drawEye(ctx: CanvasRenderingContext2D, spec: LegacySpeciesSpec): void {
-	const x = spec.length * 0.3;
-	const y = -spec.height * 0.18;
-
-	ctx.beginPath();
-	ctx.arc(x, y, 3.1, 0, Math.PI * 2);
-	ctx.fillStyle = '#FFFFFF';
-	ctx.fill();
-
-	ctx.beginPath();
-	ctx.arc(x + 0.5, y, 1.7, 0, Math.PI * 2);
-	ctx.fillStyle = '#12222B';
-	ctx.fill();
-
-	// Catchlight. Small, but it is most of what makes the fish look alive.
-	ctx.beginPath();
-	ctx.arc(x - 0.7, y - 1, 0.7, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-	ctx.fill();
-}
-
 /** The bubble trail behind a live fish. Three bubbles rising and fading on a loop. */
 function drawTrail(ctx: CanvasRenderingContext2D, time: number, seed: number, len: number): void {
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
@@ -719,131 +588,37 @@ function drawTreatFish(
 ): void {
 	const affordable = !creature.locked;
 	const seed = hash(creature.id);
-	const len = 58;
-	const hgt = 40;
-	const beat = Math.sin(time / 220 + seed);
+	const spec = SPECIES.exotic;
 
-	// Deliberately the largest and most ornate creature in the tank. A guilty
-	// pleasure has to be the thing your eye lands on first, or the whole mechanic
-	// is invisible — it is the only creature you buy rather than do.
+	// The largest, most ornate creature in the tank. A guilty pleasure you cannot see
+	// is a mechanic that does not exist.
 	if (affordable) {
-		const halo = ctx.createRadialGradient(0, 0, 4, 0, 0, len);
+		const halo = ctx.createRadialGradient(0, 0, 4, 0, 0, spec.length);
 		halo.addColorStop(0, 'rgba(255, 226, 150, 0.45)');
 		halo.addColorStop(0.6, 'rgba(255, 140, 220, 0.16)');
 		halo.addColorStop(1, 'rgba(255, 196, 107, 0)');
 		ctx.fillStyle = halo;
 		ctx.beginPath();
-		ctx.arc(0, 0, len, 0, Math.PI * 2);
+		ctx.arc(0, 0, spec.length, 0, Math.PI * 2);
 		ctx.fill();
 	}
 
-	// Out of reach: drained towards the water, so it reads as a promise rather than
-	// a fish you already own. Never invisible — you should still want it.
+	// Out of reach reads as a promise, not a corpse: drained, never invisible.
 	ctx.globalAlpha = affordable ? 1 : 0.62;
-	if (at.flip) ctx.scale(-1, 1);
+	const muted: SpeciesSpec = affordable
+		? spec
+		: {
+				...spec,
+				palette: {
+					...spec.palette,
+					back: '#c7a8d8',
+					belly: '#8e7cb0',
+					fin: '#cec4e0'
+				}
+			};
 
-	// Trailing filaments from the tail, drifting behind the beat.
-	ctx.strokeStyle = affordable ? 'rgba(255, 208, 120, 0.85)' : 'rgba(206, 190, 222, 0.65)';
-	ctx.lineWidth = 1.6;
-	for (const f of [-0.5, 0, 0.5]) {
-		ctx.beginPath();
-		ctx.moveTo(-len * 0.42, hgt * 0.06 * f);
-		ctx.quadraticCurveTo(
-			-len * 0.75,
-			hgt * (0.35 * f) + beat * 5,
-			-len * 0.98,
-			hgt * (0.55 * f) + beat * 9
-		);
-		ctx.stroke();
-	}
-
-	// Veil tail.
-	ctx.fillStyle = affordable ? 'rgba(255, 168, 214, 0.72)' : 'rgba(214, 190, 226, 0.45)';
-	ctx.beginPath();
-	ctx.moveTo(-len * 0.4, -hgt * 0.2);
-	ctx.quadraticCurveTo(-len * 0.68, -hgt * 0.5 + beat * 4, -len * 0.84, beat * 7);
-	ctx.quadraticCurveTo(-len * 0.66, hgt * 0.5 + beat * 5, -len * 0.4, hgt * 0.2);
-	ctx.closePath();
-	ctx.fill();
-
-	// Tall sail fins, above and below — the silhouette that says "not an ordinary fish".
-	const dorsal = () => {
-		ctx.beginPath();
-		ctx.moveTo(len * 0.24, -hgt * 0.46);
-		ctx.quadraticCurveTo(len * 0.02, -hgt * 0.92 + beat * 3, -len * 0.28, -hgt * 0.44);
-		ctx.quadraticCurveTo(-len * 0.04, -hgt * 0.56, len * 0.24, -hgt * 0.46);
-		ctx.closePath();
-	};
-	const anal = () => {
-		ctx.beginPath();
-		ctx.moveTo(len * 0.14, hgt * 0.46);
-		ctx.quadraticCurveTo(-len * 0.06, hgt * 0.82 - beat * 3, -len * 0.32, hgt * 0.42);
-		ctx.quadraticCurveTo(-len * 0.06, hgt * 0.54, len * 0.14, hgt * 0.46);
-		ctx.closePath();
-	};
-
-	ctx.fillStyle = affordable ? 'rgba(255, 190, 120, 0.8)' : 'rgba(206, 196, 224, 0.5)';
-	dorsal();
-	ctx.fill();
-	anal();
-	ctx.fill();
-
-	// Rays, clipped to each sail. Unclipped they shoot past the fin edges and read as
-	// scratches on the glass.
-	ctx.strokeStyle = affordable ? 'rgba(214, 120, 40, 0.35)' : 'rgba(150, 150, 180, 0.3)';
-	ctx.lineWidth = 0.9;
-	for (const [shape, dir] of [
-		[dorsal, -1],
-		[anal, 1]
-	] as const) {
-		ctx.save();
-		shape();
-		ctx.clip();
-		for (let i = 0; i < 5; i++) {
-			const rx = len * 0.2 - i * len * 0.11;
-			ctx.beginPath();
-			ctx.moveTo(rx, dir * hgt * 0.4);
-			ctx.lineTo(rx - len * 0.03, dir * hgt);
-			ctx.stroke();
-		}
-		ctx.restore();
-	}
-
-	// Iridescent body: magenta shoulder into gold into deep violet.
-	const body = ctx.createLinearGradient(0, -hgt * 0.4, 0, hgt * 0.4);
-	if (affordable) {
-		body.addColorStop(0, '#FF6FC7');
-		body.addColorStop(0.42, '#FFD166');
-		body.addColorStop(1, '#7A3BD1');
-	} else {
-		body.addColorStop(0, '#C7A8D8');
-		body.addColorStop(0.45, '#D9CBE4');
-		body.addColorStop(1, '#8E7CB0');
-	}
-
-	bodyPath(ctx, len * 0.86, hgt * 0.56);
-	ctx.fillStyle = body;
-	ctx.fill();
-
-	// Scale shimmer, clipped to the body.
-	ctx.save();
-	bodyPath(ctx, len * 0.86, hgt * 0.56);
-	ctx.clip();
-	ctx.strokeStyle = affordable ? 'rgba(255, 255, 255, 0.32)' : 'rgba(255, 255, 255, 0.16)';
-	ctx.lineWidth = 1;
-	for (let i = -2; i < 4; i++) {
-		ctx.beginPath();
-		ctx.arc(len * 0.1 - i * 7, 0, 9, -0.9, 0.9);
-		ctx.stroke();
-	}
-	ctx.restore();
-
-	bodyPath(ctx, len * 0.86, hgt * 0.56);
-	ctx.strokeStyle = affordable ? 'rgba(122, 59, 209, 0.55)' : 'rgba(126, 110, 156, 0.5)';
-	ctx.lineWidth = 1.2;
-	ctx.stroke();
-
-	drawEye(ctx, { ...LEGACY_SPECIES.betta, length: len * 0.86, height: hgt * 0.56 });
+	drawFish(ctx, at, muted, time, seed);
+	ctx.globalAlpha = 1;
 
 	// Sparkles, affordable only: the tell that you can have it now.
 	if (affordable) {
@@ -851,15 +626,12 @@ function drawTreatFish(
 		for (let i = 0; i < 3; i++) {
 			const cycle = (((time / 1100 + i * 0.33 + seed) % 1) + 1) % 1;
 			ctx.globalAlpha = Math.sin(cycle * Math.PI);
-			const sx = len * 0.42 - i * 12;
-			const sy = -hgt * 0.5 - cycle * 10;
 			ctx.beginPath();
-			ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+			ctx.arc(spec.length * 0.3 - i * 12, -spec.length * 0.35 - cycle * 10, 1.8, 0, Math.PI * 2);
 			ctx.fill();
 		}
+		ctx.globalAlpha = 1;
 	}
-
-	ctx.globalAlpha = 1;
 }
 
 /**

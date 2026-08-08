@@ -569,3 +569,58 @@ describe('markings', () => {
 		expect(withMarks.calls.filter((call) => call === 'clip').length).toBe(0);
 	});
 });
+
+describe('treat fish', () => {
+	it('bends the treat fish as it swims', () => {
+		// The old bespoke treat body was a fixed path and never bent; this is what
+		// actually fails before the rewrite.
+		const early = fakeCtx();
+		const later = fakeCtx();
+		const c = creature('treat', { id: 'treat-1' });
+
+		drawCreature(early, c, place(c, SIZE, 0), COLORS, 0);
+		drawCreature(later, c, place(c, SIZE, 1300), COLORS, 1300);
+
+		expect(early.calls.join()).not.toBe(later.calls.join());
+	});
+
+	it('draws an affordable treat brighter than a locked one', () => {
+		const open = fakeCtx();
+		const locked = fakeCtx();
+		const c = creature('treat', { id: 'treat-1' });
+
+		drawCreature(open, { ...c, locked: false }, place(c, SIZE, 0), COLORS, 0);
+		drawCreature(locked, { ...c, locked: true }, place(c, SIZE, 0), COLORS, 0);
+
+		// The halo and sparkles only exist when you can afford it.
+		expect(open.calls.length).toBeGreaterThan(locked.calls.length);
+		expect(open.depth).toBe(0);
+		expect(locked.depth).toBe(0);
+	});
+
+	it('draws a claimed treat as the same exotic fish, in the shoal', () => {
+		const ctx = fakeCtx();
+		const c = creature('fish', { id: 'bought', claimed: true });
+
+		drawCreature(ctx, c, place(c, SIZE, 0), COLORS, 0);
+
+		// The 0.72 shrink that keeps a claimed treat sized for the shoal. `fakeCtx`
+		// records coordinate-bearing calls with their arguments, so this checks for the
+		// call rather than the bare method name.
+		expect(ctx.calls.some((call) => call.startsWith('scale('))).toBe(true);
+		expect(ctx.depth).toBe(0);
+	});
+
+	it('draws a bending fish sealed inside a waiting bubble', () => {
+		const early = fakeCtx();
+		const later = fakeCtx();
+		const c = creature('bubble', { id: 'waiting-task' });
+
+		drawCreature(early, c, place(c, SIZE, 0), COLORS, 0);
+		drawCreature(later, c, place(c, SIZE, 1200), COLORS, 1200);
+
+		expect(early.calls).toContain('clip');
+		expect(early.calls.join()).not.toBe(later.calls.join());
+		expect(early.depth).toBe(0);
+	});
+});
