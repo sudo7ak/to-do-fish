@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildScene, MAX_VISIBLE_TREATS } from './build';
+import { buildScene, MAX_VISIBLE_KOI, MAX_VISIBLE_PEARLS, MAX_VISIBLE_TREATS } from './build';
 import type { CreatureKind } from './types';
 import type { KoiRecord, Task } from '../types';
 
@@ -320,5 +320,80 @@ describe('buildScene — pointer picking', () => {
 		const scene = buildScene(tasks, [{ date: DAY, earnedAt: 1 }], DAY, NOON);
 		const ids = scene.creatures.map((c) => c.id);
 		expect(new Set(ids).size).toBe(ids.length);
+	});
+});
+
+describe('buildScene — the tank has an upper bound', () => {
+	const done = (id: string, date = DAY) => task({ id, date, status: 'done', completedAt: 1 });
+
+	it('draws one pearl each while the balance is small', () => {
+		const tasks = Array.from({ length: 3 }, (_, i) => done(`d${i}`));
+		expect(countOf(tasks, 'pearl')).toBe(3);
+	});
+
+	it('stops adding pearls past the cap, however large the balance', () => {
+		const tasks = Array.from({ length: 200 }, (_, i) => done(`d${i}`));
+		expect(countOf(tasks, 'pearl')).toBe(MAX_VISIBLE_PEARLS);
+	});
+
+	it('reports the true balance even when it draws far fewer pearls', () => {
+		// The pill shows this number, which is why capping the creatures loses nothing.
+		const tasks = Array.from({ length: 200 }, (_, i) => done(`d${i}`));
+		expect(buildScene(tasks, [], DAY, NOON).pearls).toBe(200);
+	});
+
+	it('stops adding koi past the cap', () => {
+		const koi = Array.from({ length: 40 }, (_, i) => ({
+			date: `2026-07-${String(i + 1).padStart(2, '0')}`,
+			earnedAt: 1
+		}));
+		expect(countOf([], 'koi', koi)).toBe(MAX_VISIBLE_KOI);
+	});
+
+	it('keeps the most recently earned koi, not the first ones recorded', () => {
+		const koi = [
+			{ date: '2026-07-01', earnedAt: 1 },
+			{ date: '2026-08-07', earnedAt: 1 },
+			{ date: '2026-07-02', earnedAt: 1 },
+			{ date: '2026-08-06', earnedAt: 1 },
+			{ date: '2026-07-03', earnedAt: 1 }
+		];
+		const ids = buildScene([], koi, DAY, NOON).creatures.map((c) => c.id);
+		expect(ids).toContain('koi-2026-08-07');
+		expect(ids).toContain('koi-2026-08-06');
+		expect(ids).not.toContain('koi-2026-07-01');
+	});
+
+	it('still hides koi earned after the date being viewed', () => {
+		const koi = [
+			{ date: '2026-08-09', earnedAt: 1 },
+			{ date: '2026-08-10', earnedAt: 1 },
+			{ date: DAY, earnedAt: 1 }
+		];
+		const ids = buildScene([], koi, DAY, NOON).creatures.map((c) => c.id);
+		expect(ids).toEqual([`koi-${DAY}`]);
+	});
+
+	it('holds the whole tank under a ceiling after two months of steady use', () => {
+		// Measured before the caps existed: 399 creatures, of which 333 were pearls and
+		// 60 koi. Both grew without limit; this is the guard against a third kind doing
+		// the same. The bound is the caps plus one heavy day's fish and ghosts.
+		const day = (n: number) => {
+			const d = new Date(2026, 5, 1 + n);
+			const p = (x: number) => String(x).padStart(2, '0');
+			return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+		};
+
+		const tasks: Task[] = [];
+		const koi: KoiRecord[] = [];
+		for (let d = 0; d < 60; d++) {
+			for (let i = 0; i < 6; i++) tasks.push(done(`t-${d}-${i}`, day(d)));
+			koi.push({ date: day(d), earnedAt: 1 });
+		}
+
+		const scene = buildScene(tasks, koi, day(59), at(12, 0, day(59)));
+		expect(scene.creatures.length).toBeLessThanOrEqual(
+			MAX_VISIBLE_PEARLS + MAX_VISIBLE_KOI + MAX_VISIBLE_TREATS + 1 + 6
+		);
 	});
 });

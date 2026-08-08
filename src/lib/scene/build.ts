@@ -15,6 +15,27 @@ import type { Creature, CreatureKind, Scene } from './types';
 /** Beyond this many lanterns, the remainder collapses into one overflow lantern. */
 export const MAX_VISIBLE_TREATS = 4;
 
+/**
+ * Pearls and koi are the two creatures whose count is not bounded by a single day's
+ * tasks, so without a cap the tank fills up and never empties again.
+ *
+ * Measured on 60 days of steady use — six tasks a day, all finished, a treat a week —
+ * the tank held 399 creatures: 333 pearls, 60 koi, and 6 ghosts. The pearl balance is
+ * a running `earned − spent` across every date, and a koi swims on every date after
+ * the one it was earned on, so both grow for as long as the app is used. Ghosts, the
+ * intuitive culprit, are bounded by one day's work and are not the problem.
+ *
+ * These cap what is *drawn*. Neither the balance nor the koi records change: the pill
+ * still shows the exact pearl count, and a koi that scrolls out of view has not been
+ * revoked.
+ *
+ * Unlike the overflow lantern there is no overflow pearl. That one earns its place by
+ * opening the list when tapped; tapping a pearl does nothing, so an overflow pearl
+ * would only be a creature that misstates the count.
+ */
+export const MAX_VISIBLE_PEARLS = 9;
+export const MAX_VISIBLE_KOI = 3;
+
 /** Depth of a bubble about to fire, and of one still a week away. 0 = waterline, 1 = floor. */
 const DEPTH_IMMINENT = 0.2;
 const DEPTH_DISTANT = 0.8;
@@ -59,8 +80,14 @@ export function buildScene(tasks: Task[], koi: KoiRecord[], date: string, now: n
 		...inWater.map((task) => toCreature(task, live, now)),
 		...treats(waitingTreats, balance),
 		...pearls(balance),
-		// A koi swims through every date from the day it was earned onward.
-		...koi.filter((record) => record.date <= date).map(toKoi)
+		// A koi swims through every date from the day it was earned onward — but only
+		// the most recent few are drawn, since a wall of gold stops reading as "I
+		// cleared a day". Sorted here rather than trusting the stored order.
+		...koi
+			.filter((record) => record.date <= date)
+			.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+			.slice(0, MAX_VISIBLE_KOI)
+			.map(toKoi)
 	];
 
 	return { creatures, clearedPct: clearedPct(today), pearls: balance };
@@ -147,7 +174,8 @@ function treats(waitingTreats: Task[], balance: number): Creature[] {
 
 function pearls(balance: number): Creature[] {
 	// A negative balance means a bug upstream, not a negative pile of pearls.
-	return Array.from({ length: Math.max(0, balance) }, (_, i) => ({
+	const drawn = Math.min(Math.max(0, balance), MAX_VISIBLE_PEARLS);
+	return Array.from({ length: drawn }, (_, i) => ({
 		id: `pearl-${i}`,
 		kind: 'pearl' as const,
 		label: 'Pearl',

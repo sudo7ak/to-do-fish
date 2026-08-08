@@ -16,52 +16,37 @@ were reasoned about rather than looked at are the ones that have been wrong befo
 
 ---
 
-## 1. Crowding — the tank has no upper bound
+## 1. Crowding — fixed 2026-08-09
 
-**Measured.** Simulating 60 days of steady use (6 tasks a day, all completed, a
-3-pearl treat each week) and calling `buildScene`:
+**Was measured** at 60 days of steady use (6 tasks a day, all completed, a 3-pearl
+treat each week): **399 creatures — 333 pearls, 60 koi, 6 ghosts.** Pearls and koi
+were the only kinds with no upper bound, and ghosts, the intuitive culprit, were 1.5%
+of it.
 
-```
-TOTAL creatures on screen: 399
-ghost: 6    pearl: 333    koi: 60
-```
+Now `MAX_VISIBLE_PEARLS = 9` and `MAX_VISIBLE_KOI = 3` cap what is drawn, and a test
+holds the whole tank under a ceiling on that same 60-day simulation.
 
-Two creature kinds grow without limit, and the one that looks like the culprit does
-not:
+Three rulings worth keeping, since they are not obvious from the code:
 
-| Kind | Bound | Notes |
-| --- | --- | --- |
-| **pearl** | **none** | `pearls(balance)` emits one creature per pearl, and the balance is a running `earned − spent` across *all* dates. The dominant term by far. |
-| **koi** | **none** | One per cleared day, `record.date <= date`, so every past koi swims in every later date forever. |
-| ghost | per-date | Bounded by what you completed that day. Realistically <20. |
-| fish | per-date | Bounded by what you planned. |
-| treat | 4 + overflow | Already capped — `MAX_VISIBLE_TREATS`, with the remainder collapsed into one creature that opens the list. |
+- **Pearls stay a global running balance, not date-scoped.** Saving across days for a
+  5-pearl treat *is* the guilty-pleasure mechanic; a per-date balance would break it.
+  The caps change only what is drawn — `scene.pearls` is still exact, and the pill
+  still shows it.
+- **No overflow pearl**, unlike the overflow lantern. That one earns its place by
+  opening the list when tapped; tapping a pearl does nothing, so an overflow pearl
+  would only be a creature that misstates the count.
+- **Koi are capped, not revoked.** The `KoiRecord` list is untouched; the scene draws
+  the most recent three.
 
-### 1.1 Cap pearls
+The cap of 9 was set by looking, not by arithmetic. Each pearl carries a ~39px bloom
+and the placement bands are only ~92px per side (they avoid the centred add-pill), so
+at 14 the blooms merged into a milky smear. At 9 they read as individual beads.
 
-Highest impact by an order of magnitude. The treat overflow is the precedent: draw
-N pearls and collapse the rest into one marked with the count. Nothing is lost —
-the exact balance is already on the pill.
-
-### 1.2 Cap or thin koi
-
-Sixty gold fish stop meaning "I cleared a day". Either the same overflow treatment,
-or show only recent days'.
-
-### 1.3 Decide whether pearls should be date-scoped at all
-
-Not a rendering question. Pearls are the only creature whose count ignores the date
-being viewed, which is both why they dominate the tank and arguably a mechanic
-inconsistency. Decide before building the cap, because a per-date balance would
-change what the cap is for.
-
-### 1.4 Ghosts: fade with age, do not remove
-
-Removing done tasks was considered and rejected on evidence. It addresses 1.5% of
-the crowding, and the spec makes the drained ghost the *reward* for finishing.
-When ghosts were hidden on cleared days earlier, the immediate reaction was that the
-fish had gone missing. If they need to recede, fade the oldest progressively — no
-hard cutoff, nothing pops.
+**Still open here:** ghosts are bounded per-date but a heavy day still puts ~20 in the
+tank. If that needs addressing, fade the oldest progressively — do **not** remove
+them. Removing was tried when ghosts were hidden on cleared days, and the immediate
+reaction was that the fish had gone missing; the spec makes the drained ghost the
+reward for finishing.
 
 ---
 
