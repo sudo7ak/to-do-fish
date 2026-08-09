@@ -52,6 +52,27 @@ reward for finishing.
 
 ## 2. Fish appearance
 
+### Tank pass 2 — landed 2026-08-09
+
+Merged from `feeding-flourish`. Completing a task now feeds the tank: food scatters and
+the shoal quickens for four seconds, derived from `completedAt` and never stored. The
+prize patrols instead of hovering, and `pitch`/`turn` ignore sub-pixel travel — at the
+prize's old speed the heading was noise multiplied by twelve. A leafy stem plant joins
+the bed under weighted selection. Pearls rest on the sand rather than 30–55px beneath
+it, and a chest sits in the middle holding gold and gemstones, carrying the balance
+past the point the bed stops drawing beads.
+
+The date header could lie: it read "Today" on a tank left open past midnight, filing new
+tasks under yesterday. Today is now a live prop, and the label doubles as one tap back
+to today.
+
+**Still open from that work:**
+
+- Fish still pass through one another (plan Phase 4), and pectorals do not scull.
+- The **bushy** plant form is the weakest of the five.
+- A date picker was deliberately deferred behind the Today control — see whether the
+  cheap fix removed the need before adding the calendar.
+
 ### Realism pass — landed 2026-08-09
 
 `docs/superpowers/plans/2026-08-09-fish-realism.md`, merged. Tail beat now follows how

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Built and merged.** v1 ships all the mechanics; the fish rendering was then rewritten
-on top of it. The tree is a working SvelteKit app with 441 unit tests and a 57-check
+on top of it. The tree is a working SvelteKit app with 486 unit tests and a 62-check
 end-to-end suite.
 
 Two specs, both still the source of truth for *why*:
@@ -31,11 +31,11 @@ recorded in the app spec, so the video does not need re-watching.
 
 ```bash
 npm run dev          # dev server on :5173 (scripts assume :5199 — see below)
-npm test             # 441 unit tests (vitest) over the pure layers
+npm test             # 486 unit tests (vitest) over the pure layers
 npm run check        # svelte-check; must report 0 errors
 npm run build        # static build via adapter-static
 npm run screenshot   # PNG of the tank        (needs a dev server running)
-npm run e2e          # 57 checks via Playwright (needs a dev server running)
+npm run e2e          # 62 checks via Playwright (needs a dev server running)
 
 npx vitest run src/lib/render/spine.test.ts     # one file
 npx vitest run -t 'roots every fin on the body' # one test, by name
@@ -157,6 +157,19 @@ the bubble, and the app never prompts about them.
 **Bump `updatedAt` on every mutation**, and generate IDs as client-side ULIDs. Both
 exist for a sync feature that does not exist yet; they are cheap now and expensive to
 retrofit once real data lives on two devices.
+
+**One surface, one owner.** Three separate things have each been drawn against their
+own private idea of where the sand is: the planting, the pearls, and the chest.
+`bedTopAt(x)` is the sand, and `chestBounds(size)` is the floor the chest occupies —
+anything that sits on the bottom reads those rather than computing its own line. Each
+time this was got wrong the symptom was the same: something floating, or buried, or
+growing through something else.
+
+**Light that must survive `drawDepth` has to be added, not painted.** The bottom 38% of
+the tank carries a 30% water-colour wash plus a vignette, which is correct for seating
+fish in depth and fatal for anything meant to look bright down there. The chest's gold
+and the gem twinkles draw with `globalCompositeOperation: 'lighter'` for that reason;
+tinted fills came out olive no matter how the palette was tuned.
 
 **Every creature kind needs an upper bound.** Pearls (a running balance across all
 dates) and koi (one per cleared day, visible forever) each grew without limit: measured
