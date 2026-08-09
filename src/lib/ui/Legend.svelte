@@ -52,7 +52,7 @@
 			id: 'ghost',
 			title: 'Ghost',
 			blurb: 'A task you finished today. It stays, faintly, so the day shows its work.',
-			zoom: 0.9,
+			zoom: 0.65,
 			creature: { id: 'legend-ghost', kind: 'ghost', label: 'Ghost', depth: 0.5, tapRadius: 26 }
 		},
 		{
@@ -60,8 +60,12 @@
 			title: 'Treat, out of reach',
 			blurb: 'A reward you have not earned yet. Dim until you can afford it.',
 			zoom: 0.72,
+			// Same creature id as the affordable row below: `treatSpeciesFor` hashes the
+			// id to pick a species, so two different ids would render as two different
+			// animals here, and a reader would learn "different species" instead of the
+			// intended "same fish, dim vs bright." `locked` is the only difference.
 			creature: {
-				id: 'legend-treat-locked',
+				id: 'legend-treat',
 				kind: 'treat',
 				label: 'Treat',
 				depth: 0.2,
