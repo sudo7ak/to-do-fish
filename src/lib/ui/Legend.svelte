@@ -59,7 +59,7 @@
 			id: 'treat-locked',
 			title: 'Treat, out of reach',
 			blurb: 'A reward you have not earned yet. Dim until you can afford it.',
-			zoom: 0.8,
+			zoom: 0.72,
 			creature: {
 				id: 'legend-treat-locked',
 				kind: 'treat',
@@ -94,7 +94,7 @@
 		{
 			id: 'pearl',
 			title: 'Pearl',
-			blurb: 'Dropped on the sand each time you finish something. Treats are priced in these.',
+			blurb: 'Dropped on the sand each time you finish an ordinary task. Treats are priced in these.',
 			zoom: 1.4,
 			creature: { id: 'legend-pearl', kind: 'pearl', label: 'Pearl', depth: 1, tapRadius: 16 }
 		}
@@ -102,12 +102,78 @@
 </script>
 
 <script lang="ts">
+	import { drawCreature, type Placement } from '../render/creatures';
+	import { palette, type Environment } from '../render/palette';
+
 	type Props = {
 		open: boolean;
+		/** Matches the tank the user is actually looking at. */
+		environment: Environment;
 		onClose: () => void;
 	};
 
-	const { open, onClose }: Props = $props();
+	const { open, environment, onClose }: Props = $props();
+
+	/** Thumbnail size in CSS pixels. */
+	const THUMB = { w: 72, h: 52 };
+
+	/**
+	 * Drawn at a cleared day's palette regardless of progress.
+	 *
+	 * A reference wants its subjects legible, and the Progress palette at 0 is
+	 * deliberately murky — the legend would open dimmest exactly when a new user first
+	 * sees it, which is the worst possible moment for it.
+	 */
+	const LEGEND_CLEARED = 1;
+
+	let canvases = $state<(HTMLCanvasElement | undefined)[]>([]);
+
+	/**
+	 * One static frame per row, drawn when the sheet opens or the palette changes.
+	 *
+	 * No requestAnimationFrame: seven animating canvases over a blurred tank is real
+	 * cost on a phone for a sheet nobody watches. Nothing here allocates repeatedly —
+	 * it runs on open, not per frame.
+	 */
+	$effect(() => {
+		if (!open) return;
+
+		const colors = palette(environment, LEGEND_CLEARED);
+		const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
+
+		LEGEND_ENTRIES.forEach((entry, i) => {
+			const canvas = canvases[i];
+			if (!canvas) return;
+
+			canvas.width = THUMB.w * dpr;
+			canvas.height = THUMB.h * dpr;
+
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return;
+
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			ctx.clearRect(0, 0, THUMB.w, THUMB.h);
+
+			// Centre the row, then scale, then draw at the origin — so the placement
+			// carries no layout maths of its own and `place()` stays uninvolved.
+			ctx.translate(THUMB.w / 2, THUMB.h / 2);
+			ctx.scale(entry.zoom, entry.zoom);
+
+			const at: Placement = {
+				x: 0,
+				y: 0,
+				flip: false,
+				pitch: 0,
+				// `effort` is a multiple of the creature's own average pace, so 1 is a fish
+				// holding station. 0 would flatten the body wave and draw a stick.
+				effort: 1,
+				turn: 0
+			};
+
+			drawCreature(ctx, entry.creature, at, colors, LEGEND_TIME);
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+		});
+	});
 </script>
 
 {#if open}
@@ -124,8 +190,15 @@
 		<h2>What am I looking at?</h2>
 
 		<ul>
-			{#each LEGEND_ENTRIES as entry (entry.id)}
+			{#each LEGEND_ENTRIES as entry, i (entry.id)}
 				<li>
+					<!-- Decorative: the row's text is the accessible content, and a canvas
+					     offers a screen reader nothing. -->
+					<canvas
+						bind:this={canvases[i]}
+						aria-hidden="true"
+						style="width: {THUMB.w}px; height: {THUMB.h}px"
+					></canvas>
 					<span class="text">
 						<strong>{entry.title}</strong>
 						<small>{entry.blurb}</small>
@@ -196,6 +269,14 @@
 		display: flex;
 		align-items: center;
 		gap: 0.9rem;
+	}
+
+	canvas {
+		flex: none;
+		border-radius: 0.6rem;
+		/* A hint of water behind each subject: the creatures are drawn for a tank and
+		   read as cut-outs on plain white. */
+		background: rgba(79, 195, 217, 0.18);
 	}
 
 	.text {
