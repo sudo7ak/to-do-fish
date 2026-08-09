@@ -228,6 +228,8 @@ but nothing in the UI exposes it. The list's bulk delete is immediate.
 | **Trigger catch-up after real sleep** | Fake-clock tested only. Never verified by suspending a machine. |
 | **Small and notched screens** | Verified at 420×860 and 460×900 only. See 5.1. |
 | **v0 migration** | `migrate()` is unit-tested but has never loaded genuinely old stored data. There has never been a v0 in the wild. |
+| **Legend art at small sizes** | The seven thumbnails are drawn at fixed per-entry `zoom` values set by eye at 460px. Untested on a very narrow or a very wide viewport. |
+| **Escape key on sheets** | `Settings.svelte:46` and `Legend.svelte:190` attach `onkeydown` Escape handlers to a `tabindex="-1"` div, which never receives focus — so Escape does not dismiss either sheet. Pre-existing pattern, fails safe (nothing dismisses unexpectedly). Both sheets are dismissible by backdrop click and by their own button. |
 
 ---
 

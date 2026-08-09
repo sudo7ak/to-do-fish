@@ -55,11 +55,13 @@ const task = (id, title, over = {}) => ({
 	updatedAt: Date.now(),
 	...over
 });
+// Seeded states stand for someone who has already used the app, so the legend must
+// not auto-open over them. Only the fresh-storage block below exercises that path.
 const snap = (tasksList, koi = []) => ({
-	version: 1,
+	version: 2,
 	tasks: tasksList,
 	koi,
-	settings: { environment: 'progress' }
+	settings: { environment: 'progress', seenLegend: true }
 });
 
 // Adds a task through the sheet.
@@ -100,7 +102,36 @@ const closeList = async () => {
 };
 
 await page.goto(URL);
+
+// ------------------------------------------------------------------ legend
+// This is the suite's only genuinely fresh start, so it is where auto-open is
+// checked. It must also dismiss the sheet: everything after this clicks on the tank.
+console.log('\n== Legend ==');
 await reset(null);
+
+const legend = page.locator('section[aria-label="What am I looking at?"]');
+check('a first visit opens the legend unasked', await legend.isVisible());
+check('the legend names every creature', (await legend.locator('li').count()) === 7);
+
+await legend.getByRole('button', { name: 'Got it' }).click();
+await page.waitForTimeout(250);
+check('the legend closes', !(await legend.isVisible()));
+
+await page.reload();
+await page.waitForTimeout(700);
+check('a second visit does not re-open it', !(await legend.isVisible()));
+
+await page.locator('button[aria-label="Settings"]').click();
+await page.waitForTimeout(250);
+await page.locator('button', { hasText: 'What am I looking at?' }).click();
+await page.waitForTimeout(250);
+check('Settings can open the legend again', await legend.isVisible());
+
+await legend.getByRole('button', { name: 'Got it' }).click();
+await page.waitForTimeout(200);
+await page.locator('section[aria-label="Settings"] button', { hasText: 'Done' }).click();
+await page.waitForTimeout(250);
+check('closing both sheets returns to the tank', !(await legend.isVisible()));
 
 // ---------------------------------------------------------------- creating
 console.log('\n== Creating tasks ==');
