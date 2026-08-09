@@ -115,6 +115,15 @@ export function setEnvironment(state: State, environment: Environment): State {
 }
 
 /**
+ * Records that the legend has been shown. Not a task mutation, so nothing here bumps
+ * `updatedAt` — that field stamps edits to tasks, and stamping a settings change with
+ * it would make a sync reconciler think a task moved.
+ */
+export function markLegendSeen(state: State): State {
+	return { ...state, settings: { ...state.settings, seenLegend: true } };
+}
+
+/**
  * Applies a change to one task and bumps `updatedAt`. Every mutation goes through
  * here, which is what keeps the timestamp from being forgotten on a new action —
  * two devices can only be reconciled if each edit is stamped.
@@ -154,6 +163,7 @@ export type TaskStoreFacade = {
 	release(ids: string[]): Promise<void>;
 	claimTreat(id: string): Promise<Outcome>;
 	setEnvironment(environment: Environment): Promise<void>;
+	markLegendSeen(): Promise<void>;
 	snapshot(): State;
 };
 
@@ -213,6 +223,7 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 		softDelete: (id) => commit(softDelete(get(state), id, clock())),
 		releaseBubble: (id) => commit(releaseBubble(get(state), id, clock())),
 		setEnvironment: (environment) => commit(setEnvironment(get(state), environment)),
+		markLegendSeen: () => commit(markLegendSeen(get(state))),
 
 		/** Bulk release for the ticker: one commit for a whole batch of due triggers. */
 		release(ids) {

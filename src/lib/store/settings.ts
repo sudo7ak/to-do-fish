@@ -12,3 +12,14 @@ export const ENVIRONMENTS: readonly Environment[] = ['progress', 'calm'] as cons
 export function showsMoodNumber(settings: Settings): boolean {
 	return settings.environment === 'progress';
 }
+
+/**
+ * Whether to show the legend unasked.
+ *
+ * A pure predicate rather than a condition inline in the page, so the rule is
+ * testable without mounting anything. One-way: the flag is written the moment the
+ * legend is shown, not when it is closed, so a reload mid-view does not re-open it.
+ */
+export function shouldAutoOpen(settings: Settings): boolean {
+	return !settings.seenLegend;
+}

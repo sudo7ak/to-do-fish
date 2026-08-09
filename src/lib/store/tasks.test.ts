@@ -9,6 +9,7 @@ import {
 	releaseBubble,
 	claimTreat,
 	setEnvironment,
+	markLegendSeen,
 	createTaskStore,
 	type State
 } from './tasks';
@@ -310,5 +311,37 @@ describe('createTaskStore', () => {
 
 		expect(result).toEqual({ ok: false, reason: 'unaffordable' });
 		expect(port.saved).toHaveLength(savesBefore);
+	});
+});
+
+describe('markLegendSeen', () => {
+	it('latches the flag on', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'progress' as const, seenLegend: false }
+		};
+
+		expect(markLegendSeen(state).settings.seenLegend).toBe(true);
+	});
+
+	it('is idempotent — showing the legend twice is not an error', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'calm' as const, seenLegend: true }
+		};
+
+		expect(markLegendSeen(state)).toEqual(state);
+	});
+
+	it('leaves the environment alone', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'calm' as const, seenLegend: false }
+		};
+
+		expect(markLegendSeen(state).settings.environment).toBe('calm');
 	});
 });
