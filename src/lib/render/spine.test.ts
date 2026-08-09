@@ -232,3 +232,40 @@ describe('effort — the body works harder when it is going faster', () => {
 		expect(Math.max(...spreads)).toBeGreaterThan(0.5);
 	});
 });
+
+describe('turn — the body bends into the corner', () => {
+	const wave = { amplitude: 0.18, wavelength: 1.0, speed: 6 };
+
+	/** Mean lateral offset: a travelling wave averages to ~0, a sustained bend does not. */
+	const bias = (spine: ReturnType<typeof spineFor>) =>
+		spine.reduce((sum, p) => sum + p.y, 0) / spine.length;
+
+	/** Averaged over a wave cycle, so the undulation cancels and only the bend is left. */
+	const meanBias = (turn: number) => {
+		let total = 0;
+		for (let i = 0; i < 24; i++) total += bias(spineFor(40, wave, i * 40, 0.7, 8, 1, turn));
+		return total / 24;
+	};
+
+	it('holds no net bend when swimming straight', () => {
+		expect(Math.abs(meanBias(0))).toBeLessThan(0.4);
+	});
+
+	it('bends one way turning one way, and the other way turning back', () => {
+		const left = meanBias(-1);
+		const right = meanBias(1);
+
+		expect(right).toBeGreaterThan(1);
+		expect(left).toBeLessThan(-1);
+	});
+
+	it('bends further the harder the turn', () => {
+		expect(meanBias(1)).toBeGreaterThan(meanBias(0.4));
+	});
+
+	it('caps the bend, so a hard turn cannot fold the fish in half', () => {
+		// Left unbounded, a sharp corner ties the body into a hoop and the silhouette
+		// stops reading as a fish at all.
+		expect(meanBias(20)).toBeLessThan(meanBias(1) * 3);
+	});
+});

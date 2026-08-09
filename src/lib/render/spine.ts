@@ -43,6 +43,20 @@ const BURST_DRIVE = 1.45;
  */
 const EFFORT_GAIN = 1.35;
 
+/**
+ * Per-segment angle added while turning, in radians.
+ *
+ * Saturating rather than linear, and capped: an unbounded bend ties the body into a
+ * hoop on a sharp corner and the silhouette stops reading as a fish. `tanh` gives a
+ * proportional response to gentle turns and a hard ceiling on violent ones, with no
+ * discontinuity at the limit for the eye to catch.
+ */
+const MAX_TURN_ARC = 0.32;
+
+function turnBend(turn: number): number {
+	return Math.tanh(turn) * MAX_TURN_ARC;
+}
+
 function effortScale(effort: number): number {
 	const driven = 1 + (effort - 1) * EFFORT_GAIN;
 	return Math.min(BURST_DRIVE, Math.max(GLIDE_DRIVE, driven));
@@ -72,11 +86,13 @@ export function spineFor(
 	time: number,
 	phase: number,
 	segments: number = DEFAULT_SEGMENTS,
-	effort: number = 1
+	effort: number = 1,
+	turn: number = 0
 ): Spine {
 	const t = time / 1000;
 	const step = length / segments;
 	const drive = effortScale(effort);
+	const arc = turnBend(turn);
 
 	const points: Spine = [{ x: length / 2, y: 0 }];
 	for (let i = 1; i <= segments; i++) {
@@ -84,7 +100,10 @@ export function spineFor(
 		// Amplitude ramps in along the body: the head barely moves, the tail sweeps.
 		const ramp = u * u;
 		const bend = Math.sin(t * wave.speed + phase - (u * Math.PI * 2) / wave.wavelength);
-		const angle = bend * wave.amplitude * ramp * drive;
+		// The travelling wave averages to nothing over a cycle. The arc does not: it is
+		// a sustained curve held for as long as the fish is turning, which is what makes
+		// a turn read as a turn rather than as the same ripple pointing somewhere else.
+		const angle = bend * wave.amplitude * ramp * drive + arc * ramp;
 
 		const previous = points[i - 1];
 		points.push({
@@ -176,3 +195,19 @@ export function outline(spine: Spine, profile: Profile, length: number): Point[]
 
 	return [...top, ...bottom.reverse()];
 }
+
+/**
+ * How far a fully turned body swings off its own axis, as a fraction of length.
+ *
+ * Measured from a real spine rather than written down, so it cannot drift when
+ * `MAX_TURN_ARC` or the segment count changes. `speciesReach` adds it to the clearance
+ * a fish needs: a body bent into an arc occupies more across than a straight one, and a
+ * pad chosen by eye would go stale the first time the bend was tuned.
+ *
+ * The wave is zeroed so this isolates the arc; `turn` is far past saturation.
+ */
+export const TURN_LATERAL_REACH = Math.max(
+	...spineFor(1, { amplitude: 0, wavelength: 1, speed: 0 }, 0, 0, DEFAULT_SEGMENTS, 1, 100).map((p) =>
+		Math.abs(p.y)
+	)
+);

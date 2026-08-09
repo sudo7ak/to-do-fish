@@ -133,13 +133,21 @@ function fakeCtx() {
  * inequality only ever proved "something moved" — it passed just as happily if the
  * body froze and the bubble trail carried the difference.
  */
-function expectedOutline(id: string, spec: SpeciesSpec, time: number, effort = 1) {
+type Motion = { effort: number; turn: number; flip: boolean };
+
+/**
+ * The whole placement, not a growing list of scalars.
+ *
+ * The spine reads motion from the placement the renderer was handed — effort, turn, and
+ * whichever field comes next. Recomputing it from defaults compares the drawn body
+ * against one that was never drawn, and passing the fields one at a time meant every new
+ * one silently broke these tests until it was threaded through by hand.
+ */
+function expectedOutline(id: string, spec: SpeciesSpec, time: number, at?: Motion) {
 	const phase = mix32(hash(id) ^ 0x11) * Math.PI * 2;
-	// `effort` has to come from the same placement the renderer was handed. The body
-	// wave now scales with how hard the fish is working, so recomputing the spine at a
-	// default effort compares the drawn body against one that was never drawn.
+	const turn = at ? (at.flip ? -at.turn : at.turn) : 0;
 	return outline(
-		spineFor(spec.length, spec.wave, time, phase, undefined, effort),
+		spineFor(spec.length, spec.wave, time, phase, undefined, at?.effort ?? 1, turn),
 		spec.profile,
 		spec.length
 	);
@@ -173,10 +181,10 @@ function expectBodyDrawn(
 	id: string,
 	spec: SpeciesSpec,
 	time: number,
-	effort = 1
+	at?: Motion
 ) {
 	const drawn = drawnPathPoints(ctx);
-	const expected = expectedOutline(id, spec, time, effort);
+	const expected = expectedOutline(id, spec, time, at);
 
 	// The closing point is consumed only as a curve endpoint's midpoint, never as a
 	// control or a moveTo, so it is the one point of the loop that cannot be observed.
@@ -253,7 +261,7 @@ describe('drawCreature — every kind', () => {
 			const ctx = fakeCtx();
 			const at = place(c, SIZE, time);
 			drawCreature(ctx, c, at, COLORS, time);
-			expectBodyDrawn(ctx, id, spec, time, at.effort);
+			expectBodyDrawn(ctx, id, spec, time, at);
 		}
 	});
 });
@@ -305,13 +313,13 @@ describe('body drawing follows the spine', () => {
 			const ctx = fakeCtx();
 			const at = place(c, SIZE, time);
 			drawCreature(ctx, c, at, COLORS, time);
-			expectBodyDrawn(ctx, id, spec, time, at.effort);
+			expectBodyDrawn(ctx, id, spec, time, at);
 		}
 
 		// And the two outlines are genuinely different, so the assertions above are not
 		// both satisfied by one frozen shape.
-		expect(expectedOutline(id, spec, 0, place(c, SIZE, 0).effort).map(asKey)).not.toEqual(
-			expectedOutline(id, spec, 900, place(c, SIZE, 900).effort).map(asKey)
+		expect(expectedOutline(id, spec, 0, place(c, SIZE, 0)).map(asKey)).not.toEqual(
+			expectedOutline(id, spec, 900, place(c, SIZE, 900)).map(asKey)
 		);
 	});
 
@@ -690,7 +698,7 @@ describe('ghosts', () => {
 			const c = creature('ghost', { id });
 			// A fixed, level placement: `place` now also pitches a swimmer toward its
 			// direction of travel, which is a second `rotate()` and would be counted below.
-			drawCreature(ghost, c, { x: 200, y: 400, flip: false, pitch: 0, effort: 1 }, COLORS, 250);
+			drawCreature(ghost, c, { x: 200, y: 400, flip: false, pitch: 0, effort: 1, turn: 0 }, COLORS, 250);
 
 			// One `rotate()` per fin side: fins are the only thing left in a local frame.
 			const sides = SPECIES[name].fins.reduce(
@@ -719,7 +727,7 @@ describe('ghosts', () => {
 			for (let i = 0; i < 400 && !id; i++) if (speciesFor(`id-${i}`) === name) id = `id-${i}`;
 			const ctx = fakeCtx();
 			// Frozen clock and a shared placement, so only the species differs.
-			drawCreature(ctx, creature('ghost', { id }), { x: 200, y: 400, flip: false, pitch: 0, effort: 1 }, COLORS, 0);
+			drawCreature(ctx, creature('ghost', { id }), { x: 200, y: 400, flip: false, pitch: 0, effort: 1, turn: 0 }, COLORS, 0);
 			return ctx.calls.filter((call) => call.startsWith('quadraticCurveTo(')).join();
 		});
 
@@ -1028,5 +1036,47 @@ describe('treat fish', () => {
 		expect(early.calls).toContain('clip');
 		expect(early.calls.join()).not.toBe(later.calls.join());
 		expect(early.depth).toBe(0);
+	});
+});
+
+describe('depth haze', () => {
+	/** Brightest paint in the frame: what the fish is worth against the water. */
+	const peakAlpha = (c: Creature, y: number) => {
+		const ctx = fakeCtx();
+		const at = { ...place(c, SIZE, 0), y, effort: 1, turn: 0 };
+		drawCreaturesAt(ctx, c, at);
+		return Math.max(...ctx.fillAlphas);
+	};
+
+	// Exercised through drawCreatures, which is where the tank's height is known.
+	const drawCreaturesAt = (ctx: CanvasRenderingContext2D, c: Creature, at: ReturnType<typeof place>) =>
+		drawCreature(ctx, c, at, COLORS, 0);
+
+	it('paints a deep fish fainter than a shallow one', () => {
+		const c = creature('fish', { id: 'hazy' });
+		const shallow = peakAlpha(c, WATERLINE + 20);
+		const deep = peakAlpha(c, SIZE.h - 60);
+
+		// drawCreature itself is depth-agnostic; the haze is applied by drawCreatures.
+		expect(shallow).toBe(deep);
+	});
+
+	it('fades creatures with depth when drawn as a scene', () => {
+		const shallowCtx = fakeCtx();
+		const deepCtx = fakeCtx();
+
+		// depth drives the resting band, so the same species lands high or low.
+		drawCreatures(shallowCtx, [creature('fish', { id: 'a', depth: 0.05 })], COLORS, SIZE, 0);
+		drawCreatures(deepCtx, [creature('fish', { id: 'a', depth: 0.95 })], COLORS, SIZE, 0);
+
+		expect(Math.max(...deepCtx.fillAlphas)).toBeLessThan(Math.max(...shallowCtx.fillAlphas));
+	});
+
+	it('leaves pearls at full brightness on the bed', () => {
+		// Pearls sit at the very bottom by design and are meant to catch the light.
+		const ctx = fakeCtx();
+		drawCreatures(ctx, [creature('pearl', { id: 'pearl-0', depth: 1 })], COLORS, SIZE, 0);
+
+		expect(Math.max(...ctx.fillAlphas)).toBe(1);
 	});
 });
