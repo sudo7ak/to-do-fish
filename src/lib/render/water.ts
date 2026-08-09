@@ -411,6 +411,15 @@ export function drawChest(
  */
 // Mostly diamond: white and ice, with one warm stone so the hoard is not monochrome.
 // Four pastels read as boiled sweets rather than as cut gems.
+/**
+ * The gold's own colour, shared with the test that counts coins.
+ *
+ * Exported because that test filtered on a literal `rgba(...)` string and silently
+ * stopped matching the moment the gold was retuned — it went on passing for the wrong
+ * reason until a second change made it fail.
+ */
+export const COIN_RGB = '255, 198, 66';
+
 const GEM_COLOURS = ['#ffffff', '#cdeeff', '#eaf7ff', '#ffd0e4'] as const;
 
 function drawHoard(
@@ -426,36 +435,53 @@ function drawHoard(
 
 	ctx.save();
 	ctx.beginPath();
-	ctx.ellipse(x, top + 1, w * 0.42, lidH * 0.5, 0, Math.PI, 0);
+	// A taller mouth than the rim suggests, so the heap can mound above the wood. At
+	// half the lid's height the whole hoard was squeezed into an 8px strip.
+	ctx.ellipse(x, top + 2, w * 0.44, lidH * 0.95, 0, Math.PI, 0);
 	ctx.clip();
 
+	// A warm glow, added rather than painted.
+	//
+	// `drawDepth` washes the bottom 38% of the tank with 30% of the water colour plus a
+	// vignette, which is right for seating fish in depth and fatal for treasure: gold
+	// came out olive and the stones came out pastel. Light that is *added* survives a
+	// wash laid over it, so the hoard glows instead of being tinted.
+	ctx.save();
+	ctx.globalCompositeOperation = 'lighter';
+	const halo = ctx.createRadialGradient(x, top - lidH * 0.2, 1, x, top - lidH * 0.2, w * 0.5);
+	halo.addColorStop(0, `rgba(255, 214, 130, ${0.3 + 0.1 * Math.sin(time / 800)})`);
+	halo.addColorStop(1, 'rgba(255, 200, 120, 0)');
+	ctx.fillStyle = halo;
+	ctx.fillRect(x - w * 0.5, top - lidH * 1.2, w, lidH * 1.6);
+	ctx.restore();
+
 	// Coins: flat ellipses, stacked densest in the middle where a real heap mounds.
-	const coins = Math.round(4 + open * 8);
+	const coins = Math.round(5 + open * 9);
 	for (let i = 0; i < coins; i++) {
-		const across = (noise(i, 91) - 0.5) * w * 0.72;
-		const rise = noise(i, 93) * lidH * 0.46 * open;
-		const r = 2.6 + noise(i, 95) * 1.9;
-		const shimmer = 0.72 + 0.28 * Math.sin(t * 1.6 + i * 1.9);
+		const across = (noise(i, 91) - 0.5) * w * 0.74;
+		const rise = noise(i, 93) * lidH * 0.62 * open;
+		const r = 2.8 + noise(i, 95) * 2.1;
+		const shimmer = 0.85 + 0.15 * Math.sin(t * 1.6 + i * 1.9);
 
 		ctx.beginPath();
 		ctx.ellipse(x + across, top - rise, r, r * 0.62, 0, 0, Math.PI * 2);
-		ctx.fillStyle = `rgba(240, 198, 92, ${shimmer})`;
+		ctx.fillStyle = `rgba(${COIN_RGB}, ${shimmer})`;
 		ctx.fill();
 
 		// A brighter top edge, which is what makes a disc read as metal rather than a dot.
 		ctx.beginPath();
-		ctx.ellipse(x + across, top - rise - r * 0.22, r * 0.72, r * 0.26, 0, 0, Math.PI * 2);
-		ctx.fillStyle = `rgba(255, 240, 190, ${shimmer * 0.75})`;
+		ctx.ellipse(x + across, top - rise - r * 0.24, r * 0.74, r * 0.28, 0, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(255, 248, 214, 0.95)';
 		ctx.fill();
 	}
 
 	// Gems: a kite with one lit facet, which is the cheapest shape that reads as cut
 	// stone. A circle would just be another coin in a different colour.
-	const gems = Math.round(1 + open * 3);
+	const gems = Math.round(2 + open * 3);
 	for (let i = 0; i < gems; i++) {
-		const across = (noise(i, 97) - 0.5) * w * 0.56;
-		const rise = lidH * (0.12 + noise(i, 99) * 0.3) * open;
-		const r = 2.4 + noise(i, 101) * 1.5;
+		const across = (noise(i, 97) - 0.5) * w * 0.6;
+		const rise = lidH * (0.2 + noise(i, 99) * 0.42) * open;
+		const r = 3.2 + noise(i, 101) * 1.8;
 		const gx = x + across;
 		const gy = top - rise;
 		const colour = GEM_COLOURS[Math.floor(noise(i, 103) * GEM_COLOURS.length)];
@@ -475,18 +501,34 @@ function drawHoard(
 		ctx.lineTo(gx + r * 0.78, gy);
 		ctx.lineTo(gx, gy);
 		ctx.closePath();
-		ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+		ctx.fill();
+
+		// A shaded lower facet: without it a kite is a flat diamond shape, not a stone.
+		ctx.beginPath();
+		ctx.moveTo(gx - r * 0.78, gy);
+		ctx.lineTo(gx, gy + r * 0.9);
+		ctx.lineTo(gx, gy);
+		ctx.closePath();
+		ctx.fillStyle = 'rgba(120, 168, 205, 0.45)';
 		ctx.fill();
 
 		// Twinkle: each stone catches the light on its own clock, so the hoard glitters
-		// rather than pulsing as one object.
+		// rather than pulsing as one object. Additive, so the depth wash cannot mute it.
 		const spark = Math.sin(t * 1.1 + i * 2.4);
-		if (spark > 0.75) {
-			const glint = (spark - 0.75) / 0.25;
+		if (spark > 0.6) {
+			const glint = (spark - 0.6) / 0.4;
+			ctx.save();
+			ctx.globalCompositeOperation = 'lighter';
+			const flare = ctx.createRadialGradient(gx, gy - r * 0.2, 0, gx, gy - r * 0.2, r * 2.2);
+			flare.addColorStop(0, `rgba(255, 255, 255, ${0.95 * glint})`);
+			flare.addColorStop(0.45, `rgba(210, 240, 255, ${0.4 * glint})`);
+			flare.addColorStop(1, 'rgba(255, 255, 255, 0)');
+			ctx.fillStyle = flare;
 			ctx.beginPath();
-			ctx.ellipse(gx, gy - r * 0.35, r * 0.9 * glint, r * 0.28 * glint, 0, 0, Math.PI * 2);
-			ctx.fillStyle = `rgba(255, 255, 255, ${0.85 * glint})`;
+			ctx.ellipse(gx, gy - r * 0.2, r * 2.2, r * 2.2, 0, 0, Math.PI * 2);
 			ctx.fill();
+			ctx.restore();
 		}
 	}
 

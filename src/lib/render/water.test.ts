@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	bedTopAt,
 	chestBounds,
+	COIN_RGB,
 	drawAirBubbles,
 	drawChest,
 	drawFeed,
@@ -384,7 +385,7 @@ describe('the hoard', () => {
 	const goldFills = (pearls: number) => {
 		const ctx = chestCtx();
 		drawChest(ctx, SIZE, COLORS, pearls, 4000);
-		return ctx.fills.filter((c) => c.startsWith('rgba(240, 198, 92'));
+		return ctx.fills.filter((c) => c.startsWith(`rgba(${COIN_RGB}`));
 	};
 
 	it('shows nothing when the chest is shut', () => {
