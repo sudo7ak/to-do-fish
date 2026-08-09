@@ -26,6 +26,20 @@
 	const { tasks, koi, settings, saveFailed } = store;
 
 	let date = $state(today());
+
+	/**
+	 * Today, kept current while the app is open.
+	 *
+	 * Polled rather than derived: nothing else changes at midnight, so there is no
+	 * reactive source to hang this off. Cheap — a string comparison a few times a
+	 * minute — and it also catches a laptop waking on a different day, which is the
+	 * case a single timer set at load would miss.
+	 *
+	 * The viewed date is deliberately *not* moved when this rolls over. Yanking someone
+	 * to a new day mid-sentence is worse than letting the header say "Yesterday" and
+	 * offer the way back.
+	 */
+	let now = $state(today());
 	let selected = $state<Task | null>(null);
 	let editing = $state<Task | undefined>(undefined);
 	let sheetOpen = $state(false);
@@ -54,8 +68,19 @@
 			ticker.start();
 		});
 
+		const rollover = () => (now = today());
+		const clock = setInterval(rollover, 20_000);
+		// A sleeping machine runs no timers, so the wake is where the day usually turns.
+		document.addEventListener('visibilitychange', rollover);
+		window.addEventListener('focus', rollover);
+
 		// Both the interval and the visibilitychange listener leak without this.
-		return () => ticker.stop();
+		return () => {
+			ticker.stop();
+			clearInterval(clock);
+			document.removeEventListener('visibilitychange', rollover);
+			window.removeEventListener('focus', rollover);
+		};
 	});
 
 	/**
@@ -152,6 +177,7 @@
 			{date}
 			environment={$settings.environment}
 			{clearedPct}
+			{now}
 			onNavigate={(next) => (date = next)}
 		/>
 	</div>

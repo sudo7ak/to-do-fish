@@ -391,6 +391,25 @@ if (treatSheet) {
 	check('confirming the claim spends the pearls', (await pearls()) === before - 1);
 }
 
+// --- getting home -----------------------------------------------------------
+{
+	const backHome = page.getByRole('button', { name: 'Back to today' });
+
+	check('no way-back control while you are on today', (await backHome.count()) === 0);
+
+	for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Previous day' }).click();
+	await page.waitForTimeout(250);
+
+	check('five days back is not today', (await heading()) !== 'Today');
+	check('a way back appears once you have wandered', (await backHome.count()) === 1);
+
+	// The point of the control: one tap home from anywhere, rather than one tap per day.
+	await backHome.click();
+	await page.waitForTimeout(250);
+	check('one tap returns to today', (await heading()) === 'Today');
+	check('the way-back control goes away again', (await backHome.count()) === 0);
+}
+
 console.log('\n== Console errors ==');
 check('no page errors during the run', errors.length === 0, errors.slice(0, 3).join(' | '));
 
