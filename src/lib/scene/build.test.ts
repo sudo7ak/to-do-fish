@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildScene, MAX_VISIBLE_KOI, MAX_VISIBLE_PEARLS, MAX_VISIBLE_TREATS } from './build';
+import {
+	buildScene,
+	FEED_WINDOW_MS,
+	MAX_VISIBLE_KOI,
+	MAX_VISIBLE_PEARLS,
+	MAX_VISIBLE_TREATS
+} from './build';
 import type { CreatureKind } from './types';
 import type { KoiRecord, Task } from '../types';
 
@@ -395,5 +401,60 @@ describe('buildScene — the tank has an upper bound', () => {
 		expect(scene.creatures.length).toBeLessThanOrEqual(
 			MAX_VISIBLE_PEARLS + MAX_VISIBLE_KOI + MAX_VISIBLE_TREATS + 1 + 6
 		);
+	});
+});
+
+describe('buildScene — the feeding flourish', () => {
+	const justDone = (over: Partial<Task> = {}) =>
+		task({ id: 'a', status: 'done', completedAt: NOON, ...over });
+
+	it('is quiet when nothing has been finished', () => {
+		expect(buildScene([task({ id: 'a' })], [], DAY, NOON).feeding).toBe(0);
+	});
+
+	it('is at full strength the instant a task is finished', () => {
+		expect(buildScene([justDone()], [], DAY, NOON).feeding).toBe(1);
+	});
+
+	it('fades to nothing over the window, and stays there', () => {
+		const midway = buildScene([justDone()], [], DAY, NOON + FEED_WINDOW_MS / 2).feeding;
+		expect(midway).toBeGreaterThan(0);
+		expect(midway).toBeLessThan(1);
+
+		expect(buildScene([justDone()], [], DAY, NOON + FEED_WINDOW_MS).feeding).toBe(0);
+		expect(buildScene([justDone()], [], DAY, NOON + FEED_WINDOW_MS * 5).feeding).toBe(0);
+	});
+
+	it('follows the most recent completion, not the first', () => {
+		const old = task({ id: 'old', status: 'done', completedAt: NOON - FEED_WINDOW_MS * 3 });
+		const fresh = task({ id: 'fresh', status: 'done', completedAt: NOON });
+
+		expect(buildScene([old, fresh], [], DAY, NOON).feeding).toBe(1);
+	});
+
+	it('ignores a deleted task, however recently it was finished', () => {
+		// Soft deletes are filtered on every derived read. Missing it here would leave a
+		// deleted task feeding the tank.
+		const deleted = justDone({ deletedAt: NOON });
+		expect(buildScene([deleted], [], DAY, NOON).feeding).toBe(0);
+	});
+
+	it('ignores a completion stamped in the future', () => {
+		// Clock skew, or a machine that woke with the wrong time. Feeding on a negative
+		// age would run the flourish backwards and never end.
+		const ahead = justDone({ completedAt: NOON + 60_000 });
+		expect(buildScene([ahead], [], DAY, NOON).feeding).toBe(0);
+	});
+
+	it('feeds from a task finished on another date', () => {
+		// You can complete yesterday's task while looking at yesterday; the tank you are
+		// looking at should react. The creature list is date-scoped, the flourish is not.
+		const yesterday = task({ id: 'y', date: '2026-08-07', status: 'done', completedAt: NOON });
+		expect(buildScene([yesterday], [], DAY, NOON).feeding).toBe(1);
+	});
+
+	it('does not feed for an unclaimed treat, which is a reward rather than work', () => {
+		const treat = task({ id: 't', treatCost: 3, status: 'done', completedAt: NOON });
+		expect(buildScene([treat], [], DAY, NOON).feeding).toBe(0);
 	});
 });

@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { bedTopAt, drawAirBubbles, drawPlants, MAX_AIR_BUBBLE, PLANTS, WATERLINE } from './water';
+import {
+	bedTopAt,
+	drawAirBubbles,
+	drawFeed,
+	drawPlants,
+	MAX_AIR_BUBBLE,
+	MAX_FLAKE,
+	PLANTS,
+	WATERLINE
+} from './water';
 import { palette } from './palette';
 
 const SIZE = { w: 420, h: 860 };
@@ -192,5 +201,52 @@ describe('the bed', () => {
 
 		expect(afterOneFrame).toBeGreaterThan(0);
 		expect(ctx.gradients.length).toBe(afterOneFrame);
+	});
+});
+
+describe('the feeding flourish', () => {
+	it('draws nothing at all when no one has finished anything', () => {
+		const ctx = arcCtx();
+		drawFeed(ctx, SIZE, 1000, 0);
+		expect(ctx.arcs).toEqual([]);
+	});
+
+	it('scatters food while the flourish is running', () => {
+		const ctx = arcCtx();
+		drawFeed(ctx, SIZE, 1000, 0.6);
+		expect(ctx.arcs.length).toBeGreaterThan(0);
+	});
+
+	it('never draws a flake near the size of a tappable bubble', () => {
+		// Same rule as the ambient bubbles: a waiting task is a ~24px bubble you can tap,
+		// and anything approaching it reads as a control that does not respond.
+		for (let step = 0; step <= 20; step++) {
+			const ctx = arcCtx();
+			drawFeed(ctx, SIZE, step * 200, 1 - step / 20);
+			for (const arc of ctx.arcs) expect(arc.r).toBeLessThanOrEqual(MAX_FLAKE);
+		}
+
+		expect(MAX_FLAKE).toBeLessThan(24 / 6);
+	});
+
+	it('keeps the food in the water and off the bed', () => {
+		for (let step = 0; step <= 20; step++) {
+			const ctx = arcCtx();
+			drawFeed(ctx, SIZE, step * 200, 1 - step / 20);
+			for (const arc of ctx.arcs) {
+				expect(arc.y).toBeGreaterThan(WATERLINE);
+				expect(arc.y).toBeLessThan(SIZE.h - 20);
+			}
+		}
+	});
+
+	it('sinks as the flourish runs down', () => {
+		const depthAt = (feeding: number) => {
+			const ctx = arcCtx();
+			drawFeed(ctx, SIZE, 1000, feeding);
+			return Math.max(...ctx.arcs.map((a) => a.y));
+		};
+
+		expect(depthAt(0.3)).toBeGreaterThan(depthAt(0.9));
 	});
 });

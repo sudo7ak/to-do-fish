@@ -490,6 +490,53 @@ function drawBushy(
 	}
 }
 
+/**
+ * Food scattered on the surface, sinking and fading.
+ *
+ * Capped well under the ambient bubble size for the same reason those are: a waiting
+ * task *is* a ~24px bubble you can tap, and anything approaching it reads as a control.
+ * Flakes are smaller still, and they are never interactive.
+ */
+export const MAX_FLAKE = 3.4;
+
+const FLAKES = 44;
+
+export function drawFeed(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	time: number,
+	feeding: number
+): void {
+	if (feeding <= 0) return;
+
+	const t = time / 1000;
+	// `feeding` runs 1 -> 0 over the window, so this is how far through it we are.
+	const progress = 1 - feeding;
+
+	ctx.save();
+	for (let i = 0; i < FLAKES; i++) {
+		const x = noise(i, 61) * size.w;
+		// Scattered on the surface and sinking. Each flake falls at its own rate, so the
+		// scatter spreads out as it descends instead of dropping as a sheet.
+		const fall = 90 + noise(i, 67) * 220;
+		const y = WATERLINE + 8 + progress * fall;
+		if (y > size.h - 30) continue;
+
+		// Fade in fast, out slowly: the arrival is the moment worth seeing.
+		const life = Math.min(1, progress * 6) * feeding;
+		const r = MAX_FLAKE * (0.45 + noise(i, 71) * 0.55);
+
+		ctx.globalAlpha = life * 0.92;
+		// Amber, not cream: at flake size a pale tint is indistinguishable from the
+		// ambient motes already drifting in the water, and the food read as dust.
+		ctx.fillStyle = 'rgba(252, 205, 128, 1)';
+		ctx.beginPath();
+		ctx.arc(x + Math.sin(t * 1.4 + i) * 4, y, r, 0, Math.PI * 2);
+		ctx.fill();
+	}
+	ctx.restore();
+}
+
 /** Fine particulate drifting in the light. Cheap, and it makes the water feel occupied. */
 export function drawMotes(
 	ctx: CanvasRenderingContext2D,

@@ -1080,3 +1080,23 @@ describe('depth haze', () => {
 		expect(Math.max(...ctx.fillAlphas)).toBe(1);
 	});
 });
+
+describe('feeding stirs the shoal', () => {
+	const bodyPoints = (feeding: number, animate = true) => {
+		const ctx = fakeCtx();
+		drawCreatures(ctx, [creature('fish', { id: 'eater' })], COLORS, SIZE, 1200, animate, feeding);
+		return ctx.calls.filter((c) => c.startsWith('quadraticCurveTo(')).join();
+	};
+
+	it('bends the body differently when there is food in the water', () => {
+		// Feeding rides the existing effort input rather than adding a second animation
+		// path, so the proof is that the drawn body actually changes.
+		expect(bodyPoints(1)).not.toEqual(bodyPoints(0));
+	});
+
+	it('leaves the tank alone under reduced motion', () => {
+		// The loop freezes the clock rather than the fish. A flourish that still fired
+		// would be motion the user asked not to see.
+		expect(bodyPoints(1, false)).toEqual(bodyPoints(0, false));
+	});
+});

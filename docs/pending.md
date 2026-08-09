@@ -146,6 +146,30 @@ both marked. Re-adding a distinguishing rim is the cheap fix.
 
 ---
 
+## 2b. Completion flourish — landed 2026-08-09
+
+Finishing a task now scatters food and stirs the shoal for four seconds. Completion had
+been the flattest beat in the app: the fish drains to a ghost, which is a *subtraction*,
+and the pearl lands on the sand where you may not look.
+
+**Deliberately not a mechanic.** No feeding action, nothing to maintain, and no
+obligation created by not opening the app — a tank that needs tending would guilt you
+for a bad week, which is the same reason ghosts are not deleted on a cleared day and
+the grass idea has to ratchet rather than wither.
+
+**Growth was considered and rejected**, on three grounds worth keeping: fish size
+already encodes species identity (`speciesReach`, clipping and tap radii all derive from
+length); a fish only lives while its task is open, so growth over that span is either
+invisible or means the most-avoided task grows the handsomest fish; and a second
+currency alongside pearls dilutes both. Tank-level growth (the grass ratchet) remains
+the better home for long-term progress.
+
+`Scene.feeding` is derived from `completedAt`, never stored, and decays to zero, so it
+cannot accumulate or be missed. It rides the existing `effort` input rather than adding
+a second animation path.
+
+---
+
 ## 3. Correctness and data
 
 ### 3.1 Treats completed before the payment fix are recorded wrong

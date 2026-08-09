@@ -7,7 +7,7 @@
 	import { pearlBalance, canAfford } from '$lib/store/pearls';
 	import { buildScene } from '$lib/scene/build';
 	import { palette } from '$lib/render/palette';
-	import { drawTank, drawForeground } from '$lib/render/water';
+	import { drawTank, drawForeground, drawFeed } from '$lib/render/water';
 	import { drawCreatures } from '$lib/render/creatures';
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
@@ -76,7 +76,9 @@
 		lastFrame = { time, size, animate: frame.animate };
 
 		drawTank(ctx, size, colors, time);
-		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate);
+		// Behind the creatures: the fish rise through the food, not under it.
+		drawFeed(ctx, size, time, frame.animate ? scene.feeding : 0);
+		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate, scene.feeding);
 		// Haze and vignette last, so they sit over the creatures and give the tank depth.
 		drawForeground(ctx, size, colors);
 	}

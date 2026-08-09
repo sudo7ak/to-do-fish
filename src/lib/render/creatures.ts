@@ -558,10 +558,17 @@ export function drawCreatures(
 	colors: Palette,
 	size: Size,
 	time: number,
-	animate = true
+	animate = true,
+	feeding = 0
 ): void {
+	// Food is in the water, so the shoal picks up. This rides the `effort` input the
+	// body wave already reads rather than adding a second animation path: a fish working
+	// harder bends harder, and it is already sampled from the path it swims.
+	const stir = animate ? 1 + feeding * FEED_STIR : 1;
+
 	for (const creature of [...creatures].sort((a, b) => DRAW_ORDER[a.kind] - DRAW_ORDER[b.kind])) {
-		const at = insetForFins(place(creature, size, time, animate), creature, size);
+		const placed = place(creature, size, time, animate);
+		const at = insetForFins({ ...placed, effort: placed.effort * stir }, creature, size);
 
 		// Water absorbs light, so a fish deep in the column is lower in contrast than one
 		// near the surface. Without this every creature was equally crisp at every depth,
@@ -585,6 +592,14 @@ export function drawCreatures(
  * can tap, so dimming it with depth would make the furthest task the hardest to see.
  */
 const MAX_DEPTH_HAZE = 0.3;
+
+/**
+ * How much harder the shoal works while there is food in the water.
+ *
+ * Deliberately modest. The flourish should read as the tank waking up for a few
+ * seconds, not as every fish panicking.
+ */
+const FEED_STIR = 0.85;
 
 function hazeAt(creature: Creature, at: Placement, size: Size): number {
 	if (creature.kind === 'pearl' || creature.kind === 'bubble') return 1;
