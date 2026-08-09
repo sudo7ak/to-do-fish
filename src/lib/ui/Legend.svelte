@@ -239,9 +239,16 @@
 		/* dvh, not vh: on mobile Safari `vh` is the tallest-possible viewport, so with
 		   the URL bar showing, 82vh already overflows the visible area. */
 		max-height: 82dvh;
-		overflow-y: auto;
+		/* The sheet itself never scrolls -- the list inside it does. That keeps the
+		   dismiss button outside the scrolling box, so it is always on screen without
+		   an overlay painted over the content. A sticky footer was tried and looked
+		   wrong: its background sat on top of the sheet's own translucent white and
+		   double-lightened into a visible band whenever nothing needed to scroll. */
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
 		margin: 0 auto;
-		padding: 1.25rem 1.25rem 0;
+		padding: 1.25rem 1.25rem calc(1rem + env(safe-area-inset-bottom));
 		border-radius: 1.25rem 1.25rem 0 0;
 		background: rgba(255, 255, 255, 0.85);
 		backdrop-filter: blur(18px);
@@ -267,6 +274,10 @@
 		display: grid;
 		gap: 0.65rem;
 		margin: 0;
+		/* min-height:0 is what lets a flex child actually shrink and scroll; without it
+		   the list keeps its content height and pushes the footer off the sheet. */
+		min-height: 0;
+		overflow-y: auto;
 		padding: 0;
 		list-style: none;
 	}
@@ -302,20 +313,15 @@
 	}
 
 	/*
-	 * Pinned to the foot of the sheet rather than sitting at the end of the list.
+	 * Outside the scrolling list, so it cannot go below the fold.
 	 *
-	 * Seven rows overflow a 667px phone, so the sheet scrolls internally — and the
-	 * dismiss control was the thing below the fold. A modal whose only exit is
-	 * off-screen, on a sheet that opens by itself on a first visit, is a trap. The
-	 * gradient is the scroll affordance: content fading under the button is what says
-	 * there is more above it.
+	 * Seven rows overflow a 667px phone, and the dismiss control was the thing that
+	 * fell off the bottom. A modal that opens by itself on a first visit, whose only
+	 * exit is off-screen, is a trap.
 	 */
 	.actions {
-		position: sticky;
-		bottom: 0;
-		margin-top: 0.75rem;
-		padding: 0.75rem 0 calc(1rem + env(safe-area-inset-bottom));
-		background: linear-gradient(to top, rgba(242, 246, 247, 0.98) 62%, rgba(242, 246, 247, 0));
+		flex: none;
+		margin-top: 1rem;
 	}
 
 	button {
