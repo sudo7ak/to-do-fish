@@ -42,7 +42,7 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 	version: SCHEMA_VERSION,
 	tasks: [task()],
 	koi: [{ date: '2026-08-07', earnedAt: 5 }],
-	settings: { environment: 'calm' },
+	settings: { environment: 'calm', seenLegend: true },
 	...over
 });
 
@@ -143,7 +143,34 @@ describe('LocalTaskStore — migration', () => {
 		expect(loaded.version).toBe(SCHEMA_VERSION);
 		expect(loaded.tasks).toEqual([task()]);
 		expect(loaded.koi).toEqual([]);
-		expect(loaded.settings).toEqual(emptySnapshot().settings);
+		expect(loaded.settings.environment).toBe('progress');
+	});
+
+	// Deliberately NOT `emptySnapshot().settings`, which this assertion used to
+	// compare against. Migrated data and an empty tank now disagree on exactly one
+	// field, and that disagreement is the feature: anything stored means the app has
+	// been used, so its owner does not need the legend shown at them.
+	it('marks migrated data as having seen the legend', async () => {
+		const storage = new FakeStorage();
+		storage.setItem(STORAGE_KEY, JSON.stringify({ version: 0, tasks: [task()] }));
+
+		const loaded = await store(storage).load();
+
+		expect(loaded.settings.seenLegend).toBe(true);
+		expect(emptySnapshot().settings.seenLegend).toBe(false);
+	});
+
+	it('migrates a version 1 snapshot, keeping the chosen environment', async () => {
+		const storage = new FakeStorage();
+		storage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({ version: 1, tasks: [], koi: [], settings: { environment: 'calm' } })
+		);
+
+		const loaded = await store(storage).load();
+
+		expect(loaded.version).toBe(2);
+		expect(loaded.settings).toEqual({ environment: 'calm', seenLegend: true });
 	});
 
 	it('treats a blob with no version field as version 0 and migrates it', async () => {

@@ -161,11 +161,11 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 	const state = writable<State>({
 		tasks: [],
 		koi: [],
-		settings: { environment: 'progress' }
+		settings: { environment: 'progress', seenLegend: false }
 	});
 	const tasks = writable<Task[]>([]);
 	const koi = writable<KoiRecord[]>([]);
-	const settings = writable<Settings>({ environment: 'progress' });
+	const settings = writable<Settings>({ environment: 'progress', seenLegend: false });
 	const saveFailed = writable(false);
 
 	function publish(next: State) {

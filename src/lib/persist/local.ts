@@ -11,7 +11,13 @@ export const STORAGE_KEY = 'fish-tank-todo/snapshot';
 
 /** A tank with nothing in it yet. Progress is the default environment; Calm is a choice. */
 export function emptySnapshot(): Snapshot {
-	return { version: SCHEMA_VERSION, tasks: [], koi: [], settings: { environment: 'progress' } };
+	return {
+		version: SCHEMA_VERSION,
+		tasks: [],
+		koi: [],
+		// A tank with nothing in it has never been used, so its owner gets the legend.
+		settings: { environment: 'progress', seenLegend: false }
+	};
 }
 
 export class LocalTaskStore implements TaskStore {

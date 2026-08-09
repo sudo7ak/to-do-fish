@@ -18,7 +18,24 @@ const migrations: Record<number, Migration> = {
 			typeof data.settings === 'object' && data.settings !== null
 				? data.settings
 				: { environment: 'progress' }
-	})
+	}),
+
+	// 1 -> 2: `seenLegend` did not exist yet.
+	//
+	// TRUE, not false. The obvious reading of a new boolean field is "default it off",
+	// and that is wrong here: reaching this step at all means there was stored data,
+	// which means the app has been used. Only a fresh install — which has no snapshot
+	// to migrate and takes `emptySnapshot()` instead — should be shown the legend.
+	//
+	// A v0 blob reaches `true` through this step as well, so the v0 fallback above
+	// needs no change.
+	1: (data) => {
+		const settings =
+			typeof data.settings === 'object' && data.settings !== null
+				? (data.settings as Record<string, unknown>)
+				: {};
+		return { ...data, settings: { ...settings, seenLegend: true } };
+	}
 };
 
 export type MigrationResult =

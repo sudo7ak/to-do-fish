@@ -27,10 +27,15 @@ export type Task = {
 
 export type KoiRecord = { date: string; earnedAt: number };
 
-export type Settings = { environment: 'progress' | 'calm' };
+/**
+ * `seenLegend` is a one-way latch for the first-run legend. It is a setting rather
+ * than a separate storage key because `store/` reaches persistence only through the
+ * `TaskStore` port, and a second key would be a second thing to migrate.
+ */
+export type Settings = { environment: 'progress' | 'calm'; seenLegend: boolean };
 
 /** Current storage schema version. Bumped when `Snapshot` changes shape. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type Snapshot = {
 	version: number;

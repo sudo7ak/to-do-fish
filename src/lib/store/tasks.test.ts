@@ -21,7 +21,7 @@ import { StorageUnavailableError } from '../persist/port';
 const DAY = '2026-08-08';
 
 function state(tasks: Task[] = [], over: Partial<State> = {}): State {
-	return { tasks, koi: [], settings: { environment: 'progress' }, ...over };
+	return { tasks, koi: [], settings: { environment: 'progress', seenLegend: false }, ...over };
 }
 
 function task(over: Partial<Task> = {}): Task {
