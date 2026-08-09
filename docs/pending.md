@@ -230,10 +230,33 @@ but nothing in the UI exposes it. The list's bulk delete is immediate.
 | **v0 migration** | `migrate()` is unit-tested but has never loaded genuinely old stored data. There has never been a v0 in the wild. |
 | **Legend art at small sizes** | The seven thumbnails are drawn at fixed per-entry `zoom` values set by eye at 460px. Untested on a very narrow or a very wide viewport. |
 | **Escape key on sheets** | `Settings.svelte:46` and `Legend.svelte:190` attach `onkeydown` Escape handlers to a `tabindex="-1"` div, which never receives focus — so Escape does not dismiss either sheet. Pre-existing pattern, fails safe (nothing dismisses unexpectedly). Both sheets are dismissible by backdrop click and by their own button. |
+| **Legend thumbnails fitting their tiles** | Nothing tests it. `Legend.test.ts` bounds each `zoom` to `(0, 1.5]`, which is a sanity check on the constant and not a fit check — both fit defects this sheet has had (a treat's caudal clipped at `0.8`, the ghost overflowing at `0.9`) sat inside that range and passed. Fit is verified only by the `deviceScaleFactor` 4 screenshot step, by eye. Any change to creature geometry — `FIN_SHAPE`, `speciesReach`, a species `length` — silently invalidates all seven hand-tuned zooms with no automated signal. |
 
 ---
 
 ## 5. Layout and platform
+
+### 5.0 Rolling the deploy back past the v2 schema bump empties every tank
+
+`SCHEMA_VERSION` went 1 → 2 when `seenLegend` was added (commit `a003a59`). That is the
+first bump since the app went live on Pages with real data, and it is the first time
+this consequence is reachable outside a test.
+
+`migrate()` refuses anything newer than it understands — a version from the future
+cannot be migrated backward, and guessing would corrupt it — so a pre-`a003a59` build
+reading a v2 blob takes the quarantine path: `LocalTaskStore` copies the blob to
+`fish-tank-todo/snapshot.corrupt.<timestamp>` and returns an empty snapshot. The user
+opens the app to an empty tank with every task and koi gone, and because
+`emptySnapshot()` carries `seenLegend: false`, the legend opens on top of it. It reads
+as a factory reset.
+
+**Nothing is deleted.** Recovery is renaming that `.corrupt.<timestamp>` key back to
+`fish-tank-todo/snapshot`. Worth knowing before someone reverts a deploy, re-publishes
+an older ref, or hits a stale cached bundle — it is the difference between a
+five-minute fix and a user believing a week of tasks is gone.
+
+Bumping was still right by the repo's own convention. `seenLegend` is purely additive,
+so an old build would have coped with the *shape*; it breaks only on the version check.
 
 ### 5.1 Waterline clearance is tight on notched phones
 
