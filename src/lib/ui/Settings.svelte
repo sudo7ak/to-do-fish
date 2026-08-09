@@ -29,10 +29,11 @@
 		open: boolean;
 		environment: Environment;
 		onChange: (environment: Environment) => void;
+		onOpenLegend: () => void;
 		onClose: () => void;
 	};
 
-	const { open, environment, onChange, onClose }: Props = $props();
+	const { open, environment, onChange, onOpenLegend, onClose }: Props = $props();
 </script>
 
 {#if open}
@@ -66,6 +67,11 @@
 				</label>
 			{/each}
 		</fieldset>
+
+		<button type="button" class="row" onclick={onOpenLegend}>
+			<span>What am I looking at?</span>
+			<span class="chevron" aria-hidden="true">›</span>
+		</button>
 
 		<div class="actions">
 			<button type="button" onclick={onClose}>Done</button>
@@ -166,6 +172,30 @@
 
 	small {
 		opacity: 0.7;
+	}
+
+	.row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		margin-top: 1rem;
+		padding: 0.75rem 0.9rem;
+		border: 0;
+		border-radius: 0.75rem;
+		background: rgba(18, 48, 58, 0.08);
+		color: #12303a;
+		font-size: 0.95rem;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.row:hover {
+		background: rgba(18, 48, 58, 0.14);
+	}
+
+	.chevron {
+		opacity: 0.5;
 	}
 
 	.actions {

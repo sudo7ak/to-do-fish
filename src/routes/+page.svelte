@@ -21,6 +21,8 @@
 	import Controls from '$lib/ui/Controls.svelte';
 	import Banner from '$lib/ui/Banner.svelte';
 	import Settings from '$lib/ui/Settings.svelte';
+	import Legend from '$lib/ui/Legend.svelte';
+	import { shouldAutoOpen } from '$lib/store/settings';
 
 	const store = createTaskStore(new LocalTaskStore());
 	const { tasks, koi, settings, saveFailed } = store;
@@ -45,6 +47,7 @@
 	let sheetOpen = $state(false);
 	let listOpen = $state(false);
 	let settingsOpen = $state(false);
+	let legendOpen = $state(false);
 
 	/**
 	 * The last frame the tank painted. Picking must answer against exactly what was
@@ -66,6 +69,14 @@
 		store.hydrate().then(() => {
 			hydrated = true;
 			ticker.start();
+
+			// Written the moment it is shown, not when it is closed: a reload mid-view
+			// must not bring it back. The write goes through `commit` like any other
+			// mutation, so a storage failure surfaces on the existing banner.
+			if (shouldAutoOpen(store.snapshot().settings)) {
+				legendOpen = true;
+				store.markLegendSeen();
+			}
 		});
 
 		const rollover = () => (now = today());
@@ -236,7 +247,14 @@
 		open={settingsOpen}
 		environment={$settings.environment}
 		onChange={(environment) => store.setEnvironment(environment)}
+		onOpenLegend={() => (legendOpen = true)}
 		onClose={() => (settingsOpen = false)}
+	/>
+
+	<Legend
+		open={legendOpen}
+		environment={$settings.environment}
+		onClose={() => (legendOpen = false)}
 	/>
 </main>
 
