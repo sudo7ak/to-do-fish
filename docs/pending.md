@@ -8,11 +8,11 @@ be read.
 that was closed. This file supersedes its open items — where the two disagree, this
 one is current.
 
-State at the time of writing: 434 unit tests, 57/57 E2E checks, 0 typecheck errors,
-clean build, `main` at `4509fba`.
+State at the time of writing: 456 unit tests, 57/57 E2E checks, 0 typecheck errors,
+clean build.
 
-Each item says whether it was **measured** or is **suspected**, because the ones that
-were reasoned about rather than looked at are the ones that have been wrong before.
+Each item says whether it was **measured**, **looked at**, or **structural**, because
+the ones reasoned about rather than looked at are the ones that have been wrong before.
 
 ---
 
@@ -51,6 +51,42 @@ reward for finishing.
 ---
 
 ## 2. Fish appearance
+
+### Realism pass — landed 2026-08-09
+
+`docs/superpowers/plans/2026-08-09-fish-realism.md`, merged. Tail beat now follows how
+hard the fish is working; bodies bend into turns; the drawn body outline is gone; the
+mascot eye is a dark iris; creatures and planting fade with depth; fins are thinner at
+the margin. The bed was rebuilt: planting roots in the sand's real surface, sway is a
+current crossing the tank rather than one shared frequency, and there are four kinds of
+plant instead of one repeated blade.
+
+**Still open from that work:**
+
+- **Pectoral sculling** (plan 1.3) and **separation/steering** (plan Phase 4) were not
+  done. Fish still pass through one another.
+- The **bushy** plant form is the weakest of the four — it reads as straw rather than
+  as mass.
+- The sand is a plain band. Leaf litter where blades meet it would soften the junction.
+- Clumps can still read slightly as sheaves; widening the root spread would help.
+
+### 2.0 The rendering-library question is answered — do not reopen
+
+Rive was evaluated properly (harness built, runtime wired, `docs/rive-experiment.md`).
+**No.** Two reasons, both measured rather than argued:
+
+- **Cost.** The runtime is 743 kB of wasm plus 95 kB of JS, gzipped, against a whole
+  app of 52 kB. Roughly a 16× download increase for something offline-first.
+- **It solves the wrong problem.** Frames pulled from `fish_tank_idea.mp4` show the
+  gap is *style and motion*, not rendering primitive: drawn outlines, a mascot eye,
+  uniform crispness at every depth, and a body that ripples instead of bending. An
+  authored asset would carry the same illustration grammar into a heavier runtime.
+
+A colour library (`culori`/`chroma-js`, OKLCH) remains a plausible fit for the palette
+items below — those are perceptual-contrast problems, not drawing problems.
+
+Realism work is planned in
+`docs/superpowers/plans/2026-08-09-fish-realism.md`.
 
 ### 2.1 Fin rework for the nine swimmers — done 2026-08-09
 

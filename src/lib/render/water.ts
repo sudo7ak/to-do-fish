@@ -164,6 +164,19 @@ export function drawCaustics(
 }
 
 /** Sand bed and a couple of rounded stones, so the tank has a floor to sit on. */
+/**
+ * The sand's top surface at `x`.
+ *
+ * One formula, used by the bed and by everything planted in it. Planting used to root
+ * on a flat `size.h - 6` while the bed undulated independently, so the blades grew out
+ * of a line hanging in the sand rather than out of the sand itself — subtle per blade,
+ * and the main reason the bottom read as a pasted-on layer.
+ */
+export function bedTopAt(x: number, size: Size): number {
+	const bedHeight = Math.min(70, size.h * 0.12);
+	return size.h - bedHeight + Math.sin(x / 70) * 6 + Math.sin(x / 23) * 2;
+}
+
 export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors: Palette): void {
 	const bedHeight = Math.min(70, size.h * 0.12);
 	const top = size.h - bedHeight;
@@ -172,9 +185,7 @@ export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors:
 	ctx.beginPath();
 	ctx.moveTo(0, size.h);
 	ctx.lineTo(0, top + 10);
-	for (let x = 0; x <= size.w; x += 12) {
-		ctx.lineTo(x, top + Math.sin(x / 70) * 6 + Math.sin(x / 23) * 2);
-	}
+	for (let x = 0; x <= size.w; x += 12) ctx.lineTo(x, bedTopAt(x, size));
 	ctx.lineTo(size.w, size.h);
 	ctx.closePath();
 
@@ -188,28 +199,82 @@ export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors:
 	ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
 	for (let i = 0; i < 60; i++) {
 		const x = noise(i) * size.w;
-		const y = top + 8 + noise(i, 3) * (bedHeight - 8);
+		const y = bedTopAt(x, size) + 6 + noise(i, 3) * (bedHeight - 8);
 		ctx.beginPath();
 		ctx.arc(x, y, 0.8, 0, Math.PI * 2);
 		ctx.fill();
 	}
 
-	// Stones.
+	// Stones. Asymmetric and partly buried: three identical domes read as geometry, and
+	// a stone sitting *on* the sand reads as an object placed there rather than one the
+	// substrate has settled around.
 	for (let i = 0; i < 3; i++) {
 		const x = (0.2 + i * 0.3) * size.w + noise(i, 7) * 40;
-		const r = 14 + noise(i, 11) * 16;
-		const stone = ctx.createLinearGradient(x, top - r, x, top + r * 0.4);
+		const r = 12 + noise(i, 11) * 14;
+		const bed = bedTopAt(x, size);
+		// Sits *on* the sand. Stones are drawn after the bed is filled, so extending one
+		// below the surface does not bury it — it paints a dark wedge over the sand.
+		const buried = 4;
+		const lean = (noise(i, 17) - 0.5) * r * 0.4;
+
+		const stone = ctx.createLinearGradient(x, bed - r, x, bed + r * 0.4);
 		stone.addColorStop(0, colors.rock);
 		stone.addColorStop(1, shade(colors.rock, 0.6));
 
 		ctx.beginPath();
-		ctx.moveTo(x - r, top + 6);
-		ctx.quadraticCurveTo(x - r * 0.8, top - r * 0.9, x, top - r * 0.75);
-		ctx.quadraticCurveTo(x + r * 0.85, top - r * 0.8, x + r, top + 6);
+		ctx.moveTo(x - r, bed + buried);
+		ctx.quadraticCurveTo(x - r * 0.9, bed - r * (0.6 + noise(i, 19) * 0.5), x + lean, bed - r * 0.8);
+		ctx.quadraticCurveTo(x + r * (0.7 + noise(i, 23) * 0.5), bed - r * 0.7, x + r, bed + buried);
 		ctx.closePath();
 		ctx.fillStyle = stone;
 		ctx.fill();
 	}
+}
+
+/**
+ * What grows in the bed.
+ *
+ * Data only, like `species.ts` for fish. One repeated blade shape is what made the bed
+ * read as clipart however well it was drawn, so the variation lives here rather than in
+ * the drawing code.
+ *
+ * `stiffness` resists the current: eelgrass streams, a fern barely moves.
+ */
+export type PlantSpec = {
+	form: 'ribbon' | 'broadleaf' | 'bushy';
+	/** Height as a fraction of tank height, before per-clump jitter. */
+	height: number;
+	/** Blade half-width in px, at layer scale 1. */
+	width: number;
+	/** Blades in one clump. */
+	blades: number;
+	stiffness: number;
+};
+
+export const PLANTS: PlantSpec[] = [
+	// Tall, narrow, floppy: the classic aquarium ribbon that streams in the current.
+	{ form: 'ribbon', height: 0.2, width: 2.8, blades: 5, stiffness: 0.5 },
+	// Shorter and broader, with a midrib. Stiffer, so it lags the ribbons.
+	{ form: 'broadleaf', height: 0.14, width: 5.5, blades: 3, stiffness: 0.8 },
+	// A low bushy stand of fine leaflets — reads as mass rather than as blades.
+	{ form: 'bushy', height: 0.1, width: 1.8, blades: 7, stiffness: 0.95 },
+	// Foreground carpet: short, dense, and it hides where the taller stands meet sand.
+	{ form: 'ribbon', height: 0.075, width: 2.2, blades: 7, stiffness: 0.7 }
+];
+
+/**
+ * A gust travelling across the tank, in radians at `x`.
+ *
+ * Phase comes from **x**, not from the blade's index. Indexing by `i` made the whole bed
+ * oscillate at one frequency — it breathed as a single organism, which is precisely the
+ * artificiality the fish's per-creature `pace` exists to avoid. A current crosses the
+ * water, so blades downstream lag the ones upstream.
+ */
+const CURRENT_RATE = 0.55;
+const CURRENT_WAVELENGTH = 260;
+
+function currentAt(x: number, t: number): number {
+	return Math.sin(t * CURRENT_RATE - x / CURRENT_WAVELENGTH) * 0.7 + Math.sin(t * 0.23 + x / 90) * 0.3;
 }
 
 /**
@@ -222,8 +287,8 @@ export function drawPlants(
 	colors: Palette,
 	time: number
 ): void {
-	drawPlantLayer(ctx, size, colors.plantsDeep, time, { scale: 0.72, alpha: 0.55, salt: 5 });
-	drawPlantLayer(ctx, size, colors.plants, time, { scale: 1, alpha: 0.95, salt: 0 });
+	drawPlantLayer(ctx, size, colors.plantsDeep, time, { scale: 0.72, alpha: 0.45, salt: 5 });
+	drawPlantLayer(ctx, size, colors.plants, time, { scale: 1, alpha: 0.85, salt: 0 });
 }
 
 function drawPlantLayer(
@@ -234,52 +299,195 @@ function drawPlantLayer(
 	opts: { scale: number; alpha: number; salt: number }
 ): void {
 	const t = time / 1000;
-	const base = size.h - 6;
-	const blades = Math.max(10, Math.round(size.w / 30));
+	const clumps = Math.max(7, Math.round(size.w / 46));
 
 	ctx.save();
-	ctx.globalAlpha = opts.alpha;
-	ctx.fillStyle = color;
-	ctx.strokeStyle = color;
 	ctx.lineCap = 'round';
 
-	for (let i = 0; i < blades; i++) {
+	for (let i = 0; i < clumps; i++) {
 		const jitter = noise(i, opts.salt);
-		const x = (i / blades) * size.w + jitter * 18;
-		// Planting is scenery, not the subject: tall enough to frame the bed, never so
-		// tall it competes with the fish for the lower third of the tank.
-		const height = size.h * (0.07 + jitter * 0.11) * opts.scale;
-		const sway = Math.sin(t * 0.7 + i) * (7 + jitter * 7);
+		const x = (i / clumps) * size.w + jitter * 30;
+		// Deterministic, and never `i % PLANTS.length`: a stride that shares a factor
+		// with the table length collapses the bed to one or two species, the same way
+		// `hash % 6` once made six fish species render as two.
+		const spec = PLANTS[Math.floor(noise(i, opts.salt + 31) * PLANTS.length)];
 
-		if (jitter > 0.38) {
-			// Broad-leaf: a tapered blade with a midrib. Widened, because at 8px across
-			// it was indistinguishable from the grass and the bed read as spikes.
-			const width = (4 + jitter * 4) * opts.scale;
-			ctx.beginPath();
-			ctx.moveTo(x - width, base);
-			ctx.quadraticCurveTo(x + sway * 0.5 - width * 1.1, base - height * 0.55, x + sway, base - height);
-			ctx.quadraticCurveTo(x + sway * 0.5 + width * 1.1, base - height * 0.55, x + width, base);
-			ctx.closePath();
-			ctx.fill();
-
-			ctx.globalAlpha = opts.alpha * 0.5;
-			ctx.lineWidth = 1;
-			ctx.beginPath();
-			ctx.moveTo(x, base);
-			ctx.quadraticCurveTo(x + sway * 0.5, base - height * 0.6, x + sway, base - height);
-			ctx.stroke();
-			ctx.globalAlpha = opts.alpha;
-		} else {
-			// Grass: a simple stroked blade.
-			ctx.lineWidth = (2.5 + jitter * 3) * opts.scale;
-			ctx.beginPath();
-			ctx.moveTo(x, base);
-			ctx.quadraticCurveTo(x + sway * 0.4, base - height * 0.6, x + sway, base - height);
-			ctx.stroke();
-		}
+		drawClump(ctx, size, color, spec, x, jitter, t, opts);
 	}
 
 	ctx.restore();
+}
+
+function drawClump(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	color: string,
+	spec: PlantSpec,
+	x: number,
+	jitter: number,
+	t: number,
+	opts: { scale: number; alpha: number; salt: number }
+): void {
+	for (let b = 0; b < spec.blades; b++) {
+		const spread = (b / Math.max(1, spec.blades - 1) - 0.5) * (14 + jitter * 10) * opts.scale;
+		const bx = x + spread;
+		// Rooted in the sand's real surface, and sunk a little below it.
+		const base = bedTopAt(bx, size) + 4;
+		const grow = 0.75 + noise(i2(bx, b), opts.salt + 3) * 0.5;
+		const height = size.h * spec.height * grow * opts.scale;
+		const width = spec.width * opts.scale * (0.8 + noise(i2(bx, b), 9) * 0.4);
+
+		// Per-blade offset as well as per-clump: blades in one stand do not all catch the
+		// current at the same instant, and without this a clump moves as a rigid fan.
+		const drift = currentAt(bx + b * 26, t);
+		const lean = drift * (19 / spec.stiffness) * opts.scale * (0.7 + jitter * 0.6);
+		// Blades in a stand splay outward from the crown instead of standing parallel.
+		// Without it a clump reads as a bundle of upright swords however well each blade
+		// is drawn, because every tip points the same way.
+		const splay = spread * 2.4;
+
+		// Fades with depth like everything else in the water: the bed had been left out
+		// of the haze, so the planting stayed perfectly crisp while the fish softened.
+		const depth = Math.min(1, Math.max(0, (base - WATERLINE) / Math.max(1, size.h - WATERLINE)));
+		ctx.globalAlpha = opts.alpha * (1 - depth * 0.18);
+		// A stand of one flat green reads as a cut-out however well it is shaped.
+		const tone = shade(color, 0.82 + noise(i2(bx, b), 41) * 0.36);
+		ctx.fillStyle = tone;
+		ctx.strokeStyle = tone;
+
+		if (spec.form === 'bushy') {
+			drawBushy(ctx, bx, base, height, width, lean + splay);
+		} else {
+			drawBlade(ctx, bx, base, height, width, lean, splay, spec.form === 'broadleaf', tone);
+		}
+	}
+}
+
+/** A stable index from a blade's position, so its jitter does not change as it sways. */
+function i2(x: number, b: number): number {
+	return Math.round(x) * 7 + b * 13;
+}
+
+/**
+ * One ribbon or broadleaf.
+ *
+ * Built from segments with a `u * u` ramp so the bend accumulates toward the tip: the
+ * base barely moves and the tip trails, which is how a real blade behaves and the same
+ * ramp the fish spine uses. The old shape was a single quadratic whose tip offset
+ * changed, so the whole leaf pivoted in lockstep.
+ *
+ * The tip is rounded rather than tapered to a point. A pointed blade is the single
+ * clearest tell of vector clipart.
+ */
+function drawBlade(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	base: number,
+	height: number,
+	width: number,
+	lean: number,
+	splay: number,
+	broad: boolean,
+	color: string
+): void {
+	// Enough segments that the tip *rounds*. At 6 the last span was a straight taper
+	// from 0.86 width to zero, which reads as a chisel however smooth the profile is.
+	const SEGMENTS = 14;
+	const left: { x: number; y: number }[] = [];
+	const right: { x: number; y: number }[] = [];
+
+	for (let s = 0; s <= SEGMENTS; s++) {
+		const u = s / SEGMENTS;
+		const cx = x + lean * u * u + splay * u ** 1.4;
+		const cy = base - height * u;
+		// Near-constant width, rounding off only at the very top. One continuous curve,
+		// not two branches: the piecewise version stepped from 0.79 to 1.0 at the join
+		// and every blade came out with a notch cut into its tip.
+		const w = width * Math.sqrt(Math.max(0, 1 - u ** 6));
+		left.push({ x: cx - w, y: cy });
+		right.push({ x: cx + w, y: cy });
+	}
+
+	ctx.beginPath();
+	ctx.moveTo(left[0].x, left[0].y);
+	for (const p of left) ctx.lineTo(p.x, p.y);
+	for (let s = right.length - 1; s >= 0; s--) ctx.lineTo(right[s].x, right[s].y);
+	ctx.closePath();
+	ctx.fillStyle = bladeWash(ctx, color, base, height);
+	ctx.fill();
+
+	if (broad) {
+		// Midrib, and a paler wash toward the tip so the leaf reads as translucent tissue
+		// rather than as a flat cut-out.
+		const outer = ctx.globalAlpha;
+		ctx.globalAlpha = outer * 0.45;
+		ctx.strokeStyle = shade(color, 1.25);
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		ctx.moveTo(x, base);
+		for (let s = 1; s <= SEGMENTS; s++) {
+			const u = s / SEGMENTS;
+			ctx.lineTo(x + lean * u * u + splay * u ** 1.4, base - height * u);
+		}
+		ctx.stroke();
+		ctx.globalAlpha = outer;
+		ctx.strokeStyle = color;
+	}
+}
+
+const bladeWashCache = new WeakMap<CanvasRenderingContext2D, Map<string, CanvasGradient>>();
+
+/**
+ * Base-to-tip wash: a submerged leaf is thin tissue, and thinnest at the margin, so the
+ * water shows through more the further up you look. Flat opaque green was half of why
+ * the bed read as cut paper.
+ *
+ * Cached. This runs for every blade of every clump on every frame, and the gradient is
+ * vertical in absolute coordinates — `lean` moves the blade sideways but not the ramp —
+ * so a blade's wash is the same object for the life of the context.
+ */
+function bladeWash(
+	ctx: CanvasRenderingContext2D,
+	color: string,
+	base: number,
+	height: number
+): CanvasGradient {
+	let perCtx = bladeWashCache.get(ctx);
+	if (!perCtx) {
+		perCtx = new Map();
+		bladeWashCache.set(ctx, perCtx);
+	}
+
+	const key = `${color}|${Math.round(base)}|${Math.round(height)}`;
+	const cached = perCtx.get(key);
+	if (cached) return cached;
+
+	const wash = ctx.createLinearGradient(0, base, 0, base - height);
+	wash.addColorStop(0, withAlpha(color, 0.95));
+	wash.addColorStop(1, withAlpha(color, 0.5));
+
+	perCtx.set(key, wash);
+	return wash;
+}
+
+/** A low stand of fine leaflets: mass rather than blades. */
+function drawBushy(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	base: number,
+	height: number,
+	width: number,
+	lean: number
+): void {
+	ctx.lineWidth = width;
+	for (let s = 0; s < 4; s++) {
+		const u = 0.4 + s * 0.2;
+		const tipX = x + lean * u * u + (s - 1.5) * width * 2.2;
+		ctx.beginPath();
+		ctx.moveTo(x, base);
+		ctx.quadraticCurveTo(x + lean * 0.3, base - height * 0.5, tipX, base - height * u);
+		ctx.stroke();
+	}
 }
 
 /** Fine particulate drifting in the light. Cheap, and it makes the water feel occupied. */

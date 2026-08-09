@@ -18,6 +18,7 @@ import {
 	tangentAt,
 	profileAt,
 	profilePeak,
+	TURN_LATERAL_REACH,
 	type Point,
 	type Spine
 } from './spine';
@@ -49,6 +50,23 @@ export type Placement = {
 	 * rather than an animal going somewhere.
 	 */
 	pitch: number;
+	/**
+	 * How hard the fish is working, as a multiple of its own average pace. Drives the
+	 * body wave, so a coasting fish straightens and a bursting one digs in.
+	 *
+	 * Computed here rather than in the renderer because `swimPosition` is what varies
+	 * the speed; deriving it a second time from a separate formula is exactly how
+	 * `pitch` would have drifted from the path it describes.
+	 */
+	effort: number;
+	/**
+	 * Signed turn rate, radians per second, from the path actually travelled.
+	 *
+	 * Positive is a turn toward increasing screen y. The renderer flips the sign when
+	 * the fish faces left, for the same reason `pitch` does: the body is drawn in its
+	 * own frame and then mirrored.
+	 */
+	turn: number;
 };
 
 /**
@@ -71,6 +89,25 @@ const PITCH_LOOKAHEAD = 0.08;
 function pitchFrom(dx: number, dy: number): number {
 	if (dx === 0 && dy === 0) return 0;
 	return Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.atan2(dy, Math.abs(dx))));
+}
+
+/**
+ * Turn rate from three samples of the real path: the heading before and after `here`.
+ *
+ * Three samples rather than two because a turn is a *change* of heading, and two points
+ * only give one heading. Same discipline as `pitch` — read the path that is actually
+ * drawn rather than inventing a second formula alongside it.
+ */
+function turnFrom(behind: Point, here: Point, ahead: Point, dt: number): number {
+	const before = Math.atan2(here.y - behind.y, here.x - behind.x);
+	const after = Math.atan2(ahead.y - here.y, ahead.x - here.x);
+
+	// Shortest way round, so passing through ±PI is not read as a violent turn.
+	let delta = after - before;
+	while (delta > Math.PI) delta -= Math.PI * 2;
+	while (delta < -Math.PI) delta += Math.PI * 2;
+
+	return delta / dt;
 }
 
 /** Water column available to swimmers, leaving the surface band and the planting alone. */
@@ -146,7 +183,10 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 			x: here.x,
 			y: here.y,
 			flip: Math.cos(cruise) < 0,
-			pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y)
+			pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y),
+			// The prize cruises on its own slow warp, so it eases rather than tracking.
+			effort: 1 + Math.cos(t * 0.29 + phase) * 0.35,
+			turn: turnFrom(treatAt(t - PITCH_LOOKAHEAD), here, ahead, PITCH_LOOKAHEAD)
 		};
 	}
 	if (creature.kind === 'pearl') {
@@ -175,7 +215,15 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 			? size.w * (PILL_EDGE + along * bandWidth)
 			: size.w * (0.04 + along * bandWidth);
 
-		return { x, y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6, flip: false, pitch: 0 };
+		return {
+			x,
+			y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6,
+			flip: false,
+			pitch: 0,
+			// A pearl has no body to undulate; the value is inert.
+			effort: 1,
+			turn: 0
+		};
 	}
 
 	const kindSpeed = creature.kind === 'koi' ? 0.5 : creature.kind === 'ghost' ? 0.62 : 1;
@@ -185,14 +233,53 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 	const swimAt = (at: number) => swimPosition(creature, size, at, seed, phase, kindSpeed);
 	const here = swimAt(t);
 	const ahead = swimAt(t + PITCH_LOOKAHEAD);
+	const behind = swimAt(t - PITCH_LOOKAHEAD);
 
 	return {
 		x: here.x,
 		y: here.y,
 		flip: here.flip,
 		// A frozen clock gives two identical samples, so a still fish sits level.
-		pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y)
+		pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y),
+		// Read off the warp's own derivative rather than measured from `here`/`ahead`:
+		// the horizontal sweep reverses at each end of its lane, where the measured
+		// speed collapses to nearly zero even though the fish is turning, not coasting.
+		effort: animate ? glideRate(t, phase) : 1,
+		turn: animate ? turnFrom(behind, here, ahead, PITCH_LOOKAHEAD) : 0
 	};
+}
+
+
+/**
+ * Burst and glide: the clock is warped instead of the path, so the same sinusoid is
+ * traversed quickly in places and slowly in others.
+ *
+ * The two terms and their derivative live together because the body wave reads its
+ * speed from `glideRate`. Written as two separate formulas they would drift, and the
+ * fish would beat hardest at the moment it was actually coasting — the same class of
+ * bug `FIN_FORWARD_REACH` exists to prevent.
+ *
+ * Strictly monotonic by construction: the derivative bottoms out at 1 - 0.541 and
+ * peaks at 1 + 0.541, so it never goes negative and the fish never twitches backwards.
+ */
+const GLIDE_TERMS = [
+	{ gain: 0.9, rate: 0.37, phaseMul: 1 },
+	{ gain: 1.6, rate: 0.13, phaseMul: 1.7 }
+] as const;
+
+function glideWarp(t: number, phase: number): number {
+	let sum = 0;
+	for (const term of GLIDE_TERMS) sum += Math.sin(t * term.rate + phase * term.phaseMul) * term.gain;
+	return sum;
+}
+
+/** d(t + glideWarp)/dt — the fish's speed as a multiple of its own average. */
+function glideRate(t: number, phase: number): number {
+	let sum = 1;
+	for (const term of GLIDE_TERMS) {
+		sum += Math.cos(t * term.rate + phase * term.phaseMul) * term.gain * term.rate;
+	}
+	return sum;
 }
 
 /** Where a swimmer is at time `t` (seconds). Split out so `place` can sample it twice. */
@@ -215,7 +302,7 @@ function swimPosition(
 	 * peaks near 1.54) — if it ever went negative the fish would twitch backwards
 	 * mid-stroke instead of easing.
 	 */
-	const warp = t + Math.sin(t * 0.37 + phase) * 0.9 + Math.sin(t * 0.13 + phase * 1.7) * 1.6;
+	const warp = t + glideWarp(t, phase);
 	const swim = warp * pace;
 
 	// Horizontal sweep. Each fish gets its own lane centre as well as its own
@@ -415,7 +502,9 @@ function speciesReach(spec: SpeciesSpec): number {
 	// over `SPINE_SEGMENTS` spans, so a control point sits at most about one span
 	// outside the sampled extreme — scale the pad with the fish rather than pinning a
 	// constant that a longer species would outgrow.
-	const curvePad = spec.length / 6;
+	// A turning body arcs off its own axis, so it needs more clearance than a straight
+	// one. Measured from the spine itself rather than a pad picked by eye.
+	const curvePad = spec.length / 6 + TURN_LATERAL_REACH * spec.length;
 
 	const total =
 		Math.max(
@@ -473,8 +562,37 @@ export function drawCreatures(
 ): void {
 	for (const creature of [...creatures].sort((a, b) => DRAW_ORDER[a.kind] - DRAW_ORDER[b.kind])) {
 		const at = insetForFins(place(creature, size, time, animate), creature, size);
+
+		// Water absorbs light, so a fish deep in the column is lower in contrast than one
+		// near the surface. Without this every creature was equally crisp at every depth,
+		// which is the flat-sticker look in one line.
+		//
+		// Applied here rather than inside `drawCreature` because this is where the tank's
+		// height is known, and as a *multiplier* on whatever alpha the creature already
+		// carries — a ghost is already faint and must not be reset to full.
+		const outer = ctx.globalAlpha;
+		ctx.globalAlpha = outer * hazeAt(creature, at, size);
 		drawCreature(ctx, creature, at, colors, time);
+		ctx.globalAlpha = outer;
 	}
+}
+
+/**
+ * How much of its contrast a creature keeps at its drawn depth.
+ *
+ * Pearls and bubbles are exempt. A pearl rests on the bed by design and is meant to
+ * catch the light — hazing it would undo that on purpose — and a bubble is a task you
+ * can tap, so dimming it with depth would make the furthest task the hardest to see.
+ */
+const MAX_DEPTH_HAZE = 0.3;
+
+function hazeAt(creature: Creature, at: Placement, size: Size): number {
+	if (creature.kind === 'pearl' || creature.kind === 'bubble') return 1;
+
+	const column = Math.max(1, size.h - WATERLINE);
+	const depth = Math.min(1, Math.max(0, (at.y - WATERLINE) / column));
+
+	return 1 - depth * MAX_DEPTH_HAZE;
 }
 
 // ------------------------------------------------------------------- shapes
@@ -533,8 +651,11 @@ function finGradient(
 	if (cached) return cached;
 
 	const wash = ctx.createLinearGradient(0, half, -span * fin.sweep, half + span);
-	wash.addColorStop(0, withAlpha(spec.palette.fin, 0.92));
-	wash.addColorStop(1, withAlpha(spec.palette.fin, 0.52));
+	// A fin is a membrane stretched over rays, and you can see water through it. The
+	// ramp was already the right shape; these are simply thinner, so the margin reads as
+	// tissue rather than as a painted edge.
+	wash.addColorStop(0, withAlpha(spec.palette.fin, 0.82));
+	wash.addColorStop(1, withAlpha(spec.palette.fin, 0.3));
 
 	perFin.set(fin, wash);
 	return wash;
@@ -591,10 +712,14 @@ function drawBody(
 	ctx.fillStyle = shade;
 	ctx.fill();
 
-	tracePath(ctx, loop);
-	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
-	ctx.lineWidth = 1.2;
-	ctx.stroke();
+	// No rim stroke. A drawn outline is the strongest cue that a shape is an
+	// illustration laid on the water rather than an animal in it — real silhouettes are
+	// value edges, not lines. The body gradient already darkens toward the back, which
+	// is what separates the fish from the water; a line on top of that only ever read
+	// as ink.
+	//
+	// Ghosts keep their stroke, in `drawGhost`: an unfilled outline is the whole of what
+	// makes a spent task legible, and that is a state distinction rather than decoration.
 	ctx.globalAlpha = outer;
 }
 
@@ -777,24 +902,33 @@ function drawHead(
 ): void {
 	const at = pointAt(spine, EYE_T);
 	const half = profileAt(spec.profile, EYE_T) * spec.length;
-	const radius = Math.max(2.2, half * 0.34);
+	/**
+	 * A fish's eye is dark and nearly all pupil. The white sclera ring this used to draw
+	 * is a mascot convention, not an anatomical one, and at 40px it was the loudest
+	 * thing on the animal — the eye read before the species did.
+	 *
+	 * Kept prominent rather than shrunk to a speck: real fish eyes *are* large for the
+	 * head. What changes is that the dark iris now fills it instead of ringing a white
+	 * disc.
+	 */
+	const radius = Math.max(1.9, half * 0.26);
 
-	// Eye white.
+	// Iris, filling the eye.
 	ctx.beginPath();
 	ctx.arc(at.x, at.y - half * 0.25, radius, 0, Math.PI * 2);
-	ctx.fillStyle = '#ffffff';
-	ctx.fill();
-
-	// Iris and pupil.
-	ctx.beginPath();
-	ctx.arc(at.x + radius * 0.18, at.y - half * 0.25, radius * 0.62, 0, Math.PI * 2);
 	ctx.fillStyle = spec.palette.iris;
 	ctx.fill();
 
-	// Catchlight — small, and most of what sells it.
+	// Pupil: darker still, and slightly forward, so the fish reads as looking ahead.
 	ctx.beginPath();
-	ctx.arc(at.x - radius * 0.3, at.y - half * 0.25 - radius * 0.3, radius * 0.26, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+	ctx.arc(at.x + radius * 0.16, at.y - half * 0.25, radius * 0.55, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(12, 20, 28, 0.92)';
+	ctx.fill();
+
+	// Catchlight — one small wet highlight, which is what stops it reading as a hole.
+	ctx.beginPath();
+	ctx.arc(at.x - radius * 0.32, at.y - half * 0.25 - radius * 0.32, radius * 0.22, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
 	ctx.fill();
 
 	// Lid: the belly tone, which reads as shadow against the lit back.
@@ -888,7 +1022,7 @@ function drawFish(
 	if (at.flip) ctx.scale(-1, 1);
 
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
-	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const spine = spineFor(spec.length, spec.wave, time, phase, undefined, at.effort, at.flip ? -at.turn : at.turn);
 	const loop = outline(spine, spec.profile, spec.length);
 
 	drawRearFins(ctx, spec, spine, time, phase);
@@ -912,7 +1046,7 @@ function drawGhost(
 	if (at.flip) ctx.scale(-1, 1);
 
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
-	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const spine = spineFor(spec.length, spec.wave, time, phase, undefined, at.effort, at.flip ? -at.turn : at.turn);
 	const loop = outline(spine, spec.profile, spec.length);
 
 	// Legible, but plainly spent. At 0.4 the outline vanished against the water and
@@ -1045,7 +1179,14 @@ function drawBubble(ctx: CanvasRenderingContext2D, creature: Creature, time: num
 	ctx.clip();
 	ctx.scale(0.62, 0.62);
 	ctx.translate(Math.sin(time / 800 + seed) * 7, Math.cos(time / 1100 + seed) * 4);
-	drawFish(ctx, { x: 0, y: 0, flip: false, pitch: 0 }, SPECIES[speciesFor(creature.id)], time, seed);
+	drawFish(
+		ctx,
+		// Sealed in, so it nudges the wall rather than swimming: a low, steady effort.
+		{ x: 0, y: 0, flip: false, pitch: 0, effort: 0.85, turn: 0 },
+		SPECIES[speciesFor(creature.id)],
+		time,
+		seed
+	);
 	ctx.restore();
 
 	ctx.beginPath();
