@@ -253,13 +253,13 @@ export type PlantSpec = {
 
 export const PLANTS: PlantSpec[] = [
 	// Tall, narrow, floppy: the classic aquarium ribbon that streams in the current.
-	{ form: 'ribbon', height: 0.105, width: 2.6, blades: 4, stiffness: 0.35 },
+	{ form: 'ribbon', height: 0.2, width: 2.8, blades: 5, stiffness: 0.5 },
 	// Shorter and broader, with a midrib. Stiffer, so it lags the ribbons.
-	{ form: 'broadleaf', height: 0.075, width: 5.5, blades: 3, stiffness: 0.7 },
+	{ form: 'broadleaf', height: 0.14, width: 5.5, blades: 3, stiffness: 0.8 },
 	// A low bushy stand of fine leaflets — reads as mass rather than as blades.
-	{ form: 'bushy', height: 0.055, width: 1.8, blades: 6, stiffness: 0.85 },
+	{ form: 'bushy', height: 0.1, width: 1.8, blades: 7, stiffness: 0.95 },
 	// Foreground carpet: short, dense, and it hides where the taller stands meet sand.
-	{ form: 'ribbon', height: 0.045, width: 2.2, blades: 7, stiffness: 0.6 }
+	{ form: 'ribbon', height: 0.075, width: 2.2, blades: 7, stiffness: 0.7 }
 ];
 
 /**
@@ -337,7 +337,14 @@ function drawClump(
 		const height = size.h * spec.height * grow * opts.scale;
 		const width = spec.width * opts.scale * (0.8 + noise(i2(bx, b), 9) * 0.4);
 
-		const lean = currentAt(bx, t) * (26 / spec.stiffness) * opts.scale * (0.7 + jitter * 0.6);
+		// Per-blade offset as well as per-clump: blades in one stand do not all catch the
+		// current at the same instant, and without this a clump moves as a rigid fan.
+		const drift = currentAt(bx + b * 26, t);
+		const lean = drift * (19 / spec.stiffness) * opts.scale * (0.7 + jitter * 0.6);
+		// Blades in a stand splay outward from the crown instead of standing parallel.
+		// Without it a clump reads as a bundle of upright swords however well each blade
+		// is drawn, because every tip points the same way.
+		const splay = spread * 2.4;
 
 		// Fades with depth like everything else in the water: the bed had been left out
 		// of the haze, so the planting stayed perfectly crisp while the fish softened.
@@ -349,9 +356,9 @@ function drawClump(
 		ctx.strokeStyle = tone;
 
 		if (spec.form === 'bushy') {
-			drawBushy(ctx, bx, base, height, width, lean);
+			drawBushy(ctx, bx, base, height, width, lean + splay);
 		} else {
-			drawBlade(ctx, bx, base, height, width, lean, spec.form === 'broadleaf', tone);
+			drawBlade(ctx, bx, base, height, width, lean, splay, spec.form === 'broadleaf', tone);
 		}
 	}
 }
@@ -379,6 +386,7 @@ function drawBlade(
 	height: number,
 	width: number,
 	lean: number,
+	splay: number,
 	broad: boolean,
 	color: string
 ): void {
@@ -390,7 +398,7 @@ function drawBlade(
 
 	for (let s = 0; s <= SEGMENTS; s++) {
 		const u = s / SEGMENTS;
-		const cx = x + lean * u * u;
+		const cx = x + lean * u * u + splay * u ** 1.4;
 		const cy = base - height * u;
 		// Near-constant width, rounding off only at the very top. One continuous curve,
 		// not two branches: the piecewise version stepped from 0.79 to 1.0 at the join
@@ -419,7 +427,7 @@ function drawBlade(
 		ctx.moveTo(x, base);
 		for (let s = 1; s <= SEGMENTS; s++) {
 			const u = s / SEGMENTS;
-			ctx.lineTo(x + lean * u * u, base - height * u);
+			ctx.lineTo(x + lean * u * u + splay * u ** 1.4, base - height * u);
 		}
 		ctx.stroke();
 		ctx.globalAlpha = outer;
