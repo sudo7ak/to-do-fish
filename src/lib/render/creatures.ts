@@ -1,6 +1,6 @@
 import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
-import { WATERLINE, surfaceOffset, type Size } from './water';
+import { WATERLINE, bedTopAt, chestBounds, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
 import {
 	speciesFor,
@@ -82,12 +82,29 @@ const MAX_PITCH = 0.4;
 const PITCH_LOOKAHEAD = 0.08;
 
 /**
+ * The shortest step, in pixels, that carries a usable heading.
+ *
+ * Below this the direction of travel is numerical noise, not a direction. The surface
+ * prize crossed 0.85px per sample and its measured turn rate reached 19.3 rad/s —
+ * over a thousand degrees a second — because `turnFrom` divides the heading change by
+ * the lookahead and so multiplies that noise by 12. On screen it read as a stationary
+ * fish permanently bent to full arc and pinned nose-down at the pitch clamp.
+ *
+ * Kept well under an ordinary fish's slowest glide (~1.1px per sample) so the guard
+ * silences noise without silencing real motion.
+ */
+const MIN_TRAVEL = 0.35;
+
+/** No animal turns faster than this, and nothing in a tank should appear to. */
+export const MAX_TURN_RATE = 3;
+
+/**
  * Pitch from two samples of the real path, rather than a second formula that would
  * drift out of step with it. `dx` is taken as a magnitude because left-and-right is
  * already carried by `flip`; this is only the climb angle.
  */
 function pitchFrom(dx: number, dy: number): number {
-	if (dx === 0 && dy === 0) return 0;
+	if (Math.hypot(dx, dy) < MIN_TRAVEL) return 0;
 	return Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.atan2(dy, Math.abs(dx))));
 }
 
@@ -99,6 +116,13 @@ function pitchFrom(dx: number, dy: number): number {
  * drawn rather than inventing a second formula alongside it.
  */
 function turnFrom(behind: Point, here: Point, ahead: Point, dt: number): number {
+	const inLeg = Math.hypot(here.x - behind.x, here.y - behind.y);
+	const outLeg = Math.hypot(ahead.x - here.x, ahead.y - here.y);
+
+	// Two headings are needed, and a heading needs travel. If either leg is too short to
+	// carry one, there is no turn to report — only the noise between two nearby points.
+	if (inLeg < MIN_TRAVEL || outLeg < MIN_TRAVEL) return 0;
+
 	const before = Math.atan2(here.y - behind.y, here.x - behind.x);
 	const after = Math.atan2(ahead.y - here.y, ahead.x - here.x);
 
@@ -107,7 +131,7 @@ function turnFrom(behind: Point, here: Point, ahead: Point, dt: number): number 
 	while (delta > Math.PI) delta -= Math.PI * 2;
 	while (delta < -Math.PI) delta += Math.PI * 2;
 
-	return delta / dt;
+	return Math.max(-MAX_TURN_RATE, Math.min(MAX_TURN_RATE, delta / dt));
 }
 
 /** Water column available to swimmers, leaving the surface band and the planting alone. */
@@ -124,10 +148,32 @@ const EYE_T = 0.12;
 const TREAT_DRAFT = 34;
 
 /**
+ * The prize's patrol: how fast it works along its lane, how wide that lane is as a
+ * fraction of tank width, and how far it rises and falls within it.
+ *
+ * It used to run at 0.1 and 0.1 — an 84px box at 10.6 px/s, a quarter of an ordinary
+ * fish's speed and one lap a minute. Slow was the intent; that slow read as hovering.
+ * It still cruises the surface lane, above the shoal, so it stays the thing your eye
+ * lands on.
+ */
+const CRUISE_RATE = 0.22;
+const CRUISE_SWEEP = 0.2;
+const CRUISE_BOB = 18;
+
+/**
  * Where the add-pill's shadow starts, as a fraction of width. Pearls stay outside
  * `[1 - PILL_EDGE, PILL_EDGE]` so the bottom button never covers them.
  */
 const PILL_EDGE = 0.74;
+
+/**
+ * How far a pearl's centre sits above the sand.
+ *
+ * Less than its radius (7.5), so the bead's lower third is buried in the grain. A
+ * sphere resting exactly tangent to a surface still reads as hovering; things that sit
+ * on sand sink slightly into it.
+ */
+const PEARL_SEAT = 4.5;
 
 /**
  * The exotic, drained of its colour: what a treat you cannot yet afford is drawn as.
@@ -165,28 +211,43 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		// thing your eye lands on rather than another fish in the shoal. Same warped
 		// clock as the shoal, so it saunters rather than tracking at a fixed rate.
 		const phase = mix32(seed ^ 0x77) * Math.PI * 2;
-		const cruise = (t + Math.sin(t * 0.29 + phase) * 1.2) * 0.1;
+		const cruise = (t + Math.sin(t * 0.29 + phase) * 1.2) * CRUISE_RATE;
 
 		const treatAt = (at: number) => {
-			const c = (at + Math.sin(at * 0.29 + phase) * 1.2) * 0.1;
-			const tx = spreadX(seed, size) + size.w * Math.sin(c) * 0.1;
-			return {
-				x: tx,
-				y: WATERLINE + surfaceOffset(tx, at * 1000) + TREAT_DRAFT + Math.sin(c * 1.7 + phase) * 12
-			};
+			const c = (at + Math.sin(at * 0.29 + phase) * 1.2) * CRUISE_RATE;
+			// Clamped like the shoal's lane. A wider patrol reaches the glass, and the
+			// prize is the widest creature in the tank, so it hits it first.
+			const drift = spreadX(seed, size) + size.w * Math.sin(c) * CRUISE_SWEEP;
+			const tx = Math.min(size.w * 0.9, Math.max(size.w * 0.1, drift));
+			// The fish's own path, and separately the lane it hangs from.
+			//
+			// `surfaceOffset` is the ripple of the water above, and it moves far faster
+			// than the fish does. Sampling heading from a `y` that included it made the
+			// prize tip to follow the surface wave rather than its own swimming — both
+			// prizes sat pinned nose-down at the pitch clamp, which is what read as
+			// wrong. It positions the lane; it must not steer the animal.
+			const swim = TREAT_DRAFT + Math.sin(c * 1.7 + phase) * CRUISE_BOB;
+			return { x: tx, swimY: WATERLINE + swim, y: WATERLINE + surfaceOffset(tx, at * 1000) + swim };
 		};
 
 		const here = treatAt(t);
 		const ahead = treatAt(t + PITCH_LOOKAHEAD);
+		const behind = treatAt(t - PITCH_LOOKAHEAD);
+		const heading = (p: { x: number; swimY: number }) => ({ x: p.x, y: p.swimY });
 
 		return {
 			x: here.x,
 			y: here.y,
 			flip: Math.cos(cruise) < 0,
-			pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y),
+			// A frozen clock still advances the lookahead samples, so without this the
+			// prize kept tipping and bending under reduced motion while the tank held
+			// still — motion the user asked not to see.
+			pitch: animate ? pitchFrom(ahead.x - here.x, ahead.swimY - here.swimY) : 0,
 			// The prize cruises on its own slow warp, so it eases rather than tracking.
-			effort: 1 + Math.cos(t * 0.29 + phase) * 0.35,
-			turn: turnFrom(treatAt(t - PITCH_LOOKAHEAD), here, ahead, PITCH_LOOKAHEAD)
+			effort: animate ? 1 + Math.cos(t * 0.29 + phase) * 0.35 : 1,
+			turn: animate
+				? turnFrom(heading(behind), heading(here), heading(ahead), PITCH_LOOKAHEAD)
+				: 0
 		};
 	}
 	if (creature.kind === 'pearl') {
@@ -211,13 +272,36 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		const along = (slot * 0.6180339887) % 1;
 		const bandWidth = 1 - PILL_EDGE - 0.04;
 
-		const x = rightSide
+		// Dealt to the far end of each band first. Golden-ratio spacing alone still let
+		// consecutive pearls land within a bead of each other, and two overlapping beads
+		// read as one smeared blob rather than as two pearls.
+		const raw = rightSide
 			? size.w * (PILL_EDGE + along * bandWidth)
-			: size.w * (0.04 + along * bandWidth);
+			: size.w * (0.04 + (1 - along) * bandWidth);
 
+		// Pearls lie beside the chest, never on it: a bead drawn over the lid reads as
+		// stuck to the wood rather than spilled onto the sand.
+		const chest = chestBounds(size);
+		const x =
+			raw > chest.from && raw < chest.to
+				? raw < (chest.from + chest.to) / 2
+					? chest.from - 6
+					: chest.to + 6
+				: raw;
+
+		// Seated on the sand's real surface, which is what `bedTopAt` is for.
+		//
+		// This used to be `size.h - 14 - …`, a flat line near the bottom of the canvas.
+		// The bed's surface sits ~70px above that, so every pearl was drawn 30–55px
+		// *under* the sand, in the murky base of the substrate gradient and below the
+		// depth every plant roots at — which is why they read as vague rather than as
+		// treasure lying on the floor. Same fault the planting had, in a second place.
+		// No row lifting. Staggering pearls 0/5/10px up from the sand was meant to read as
+		// depth into the bed; it read as three of them hovering, with their own contact
+		// shadows visible on the sand underneath. Anything on the floor sits on the floor.
 		return {
 			x,
-			y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6,
+			y: bedTopAt(x, size) - PEARL_SEAT + mix32(seed ^ 0x5f5e) * 1.5,
 			flip: false,
 			pitch: 0,
 			// A pearl has no body to undulate; the value is inert.
@@ -558,10 +642,17 @@ export function drawCreatures(
 	colors: Palette,
 	size: Size,
 	time: number,
-	animate = true
+	animate = true,
+	feeding = 0
 ): void {
+	// Food is in the water, so the shoal picks up. This rides the `effort` input the
+	// body wave already reads rather than adding a second animation path: a fish working
+	// harder bends harder, and it is already sampled from the path it swims.
+	const stir = animate ? 1 + feeding * FEED_STIR : 1;
+
 	for (const creature of [...creatures].sort((a, b) => DRAW_ORDER[a.kind] - DRAW_ORDER[b.kind])) {
-		const at = insetForFins(place(creature, size, time, animate), creature, size);
+		const placed = place(creature, size, time, animate);
+		const at = insetForFins({ ...placed, effort: placed.effort * stir }, creature, size);
 
 		// Water absorbs light, so a fish deep in the column is lower in contrast than one
 		// near the surface. Without this every creature was equally crisp at every depth,
@@ -585,6 +676,14 @@ export function drawCreatures(
  * can tap, so dimming it with depth would make the furthest task the hardest to see.
  */
 const MAX_DEPTH_HAZE = 0.3;
+
+/**
+ * How much harder the shoal works while there is food in the water.
+ *
+ * Deliberately modest. The flourish should read as the tank waking up for a few
+ * seconds, not as every fish panicking.
+ */
+const FEED_STIR = 0.85;
 
 function hazeAt(creature: Creature, at: Placement, size: Size): number {
 	if (creature.kind === 'pearl' || creature.kind === 'bubble') return 1;
@@ -1269,14 +1368,24 @@ function drawPearl(ctx: CanvasRenderingContext2D, colors: Palette, time: number,
 	// Slow breathing, so a bed of pearls glimmers out of step rather than pulsing as one.
 	const pulse = 0.5 + 0.5 * Math.sin(t * 1.1 + phase);
 
-	// Halo on the sand beneath.
-	const bloom = ctx.createRadialGradient(0, 0, 1, 0, 0, r * 2.6);
-	bloom.addColorStop(0, `rgba(255, 255, 255, ${0.5 + pulse * 0.32})`);
-	bloom.addColorStop(0.5, `rgba(248, 253, 255, ${0.16 + pulse * 0.12})`);
+	// Contact shadow first: a white bead on pale sand has nothing to seat it, and
+	// without a shadow it floats however correctly it is placed.
+	ctx.save();
+	ctx.beginPath();
+	ctx.ellipse(0.5, r * 0.78, r * 1.15, r * 0.42, 0, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(58, 62, 54, 0.28)';
+	ctx.fill();
+	ctx.restore();
+
+	// Halo on the sand beneath. Tighter than it was: neighbouring pearls' blooms
+	// overlapped into one milky smear, which is half of why a pile read as vague.
+	const bloom = ctx.createRadialGradient(0, 0, 1, 0, 0, r * 1.9);
+	bloom.addColorStop(0, `rgba(255, 255, 255, ${0.38 + pulse * 0.24})`);
+	bloom.addColorStop(0.5, `rgba(248, 253, 255, ${0.1 + pulse * 0.08})`);
 	bloom.addColorStop(1, 'rgba(255, 255, 255, 0)');
 	ctx.fillStyle = bloom;
 	ctx.beginPath();
-	ctx.arc(0, 0, r * 2.6, 0, Math.PI * 2);
+	ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
 	ctx.fill();
 
 	// Body: lit from the upper left, shading to a cool underside.
@@ -1318,23 +1427,24 @@ function drawPearl(ctx: CanvasRenderingContext2D, colors: Palette, time: number,
 	ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
 	ctx.fill();
 
-	// A four-point sparkle that crosses every few seconds — the difference between a
-	// bead that sits there and one that catches the light.
+	// A slow brightening of the catchlight, rather than a four-point star.
+	//
+	// The star was drawn as two crossed strokes reaching past the bead, and at any
+	// zoom it read as a crosshair or a registration mark — a UI symbol sitting on the
+	// sand. Nacre glows; it does not emit rays.
 	const twinkle = Math.max(0, Math.sin(t * 0.9 + phase * 2));
 	if (twinkle > 0.55) {
 		const glint = (twinkle - 0.55) / 0.45;
-		const arm = r * (1.1 + glint * 1.5);
 
 		ctx.save();
 		ctx.globalCompositeOperation = 'lighter';
-		ctx.strokeStyle = `rgba(255, 255, 255, ${glint * 0.9})`;
-		ctx.lineWidth = 1.1;
+		const spark = ctx.createRadialGradient(-r * 0.3, -r * 0.34, 0, -r * 0.3, -r * 0.34, r * 1.05);
+		spark.addColorStop(0, `rgba(255, 255, 255, ${glint * 0.85})`);
+		spark.addColorStop(1, 'rgba(255, 255, 255, 0)');
+		ctx.fillStyle = spark;
 		ctx.beginPath();
-		ctx.moveTo(-arm, 0);
-		ctx.lineTo(arm, 0);
-		ctx.moveTo(0, -arm);
-		ctx.lineTo(0, arm);
-		ctx.stroke();
+		ctx.arc(-r * 0.3, -r * 0.34, r * 1.05, 0, Math.PI * 2);
+		ctx.fill();
 		ctx.restore();
 	}
 }

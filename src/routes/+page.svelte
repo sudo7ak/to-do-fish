@@ -7,7 +7,7 @@
 	import { pearlBalance, canAfford } from '$lib/store/pearls';
 	import { buildScene } from '$lib/scene/build';
 	import { palette } from '$lib/render/palette';
-	import { drawTank, drawForeground } from '$lib/render/water';
+	import { drawTank, drawForeground, drawFeed } from '$lib/render/water';
 	import { drawCreatures } from '$lib/render/creatures';
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
@@ -26,6 +26,20 @@
 	const { tasks, koi, settings, saveFailed } = store;
 
 	let date = $state(today());
+
+	/**
+	 * Today, kept current while the app is open.
+	 *
+	 * Polled rather than derived: nothing else changes at midnight, so there is no
+	 * reactive source to hang this off. Cheap — a string comparison a few times a
+	 * minute — and it also catches a laptop waking on a different day, which is the
+	 * case a single timer set at load would miss.
+	 *
+	 * The viewed date is deliberately *not* moved when this rolls over. Yanking someone
+	 * to a new day mid-sentence is worse than letting the header say "Yesterday" and
+	 * offer the way back.
+	 */
+	let now = $state(today());
 	let selected = $state<Task | null>(null);
 	let editing = $state<Task | undefined>(undefined);
 	let sheetOpen = $state(false);
@@ -54,8 +68,19 @@
 			ticker.start();
 		});
 
+		const rollover = () => (now = today());
+		const clock = setInterval(rollover, 20_000);
+		// A sleeping machine runs no timers, so the wake is where the day usually turns.
+		document.addEventListener('visibilitychange', rollover);
+		window.addEventListener('focus', rollover);
+
 		// Both the interval and the visibilitychange listener leak without this.
-		return () => ticker.stop();
+		return () => {
+			ticker.stop();
+			clearInterval(clock);
+			document.removeEventListener('visibilitychange', rollover);
+			window.removeEventListener('focus', rollover);
+		};
 	});
 
 	/**
@@ -75,8 +100,10 @@
 		const time = frame.animate ? frame.time : 0;
 		lastFrame = { time, size, animate: frame.animate };
 
-		drawTank(ctx, size, colors, time);
-		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate);
+		drawTank(ctx, size, colors, time, scene.pearls);
+		// Behind the creatures: the fish rise through the food, not under it.
+		drawFeed(ctx, size, time, frame.animate ? scene.feeding : 0);
+		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate, scene.feeding);
 		// Haze and vignette last, so they sit over the creatures and give the tank depth.
 		drawForeground(ctx, size, colors);
 	}
@@ -150,6 +177,7 @@
 			{date}
 			environment={$settings.environment}
 			{clearedPct}
+			{now}
 			onNavigate={(next) => (date = next)}
 		/>
 	</div>

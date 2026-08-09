@@ -232,6 +232,310 @@ export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors:
 }
 
 /**
+ * Where the chest sits, as a fraction of tank width, and how wide it is.
+ *
+ * Off-centre and clear of the add-pill's band, on the same sand `bedTopAt` gives the
+ * planting, so it is seated in the bed rather than pasted onto it.
+ */
+/**
+ * Centred, which is the one stretch of floor nothing else wants.
+ *
+ * Pearls are kept out of the middle because the add-pill used to hide them, so the
+ * centre is already empty; and the pill's own box starts at y≈801 while the chest's
+ * lid tops out around 764, so the two never meet. Off to one side it landed in the
+ * pearl band instead, and beads piled on the lid.
+ */
+const CHEST_X = 0.5;
+const CHEST_W = 62;
+
+/**
+ * The stretch of floor the chest occupies, in pixels.
+ *
+ * One source of truth, because three things have to agree about it: the chest draws
+ * here, the planting must not sprout through it, and pearls must not pile on top of it.
+ * Left to each of them separately, a plant grew straight out of the lid.
+ */
+export function chestBounds(size: Size): { from: number; to: number } {
+	const x = size.w * CHEST_X;
+	return { from: x - CHEST_W * 0.62, to: x + CHEST_W * 0.62 };
+}
+
+/**
+ * A weathered chest on the sand, and the home the pearls needed.
+ *
+ * Two jobs. It gives white pearls a dark mass to read against, which is the contrast
+ * problem they had; and it carries the overflow honestly — past `MAX_VISIBLE_PEARLS`
+ * the tank simply stopped drawing them, so 12 and 300 looked identical. The lid opens
+ * as the balance grows, so a large balance is visible as a fuller chest rather than
+ * silently truncated.
+ *
+ * Deliberately not the clipart it came from: no black outline, muted and desaturated,
+ * seated with a contact shadow rather than sitting proud of the sand. It has to look
+ * like an ornament that has been in the tank a while, not a prop dropped on top of it.
+ */
+export function drawChest(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	colors: Palette,
+	pearls: number,
+	time: number
+): void {
+	const x = size.w * CHEST_X;
+	const base = bedTopAt(x, size) + 2;
+	const w = CHEST_W;
+	const bodyH = w * 0.42;
+	const lidH = w * 0.26;
+	const top = base - bodyH;
+
+	ctx.save();
+
+	// Opaque. The first version carried the same depth haze as the creatures and came
+	// out 80% transparent, so the planting behind showed straight through the wood and
+	// the chest read as cardboard. Haze is for things suspended in water; this is an
+	// object lying on the floor, and the water in front of it is a few centimetres deep.
+
+	// Seated: a shadow pooled under the base, wider than the chest.
+	ctx.beginPath();
+	ctx.ellipse(x, base + 1, w * 0.6, bodyH * 0.22, 0, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(58, 60, 48, 0.32)';
+	ctx.fill();
+
+	// Body, very slightly wider at the base so it reads as sitting rather than floating.
+	const wood = ctx.createLinearGradient(0, top, 0, base);
+	wood.addColorStop(0, '#c9a071');
+	wood.addColorStop(0.55, '#a97c50');
+	wood.addColorStop(1, '#87613c');
+
+	ctx.beginPath();
+	ctx.moveTo(x - w / 2, base);
+	ctx.lineTo(x - w / 2 + 2, top);
+	ctx.lineTo(x + w / 2 - 2, top);
+	ctx.lineTo(x + w / 2, base);
+	ctx.closePath();
+	ctx.fillStyle = wood;
+	ctx.fill();
+
+	// Plank seams: what separates a wooden box from a brown rectangle.
+	ctx.strokeStyle = 'rgba(96, 66, 40, 0.35)';
+	ctx.lineWidth = 1;
+	for (const at of [-0.3, 0, 0.3]) {
+		ctx.beginPath();
+		ctx.moveTo(x + w * at, top + 1);
+		ctx.lineTo(x + w * at, base - 1);
+		ctx.stroke();
+	}
+
+	// Iron bands, and a brass lock plate at the front.
+	ctx.fillStyle = 'rgba(78, 62, 46, 0.55)';
+	for (const at of [-0.34, 0.34]) ctx.fillRect(x + w * at - 2, top, 4, bodyH);
+
+	ctx.fillStyle = '#d8b061';
+	ctx.fillRect(x - 4, top + bodyH * 0.22, 8, bodyH * 0.34);
+	ctx.fillStyle = 'rgba(90, 62, 30, 0.7)';
+	ctx.fillRect(x - 1, top + bodyH * 0.36, 2, bodyH * 0.14);
+
+	// How wide the lid stands, and how full the chest looks.
+	const open = Math.min(1, pearls / 14);
+	const lift = open * 0.34;
+
+	if (open > 0.02) {
+		// The dark inside first: without it the contents read as painted on the rim.
+		ctx.beginPath();
+		ctx.ellipse(x, top, w * 0.44, lidH * 0.34, 0, Math.PI, 0);
+		ctx.fillStyle = 'rgba(44, 31, 22, 0.9)';
+		ctx.fill();
+
+		drawHoard(ctx, x, top, w, lidH, open, time);
+	}
+
+	// Lid: hinged on the back edge of the body, springing from the same line the body
+	// ends on, so the two are plainly one object.
+	ctx.save();
+	ctx.translate(x - w / 2 + 2, top);
+	ctx.rotate(-lift);
+	const lidW = w - 4;
+
+	// A solid dome with a flat bottom edge.
+	//
+	// The first version traced two nearly identical arcs and closed between them, which
+	// fills a thin crescent rather than a lid — on screen it read as a rainbow floating
+	// above the box. One curve, closed straight across its own base, is the whole shape.
+	ctx.beginPath();
+	ctx.moveTo(0, 0);
+	ctx.quadraticCurveTo(lidW * 0.5, -lidH * 2.1, lidW, 0);
+	ctx.closePath();
+
+	const lidWood = ctx.createLinearGradient(0, -lidH, 0, 0);
+	lidWood.addColorStop(0, '#d8ae7d');
+	lidWood.addColorStop(1, '#9a7048');
+	ctx.fillStyle = lidWood;
+	ctx.fill();
+
+	// Bands carried over the lid, clipped to it so they cannot trail off into the water.
+	ctx.save();
+	ctx.clip();
+	ctx.strokeStyle = 'rgba(78, 62, 46, 0.45)';
+	ctx.lineWidth = 3.4;
+	for (const at of [0.2, 0.8]) {
+		ctx.beginPath();
+		ctx.moveTo(lidW * at, 0);
+		ctx.quadraticCurveTo(lidW * at, -lidH * 1.2, lidW * 0.5, -lidH * 1.35);
+		ctx.stroke();
+	}
+
+	// Light along the crown, which is what gives it a curve rather than a flat cap.
+	ctx.strokeStyle = 'rgba(255, 238, 210, 0.5)';
+	ctx.lineWidth = 1.6;
+	ctx.beginPath();
+	ctx.moveTo(lidW * 0.12, -lidH * 0.5);
+	ctx.quadraticCurveTo(lidW * 0.5, -lidH * 1.75, lidW * 0.88, -lidH * 0.5);
+	ctx.stroke();
+	ctx.restore();
+
+	ctx.restore();
+
+	ctx.restore();
+}
+
+/**
+ * Gold and gemstones heaped in the chest's mouth.
+ *
+ * Clipped to the mouth, so however high the pile is dealt nothing floats out of the
+ * box. The heap grows with the balance: at a few pearls it is a glint of coins, and
+ * a large balance fills the chest — which is the whole reason the chest exists, since
+ * the bed stops adding beads at `MAX_VISIBLE_PEARLS` and the balance has to show
+ * somewhere.
+ *
+ * No gradients: this runs every frame, and a per-gem gradient would be dozens of
+ * allocations a second. Flat fills plus a lighter facet do the same job at this size.
+ */
+// Mostly diamond: white and ice, with one warm stone so the hoard is not monochrome.
+// Four pastels read as boiled sweets rather than as cut gems.
+/**
+ * The gold's own colour, shared with the test that counts coins.
+ *
+ * Exported because that test filtered on a literal `rgba(...)` string and silently
+ * stopped matching the moment the gold was retuned — it went on passing for the wrong
+ * reason until a second change made it fail.
+ */
+export const COIN_RGB = '255, 198, 66';
+
+const GEM_COLOURS = ['#ffffff', '#cdeeff', '#eaf7ff', '#ffd0e4'] as const;
+
+function drawHoard(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	top: number,
+	w: number,
+	lidH: number,
+	open: number,
+	time: number
+): void {
+	const t = time / 1000;
+
+	ctx.save();
+	ctx.beginPath();
+	// A taller mouth than the rim suggests, so the heap can mound above the wood. At
+	// half the lid's height the whole hoard was squeezed into an 8px strip.
+	ctx.ellipse(x, top + 2, w * 0.44, lidH * 0.95, 0, Math.PI, 0);
+	ctx.clip();
+
+	// A warm glow, added rather than painted.
+	//
+	// `drawDepth` washes the bottom 38% of the tank with 30% of the water colour plus a
+	// vignette, which is right for seating fish in depth and fatal for treasure: gold
+	// came out olive and the stones came out pastel. Light that is *added* survives a
+	// wash laid over it, so the hoard glows instead of being tinted.
+	ctx.save();
+	ctx.globalCompositeOperation = 'lighter';
+	const halo = ctx.createRadialGradient(x, top - lidH * 0.2, 1, x, top - lidH * 0.2, w * 0.5);
+	halo.addColorStop(0, `rgba(255, 214, 130, ${0.3 + 0.1 * Math.sin(time / 800)})`);
+	halo.addColorStop(1, 'rgba(255, 200, 120, 0)');
+	ctx.fillStyle = halo;
+	ctx.fillRect(x - w * 0.5, top - lidH * 1.2, w, lidH * 1.6);
+	ctx.restore();
+
+	// Coins: flat ellipses, stacked densest in the middle where a real heap mounds.
+	const coins = Math.round(5 + open * 9);
+	for (let i = 0; i < coins; i++) {
+		const across = (noise(i, 91) - 0.5) * w * 0.74;
+		const rise = noise(i, 93) * lidH * 0.62 * open;
+		const r = 2.8 + noise(i, 95) * 2.1;
+		const shimmer = 0.85 + 0.15 * Math.sin(t * 1.6 + i * 1.9);
+
+		ctx.beginPath();
+		ctx.ellipse(x + across, top - rise, r, r * 0.62, 0, 0, Math.PI * 2);
+		ctx.fillStyle = `rgba(${COIN_RGB}, ${shimmer})`;
+		ctx.fill();
+
+		// A brighter top edge, which is what makes a disc read as metal rather than a dot.
+		ctx.beginPath();
+		ctx.ellipse(x + across, top - rise - r * 0.24, r * 0.74, r * 0.28, 0, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(255, 248, 214, 0.95)';
+		ctx.fill();
+	}
+
+	// Gems: a kite with one lit facet, which is the cheapest shape that reads as cut
+	// stone. A circle would just be another coin in a different colour.
+	const gems = Math.round(2 + open * 3);
+	for (let i = 0; i < gems; i++) {
+		const across = (noise(i, 97) - 0.5) * w * 0.6;
+		const rise = lidH * (0.2 + noise(i, 99) * 0.42) * open;
+		const r = 3.2 + noise(i, 101) * 1.8;
+		const gx = x + across;
+		const gy = top - rise;
+		const colour = GEM_COLOURS[Math.floor(noise(i, 103) * GEM_COLOURS.length)];
+
+		ctx.beginPath();
+		ctx.moveTo(gx, gy - r);
+		ctx.lineTo(gx + r * 0.78, gy);
+		ctx.lineTo(gx, gy + r * 0.9);
+		ctx.lineTo(gx - r * 0.78, gy);
+		ctx.closePath();
+		ctx.fillStyle = colour;
+		ctx.fill();
+
+		// Lit facet down one side, so the stone has an inside.
+		ctx.beginPath();
+		ctx.moveTo(gx, gy - r);
+		ctx.lineTo(gx + r * 0.78, gy);
+		ctx.lineTo(gx, gy);
+		ctx.closePath();
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+		ctx.fill();
+
+		// A shaded lower facet: without it a kite is a flat diamond shape, not a stone.
+		ctx.beginPath();
+		ctx.moveTo(gx - r * 0.78, gy);
+		ctx.lineTo(gx, gy + r * 0.9);
+		ctx.lineTo(gx, gy);
+		ctx.closePath();
+		ctx.fillStyle = 'rgba(120, 168, 205, 0.45)';
+		ctx.fill();
+
+		// Twinkle: each stone catches the light on its own clock, so the hoard glitters
+		// rather than pulsing as one object. Additive, so the depth wash cannot mute it.
+		const spark = Math.sin(t * 1.1 + i * 2.4);
+		if (spark > 0.6) {
+			const glint = (spark - 0.6) / 0.4;
+			ctx.save();
+			ctx.globalCompositeOperation = 'lighter';
+			const flare = ctx.createRadialGradient(gx, gy - r * 0.2, 0, gx, gy - r * 0.2, r * 2.2);
+			flare.addColorStop(0, `rgba(255, 255, 255, ${0.95 * glint})`);
+			flare.addColorStop(0.45, `rgba(210, 240, 255, ${0.4 * glint})`);
+			flare.addColorStop(1, 'rgba(255, 255, 255, 0)');
+			ctx.fillStyle = flare;
+			ctx.beginPath();
+			ctx.ellipse(gx, gy - r * 0.2, r * 2.2, r * 2.2, 0, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.restore();
+		}
+	}
+
+	ctx.restore();
+}
+
+/**
  * What grows in the bed.
  *
  * Data only, like `species.ts` for fish. One repeated blade shape is what made the bed
@@ -241,7 +545,7 @@ export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors:
  * `stiffness` resists the current: eelgrass streams, a fern barely moves.
  */
 export type PlantSpec = {
-	form: 'ribbon' | 'broadleaf' | 'bushy';
+	form: 'ribbon' | 'broadleaf' | 'bushy' | 'leafy';
 	/** Height as a fraction of tank height, before per-clump jitter. */
 	height: number;
 	/** Blade half-width in px, at layer scale 1. */
@@ -249,6 +553,11 @@ export type PlantSpec = {
 	/** Blades in one clump. */
 	blades: number;
 	stiffness: number;
+	/**
+	 * Relative frequency. Defaults to 1; below that the plant is a feature rather than
+	 * groundcover, and the bed reads as planted rather than as one species repeated.
+	 */
+	weight?: number;
 };
 
 export const PLANTS: PlantSpec[] = [
@@ -259,8 +568,24 @@ export const PLANTS: PlantSpec[] = [
 	// A low bushy stand of fine leaflets — reads as mass rather than as blades.
 	{ form: 'bushy', height: 0.1, width: 1.8, blades: 7, stiffness: 0.95 },
 	// Foreground carpet: short, dense, and it hides where the taller stands meet sand.
-	{ form: 'ribbon', height: 0.075, width: 2.2, blades: 7, stiffness: 0.7 }
+	{ form: 'ribbon', height: 0.075, width: 2.2, blades: 7, stiffness: 0.7 },
+	// A tall leafy stem — dense leaflets up a curving stalk. Deliberately uncommon: it
+	// is the tallest and busiest thing in the bed, and a stand of them would be a hedge.
+	{ form: 'leafy', height: 0.21, width: 2.2, blades: 3, stiffness: 0.75, weight: 0.6 }
 ];
+
+/** Summed once: the draw path runs every frame and must not add work per clump. */
+const PLANT_WEIGHT_TOTAL = PLANTS.reduce((sum, plant) => sum + (plant.weight ?? 1), 0);
+
+/** Picks a plant by weight from a 0–1 roll. */
+export function plantFor(roll: number): PlantSpec {
+	let remaining = roll * PLANT_WEIGHT_TOTAL;
+	for (const plant of PLANTS) {
+		remaining -= plant.weight ?? 1;
+		if (remaining <= 0) return plant;
+	}
+	return PLANTS[PLANTS.length - 1];
+}
 
 /**
  * A gust travelling across the tank, in radians at `x`.
@@ -304,13 +629,18 @@ function drawPlantLayer(
 	ctx.save();
 	ctx.lineCap = 'round';
 
+	const chest = chestBounds(size);
+
 	for (let i = 0; i < clumps; i++) {
 		const jitter = noise(i, opts.salt);
 		const x = (i / clumps) * size.w + jitter * 30;
+
+		// Nothing roots inside the chest. A clump landing on it grew through the lid.
+		if (x > chest.from && x < chest.to) continue;
 		// Deterministic, and never `i % PLANTS.length`: a stride that shares a factor
 		// with the table length collapses the bed to one or two species, the same way
 		// `hash % 6` once made six fish species render as two.
-		const spec = PLANTS[Math.floor(noise(i, opts.salt + 31) * PLANTS.length)];
+		const spec = plantFor(noise(i, opts.salt + 31));
 
 		drawClump(ctx, size, color, spec, x, jitter, t, opts);
 	}
@@ -355,7 +685,9 @@ function drawClump(
 		ctx.fillStyle = tone;
 		ctx.strokeStyle = tone;
 
-		if (spec.form === 'bushy') {
+		if (spec.form === 'leafy') {
+			drawLeafy(ctx, bx, base, height, width, lean, splay);
+		} else if (spec.form === 'bushy') {
 			drawBushy(ctx, bx, base, height, width, lean + splay);
 		} else {
 			drawBlade(ctx, bx, base, height, width, lean, splay, spec.form === 'broadleaf', tone);
@@ -470,6 +802,70 @@ function bladeWash(
 	return wash;
 }
 
+/**
+ * A leafy stem: a curving stalk carrying paired leaflets all the way up.
+ *
+ * Leaflets are angled off the stem's own local direction rather than off vertical, so
+ * they keep pointing "up the plant" as the stalk bends instead of fanning sideways when
+ * it leans. They shrink toward the tip, which is what makes a stem read as growing
+ * rather than as a bottle brush.
+ */
+function drawLeafy(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	base: number,
+	height: number,
+	width: number,
+	lean: number,
+	splay: number
+): void {
+	const SEGMENTS = 20;
+	const stem: { x: number; y: number }[] = [];
+	for (let s = 0; s <= SEGMENTS; s++) {
+		const u = s / SEGMENTS;
+		stem.push({ x: x + lean * u * u + splay * u ** 1.4, y: base - height * u });
+	}
+
+	ctx.lineWidth = Math.max(1, width * 0.6);
+	ctx.beginPath();
+	ctx.moveTo(stem[0].x, stem[0].y);
+	for (const p of stem) ctx.lineTo(p.x, p.y);
+	ctx.stroke();
+
+	for (let s = 1; s <= SEGMENTS; s++) {
+		const u = s / SEGMENTS;
+		const here = stem[s];
+		const along = Math.atan2(here.y - stem[s - 1].y, here.x - stem[s - 1].x);
+		// Long enough that neighbouring whorls overlap. Sparse leaflets on a bare stalk
+		// read as a twig; the plant this is drawn from is dense enough to be a column.
+		const leaf = width * 5.4 * (1 - u * 0.45);
+
+		for (const side of [-1, 1] as const) {
+			// Swept back toward the base, as a growing leaf is, not square to the stem.
+			const angle = along + side * 0.78;
+			const tipX = here.x + Math.cos(angle) * leaf;
+			const tipY = here.y + Math.sin(angle) * leaf;
+			const belly = leaf * 0.3;
+
+			ctx.beginPath();
+			ctx.moveTo(here.x, here.y);
+			ctx.quadraticCurveTo(
+				here.x + Math.cos(angle) * leaf * 0.5 - Math.sin(angle) * belly,
+				here.y + Math.sin(angle) * leaf * 0.5 + Math.cos(angle) * belly,
+				tipX,
+				tipY
+			);
+			ctx.quadraticCurveTo(
+				here.x + Math.cos(angle) * leaf * 0.5 + Math.sin(angle) * belly,
+				here.y + Math.sin(angle) * leaf * 0.5 - Math.cos(angle) * belly,
+				here.x,
+				here.y
+			);
+			ctx.fill();
+		}
+	}
+}
+
 /** A low stand of fine leaflets: mass rather than blades. */
 function drawBushy(
 	ctx: CanvasRenderingContext2D,
@@ -488,6 +884,53 @@ function drawBushy(
 		ctx.quadraticCurveTo(x + lean * 0.3, base - height * 0.5, tipX, base - height * u);
 		ctx.stroke();
 	}
+}
+
+/**
+ * Food scattered on the surface, sinking and fading.
+ *
+ * Capped well under the ambient bubble size for the same reason those are: a waiting
+ * task *is* a ~24px bubble you can tap, and anything approaching it reads as a control.
+ * Flakes are smaller still, and they are never interactive.
+ */
+export const MAX_FLAKE = 3.4;
+
+const FLAKES = 44;
+
+export function drawFeed(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	time: number,
+	feeding: number
+): void {
+	if (feeding <= 0) return;
+
+	const t = time / 1000;
+	// `feeding` runs 1 -> 0 over the window, so this is how far through it we are.
+	const progress = 1 - feeding;
+
+	ctx.save();
+	for (let i = 0; i < FLAKES; i++) {
+		const x = noise(i, 61) * size.w;
+		// Scattered on the surface and sinking. Each flake falls at its own rate, so the
+		// scatter spreads out as it descends instead of dropping as a sheet.
+		const fall = 90 + noise(i, 67) * 220;
+		const y = WATERLINE + 8 + progress * fall;
+		if (y > size.h - 30) continue;
+
+		// Fade in fast, out slowly: the arrival is the moment worth seeing.
+		const life = Math.min(1, progress * 6) * feeding;
+		const r = MAX_FLAKE * (0.45 + noise(i, 71) * 0.55);
+
+		ctx.globalAlpha = life * 0.92;
+		// Amber, not cream: at flake size a pale tint is indistinguishable from the
+		// ambient motes already drifting in the water, and the food read as dust.
+		ctx.fillStyle = 'rgba(252, 205, 128, 1)';
+		ctx.beginPath();
+		ctx.arc(x + Math.sin(t * 1.4 + i) * 4, y, r, 0, Math.PI * 2);
+		ctx.fill();
+	}
+	ctx.restore();
 }
 
 /** Fine particulate drifting in the light. Cheap, and it makes the water feel occupied. */
@@ -627,11 +1070,15 @@ export function drawTank(
 	ctx: CanvasRenderingContext2D,
 	size: Size,
 	colors: Palette,
-	time: number
+	time: number,
+	pearls = 0
 ): void {
 	drawWater(ctx, size, colors);
 	drawCaustics(ctx, size, time, colors.light);
 	drawSubstrate(ctx, size, colors);
+	// Between the sand and the planting: grass grows in front of the chest, which hides
+	// its base and settles it into the bed instead of standing it on top of everything.
+	drawChest(ctx, size, colors, pearls, time);
 	drawPlants(ctx, size, colors, time);
 	drawMotes(ctx, size, time, colors.light);
 	drawAirBubbles(ctx, size, time, colors.light);

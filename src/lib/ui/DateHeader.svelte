@@ -60,12 +60,22 @@
 		date: string;
 		environment: Environment;
 		clearedPct: number;
+		/**
+		 * Today's calendar date, supplied by the page and refreshed as the clock runs.
+		 *
+		 * Not read from `today()` in here. `formatDay(date)` defaulted to it, and the
+		 * label only recomputes when `date` changes — so a tank left open past midnight
+		 * went on saying "Today" while showing yesterday, and a task added then was
+		 * filed under yesterday's date without a word.
+		 */
+		now: string;
 		onNavigate: (date: string) => void;
 	};
 
-	const { date, environment, clearedPct, onNavigate }: Props = $props();
+	const { date, environment, clearedPct, now, onNavigate }: Props = $props();
 
-	const label = $derived(formatDay(date));
+	const label = $derived(formatDay(date, now));
+	const isToday = $derived(date === now);
 	// Calm hides the number entirely; there is nothing to score.
 	const showsMood = $derived(environment === 'progress');
 </script>
@@ -80,12 +90,24 @@
 		‹
 	</button>
 
-	<div class="day">
-		<h1>{label}</h1>
-		{#if showsMood}
-			<p class="mood">{moodPercent(clearedPct)}% · {moodWord(clearedPct)}</p>
-		{/if}
-	</div>
+	{#if isToday}
+		<div class="day">
+			<h1>{label}</h1>
+			{#if showsMood}
+				<p class="mood">{moodPercent(clearedPct)}% · {moodWord(clearedPct)}</p>
+			{/if}
+		</div>
+	{:else}
+		<!--
+			Away from today, the label itself is the way back. Returning was the only
+			O(n) interaction left in the app — three weeks back was twenty-one taps on
+			an arrow, and nothing else here makes you repeat a gesture to undo it.
+		-->
+		<button type="button" class="day back" aria-label="Back to today" onclick={() => onNavigate(now)}>
+			<h1>{label}</h1>
+			<p class="hint">Back to today</p>
+		</button>
+	{/if}
 
 	<button
 		type="button"
@@ -98,6 +120,28 @@
 </header>
 
 <style>
+	button.day {
+		border: 0;
+		background: none;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+		padding: 0.1rem 0.6rem;
+		border-radius: 0.7rem;
+	}
+
+	button.day:hover,
+	button.day:focus-visible {
+		background: rgba(255, 255, 255, 0.14);
+	}
+
+	.hint {
+		margin: 0.1rem 0 0;
+		font-size: 0.68rem;
+		letter-spacing: 0.02em;
+		opacity: 0.75;
+	}
+
 	header {
 		display: flex;
 		align-items: center;

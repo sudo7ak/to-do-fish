@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { bedTopAt, drawAirBubbles, drawPlants, MAX_AIR_BUBBLE, PLANTS, WATERLINE } from './water';
+import {
+	bedTopAt,
+	chestBounds,
+	COIN_RGB,
+	drawAirBubbles,
+	drawChest,
+	drawFeed,
+	drawPlants,
+	MAX_AIR_BUBBLE,
+	MAX_FLAKE,
+	PLANTS,
+	plantFor,
+	WATERLINE
+} from './water';
 import { palette } from './palette';
 
 const SIZE = { w: 420, h: 860 };
@@ -192,5 +205,210 @@ describe('the bed', () => {
 
 		expect(afterOneFrame).toBeGreaterThan(0);
 		expect(ctx.gradients.length).toBe(afterOneFrame);
+	});
+});
+
+describe('the feeding flourish', () => {
+	it('draws nothing at all when no one has finished anything', () => {
+		const ctx = arcCtx();
+		drawFeed(ctx, SIZE, 1000, 0);
+		expect(ctx.arcs).toEqual([]);
+	});
+
+	it('scatters food while the flourish is running', () => {
+		const ctx = arcCtx();
+		drawFeed(ctx, SIZE, 1000, 0.6);
+		expect(ctx.arcs.length).toBeGreaterThan(0);
+	});
+
+	it('never draws a flake near the size of a tappable bubble', () => {
+		// Same rule as the ambient bubbles: a waiting task is a ~24px bubble you can tap,
+		// and anything approaching it reads as a control that does not respond.
+		for (let step = 0; step <= 20; step++) {
+			const ctx = arcCtx();
+			drawFeed(ctx, SIZE, step * 200, 1 - step / 20);
+			for (const arc of ctx.arcs) expect(arc.r).toBeLessThanOrEqual(MAX_FLAKE);
+		}
+
+		expect(MAX_FLAKE).toBeLessThan(24 / 6);
+	});
+
+	it('keeps the food in the water and off the bed', () => {
+		for (let step = 0; step <= 20; step++) {
+			const ctx = arcCtx();
+			drawFeed(ctx, SIZE, step * 200, 1 - step / 20);
+			for (const arc of ctx.arcs) {
+				expect(arc.y).toBeGreaterThan(WATERLINE);
+				expect(arc.y).toBeLessThan(SIZE.h - 20);
+			}
+		}
+	});
+
+	it('sinks as the flourish runs down', () => {
+		const depthAt = (feeding: number) => {
+			const ctx = arcCtx();
+			drawFeed(ctx, SIZE, 1000, feeding);
+			return Math.max(...ctx.arcs.map((a) => a.y));
+		};
+
+		expect(depthAt(0.3)).toBeGreaterThan(depthAt(0.9));
+	});
+});
+
+describe('the leafy stem', () => {
+	it('is in the table, and is the tallest thing in the bed', () => {
+		const leafy = PLANTS.find((p) => p.form === 'leafy');
+		expect(leafy).toBeDefined();
+		expect(Math.max(...PLANTS.map((p) => p.height))).toBe(leafy!.height);
+	});
+
+	it('stays rare, so the bed is planted rather than hedged', () => {
+		// Weighted below 1: it is the busiest plant here and a stand of them is a wall.
+		const drawn: Record<string, number> = {};
+		for (let i = 0; i <= 400; i++) {
+			const spec = plantFor(i / 400);
+			drawn[spec.form] = (drawn[spec.form] ?? 0) + 1;
+		}
+
+		const share = (drawn.leafy ?? 0) / 401;
+		expect(share).toBeGreaterThan(0);
+		expect(share).toBeLessThan(1 / PLANTS.length);
+	});
+
+	it('still covers the whole roll, so no plant is unreachable', () => {
+		const forms = new Set(Array.from({ length: 400 }, (_, i) => plantFor(i / 399).form));
+		for (const spec of PLANTS) expect(forms.has(spec.form)).toBe(true);
+	});
+});
+
+/** Records rotations and path points, for the chest's lid. */
+function chestCtx() {
+	const rotations: number[] = [];
+	const points: { x: number; y: number }[] = [];
+	const fills: string[] = [];
+	const gradient = { addColorStop: () => {} };
+
+	const ctx = {
+		rotations,
+		points,
+		fills,
+		globalAlpha: 1,
+		fillStyle: '' as unknown,
+		strokeStyle: '',
+		lineWidth: 0,
+		save() {},
+		restore() {},
+		beginPath() {},
+		closePath() {},
+		clip() {},
+		fill() {
+			fills.push(typeof ctx.fillStyle === 'string' ? ctx.fillStyle : '');
+		},
+		stroke() {},
+		ellipse(x: number, y: number) {
+			points.push({ x, y });
+		},
+		translate() {},
+		fillRect(x: number, y: number, w: number, h: number) {
+			points.push({ x, y }, { x: x + w, y: y + h });
+		},
+		rotate(a: number) {
+			rotations.push(a);
+		},
+		createLinearGradient: () => gradient,
+		createRadialGradient: () => gradient,
+		moveTo(x: number, y: number) {
+			points.push({ x, y });
+		},
+		lineTo(x: number, y: number) {
+			points.push({ x, y });
+		},
+		quadraticCurveTo(_a: number, _b: number, x: number, y: number) {
+			points.push({ x, y });
+		}
+	} as unknown as CanvasRenderingContext2D & {
+		rotations: number[];
+		points: { x: number; y: number }[];
+		fills: string[];
+	};
+
+	return ctx;
+}
+
+describe('the treasure chest', () => {
+	it('sits on the sand, not in the water column', () => {
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 6, 0);
+
+		expect(ctx.points.length).toBeGreaterThan(0);
+		for (const p of ctx.points) {
+			// The lid is drawn in a translated frame, so only absolute points are checked.
+			if (Math.abs(p.x) < 1 && Math.abs(p.y) < 1) continue;
+			if (p.y < 200) continue;
+			expect(p.y).toBeGreaterThan(SIZE.h - 140);
+			expect(p.y).toBeLessThan(SIZE.h + 10);
+		}
+	});
+
+	it('stays shut when there is nothing to keep in it', () => {
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 0, 0);
+
+		for (const a of ctx.rotations) expect(Math.abs(a)).toBeLessThan(0.01);
+	});
+
+	it('opens further the richer you are, and then stops', () => {
+		const lift = (pearls: number) => {
+			const ctx = chestCtx();
+			drawChest(ctx, SIZE, COLORS, pearls, 0);
+			return Math.max(0, ...ctx.rotations.map(Math.abs));
+		};
+
+		expect(lift(4)).toBeGreaterThan(lift(0));
+		expect(lift(12)).toBeGreaterThan(lift(4));
+		// Past the cap it is already wide open; a bigger balance must not fold it over.
+		expect(lift(400)).toBe(lift(14));
+		expect(lift(400)).toBeLessThan(0.45);
+	});
+
+	it('carries the balance past the point the pearls stop being drawn', () => {
+		// Beyond MAX_VISIBLE_PEARLS the bed stops adding beads, so without the chest a
+		// balance of 12 and one of 300 looked identical. The lid is what still moves.
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 40, 0);
+		expect(Math.max(...ctx.rotations.map(Math.abs))).toBeGreaterThan(0);
+	});
+});
+
+describe('the hoard', () => {
+	/** Gold laid down, which only the hoard paints. */
+	const goldFills = (pearls: number) => {
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, pearls, 4000);
+		return ctx.fills.filter((c) => c.startsWith(`rgba(${COIN_RGB}`));
+	};
+
+	it('shows nothing when the chest is shut', () => {
+		// Counting marks inside the chest's bounds would count the box's own lock plate
+		// and bands. Gold is painted by the hoard and nothing else.
+		expect(goldFills(0).length).toBe(0);
+	});
+
+	it('heaps higher the larger the balance', () => {
+		expect(goldFills(14).length).toBeGreaterThan(goldFills(3).length);
+	});
+
+	it('keeps every coin and stone inside the chest', () => {
+		// Clipped in the renderer, but the geometry should not rely on the clip: a heap
+		// dealt outside the box would still be wrong if the clip were ever removed.
+		const bounds = chestBounds(SIZE);
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 40, 4000);
+
+		for (const p of ctx.points) {
+			if (p.y < 200) continue; // lid, drawn in its own translated frame
+			expect(p.x).toBeGreaterThan(bounds.from - 6);
+			expect(p.x).toBeLessThan(bounds.to + 6);
+		}
 	});
 });

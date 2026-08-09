@@ -36,6 +36,16 @@ export const MAX_VISIBLE_TREATS = 4;
 export const MAX_VISIBLE_PEARLS = 9;
 export const MAX_VISIBLE_KOI = 3;
 
+/**
+ * How long the flourish runs after a task is finished.
+ *
+ * Feeding is the moment a real aquarium comes alive, and completion was this app's
+ * flattest beat — the fish drains to a ghost, which is a subtraction. This is the
+ * reward, and deliberately *not* a mechanic: nothing to feed, nothing to maintain, and
+ * no obligation created by not opening the app.
+ */
+export const FEED_WINDOW_MS = 4000;
+
 /** Depth of a bubble about to fire, and of one still a week away. 0 = waterline, 1 = floor. */
 const DEPTH_IMMINENT = 0.2;
 const DEPTH_DISTANT = 0.8;
@@ -90,7 +100,12 @@ export function buildScene(tasks: Task[], koi: KoiRecord[], date: string, now: n
 			.map(toKoi)
 	];
 
-	return { creatures, clearedPct: clearedPct(today), pearls: balance };
+	return {
+		creatures,
+		clearedPct: clearedPct(today),
+		pearls: balance,
+		feeding: feeding(live, now)
+	};
 }
 
 /** Everything in the water: bubbles, fish, and ghosts. */
@@ -182,6 +197,34 @@ function pearls(balance: number): Creature[] {
 		depth: 1,
 		tapRadius: TAP_RADIUS.pearl
 	}));
+}
+
+/**
+ * How much flourish is owed right now, from the most recent completion.
+ *
+ * Reads `live`, so a deleted task cannot feed the tank — the soft-delete filter has to
+ * appear on every derived read, and this is one. Treats are excluded for the same
+ * reason they do not mint pearls: claiming a reward you already paid for is not work.
+ *
+ * Not date-scoped, unlike the creature list. Finishing yesterday's task while looking
+ * at yesterday should stir the tank you are actually looking at.
+ */
+function feeding(live: Task[], now: number): number {
+	let freshest = 0;
+
+	for (const task of live) {
+		if (task.status !== 'done' || task.treatCost !== undefined) continue;
+		const at = task.completedAt;
+		// A completion stamped in the future is clock skew; treat it as not yet happened
+		// rather than running the flourish on a negative age, which would never end.
+		if (at === undefined || at > now) continue;
+		freshest = Math.max(freshest, at);
+	}
+
+	if (freshest === 0) return 0;
+
+	const age = now - freshest;
+	return age >= FEED_WINDOW_MS ? 0 : 1 - age / FEED_WINDOW_MS;
 }
 
 function toKoi(record: KoiRecord): Creature {

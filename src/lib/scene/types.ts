@@ -49,4 +49,12 @@ export type Scene = {
 	clearedPct: number;
 	/** Derived balance, never stored: earned − spent. */
 	pearls: number;
+	/**
+	 * 0–1, how recently something was finished. Drives the feeding flourish.
+	 *
+	 * Derived from `completedAt`, never stored, and transient by construction: it decays
+	 * to zero and stays there, so it cannot accumulate, cannot be missed, and costs
+	 * nothing if you never look at the tank.
+	 */
+	feeding: number;
 };

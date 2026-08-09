@@ -52,6 +52,27 @@ reward for finishing.
 
 ## 2. Fish appearance
 
+### Tank pass 2 — landed 2026-08-09
+
+Merged from `feeding-flourish`. Completing a task now feeds the tank: food scatters and
+the shoal quickens for four seconds, derived from `completedAt` and never stored. The
+prize patrols instead of hovering, and `pitch`/`turn` ignore sub-pixel travel — at the
+prize's old speed the heading was noise multiplied by twelve. A leafy stem plant joins
+the bed under weighted selection. Pearls rest on the sand rather than 30–55px beneath
+it, and a chest sits in the middle holding gold and gemstones, carrying the balance
+past the point the bed stops drawing beads.
+
+The date header could lie: it read "Today" on a tank left open past midnight, filing new
+tasks under yesterday. Today is now a live prop, and the label doubles as one tap back
+to today.
+
+**Still open from that work:**
+
+- Fish still pass through one another (plan Phase 4), and pectorals do not scull.
+- The **bushy** plant form is the weakest of the five.
+- A date picker was deliberately deferred behind the Today control — see whether the
+  cheap fix removed the need before adding the calendar.
+
 ### Realism pass — landed 2026-08-09
 
 `docs/superpowers/plans/2026-08-09-fish-realism.md`, merged. Tail beat now follows how
@@ -143,6 +164,30 @@ both marked. Re-adding a distinguishing rim is the cheap fix.
 
 **Observed once.** Body stayed in bounds, caudal fin crossed the boundary. The
 `speciesReach` pitch fix addressed rotation; this is a separate residual.
+
+---
+
+## 2b. Completion flourish — landed 2026-08-09
+
+Finishing a task now scatters food and stirs the shoal for four seconds. Completion had
+been the flattest beat in the app: the fish drains to a ghost, which is a *subtraction*,
+and the pearl lands on the sand where you may not look.
+
+**Deliberately not a mechanic.** No feeding action, nothing to maintain, and no
+obligation created by not opening the app — a tank that needs tending would guilt you
+for a bad week, which is the same reason ghosts are not deleted on a cleared day and
+the grass idea has to ratchet rather than wither.
+
+**Growth was considered and rejected**, on three grounds worth keeping: fish size
+already encodes species identity (`speciesReach`, clipping and tap radii all derive from
+length); a fish only lives while its task is open, so growth over that span is either
+invisible or means the most-avoided task grows the handsomest fish; and a second
+currency alongside pearls dilutes both. Tank-level growth (the grass ratchet) remains
+the better home for long-term progress.
+
+`Scene.feeding` is derived from `completedAt`, never stored, and decays to zero, so it
+cannot accumulate or be missed. It rides the existing `effort` input rather than adding
+a second animation path.
 
 ---
 
