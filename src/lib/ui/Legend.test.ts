@@ -53,7 +53,14 @@ describe('legend entries', () => {
 		}
 	});
 
-	it('draws no creature at a scale that would spill its row', () => {
+	// Whether a creature actually FITS its tile is not covered by any test, and this
+	// one does not pretend to: it is a sanity bound on the constant, nothing more.
+	// Both fit defects this sheet has had — a treat's caudal clipped at the tile edge
+	// at 0.8, the ghost overflowing at 0.9 — sit inside this range and passed it. Fit
+	// is verified by the deviceScaleFactor 4 screenshot step in CLAUDE.md, by eye.
+	// Changing creature geometry (FIN_SHAPE, speciesReach, a species `length`)
+	// silently invalidates all seven hand-tuned zooms with no automated signal.
+	it('gives every row a positive draw scale within a sane bound', () => {
 		for (const entry of LEGEND_ENTRIES) {
 			expect(entry.zoom).toBeGreaterThan(0);
 			expect(entry.zoom).toBeLessThanOrEqual(1.5);
