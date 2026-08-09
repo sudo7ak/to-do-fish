@@ -1,0 +1,88 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # So the site can be redeployed without a code change.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  # Required by actions/deploy-pages: it exchanges this for a deployment token.
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published, but never
+# queue more than one behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Typecheck
+        run: npm run check
+
+      # The E2E sweep is this project's real safety net: it drives the app through the
+      # buttons a person uses. It runs against the dev server on :5199, without
+      # BASE_PATH, because the dev server serves from the root.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start dev server
+        run: |
+          npx vite dev --port 5199 &
+          # Polled with curl rather than a helper package: nothing here should pull an
+          # unpinned dependency from the network mid-run.
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:5199 >/dev/null && exit 0
+            sleep 1
+          done
+          echo "dev server did not come up on :5199"; exit 1
+
+      - name: End-to-end checks
+        run: npm run e2e
+
+      # Only the Pages build gets a base path. A project site is served from
+      # /<repo>/, and the repository name is the path.
+      - name: Build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}
+        run: npm run build
+
+      - name: Guard against Jekyll eating the app
+        run: |
+          # Pages runs Jekyll, which drops directories beginning with an underscore --
+          # and SvelteKit puts the whole app in _app/. Without this file the site
+          # deploys "successfully" and then 404s every script.
+          test -f build/.nojekyll || { echo "build/.nojekyll missing"; exit 1; }
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
