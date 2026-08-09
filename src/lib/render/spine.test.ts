@@ -193,3 +193,42 @@ describe('outline', () => {
 		}
 	});
 });
+
+describe('effort — the body works harder when it is going faster', () => {
+	const wave = { amplitude: 0.2, wavelength: 1.0, speed: 6 };
+
+	/** How far the spine strays from its own nose-to-tail axis: total lateral spread. */
+	const spread = (spine: ReturnType<typeof spineFor>) =>
+		Math.max(...spine.map((p) => p.y)) - Math.min(...spine.map((p) => p.y));
+
+	it('bends less at a glide than at a burst, same species and phase', () => {
+		// Sampled across a full wave cycle: a single instant can land on a zero crossing,
+		// where every effort looks identically straight and the test proves nothing.
+		let glideTotal = 0;
+		let burstTotal = 0;
+
+		for (let i = 0; i < 24; i++) {
+			const time = i * 40;
+			glideTotal += spread(spineFor(40, wave, time, 0.7, 8, 0.4));
+			burstTotal += spread(spineFor(40, wave, time, 0.7, 8, 1.4));
+		}
+
+		expect(burstTotal).toBeGreaterThan(glideTotal * 1.5);
+	});
+
+	it('defaults to unchanged behaviour when no effort is given', () => {
+		const withDefault = spineFor(40, wave, 300, 0.7);
+		const explicit = spineFor(40, wave, 300, 0.7, 8, 1);
+
+		expect(withDefault).toEqual(explicit);
+	});
+
+	it('never straightens the body completely, however slow the glide', () => {
+		// A fish that stops undulating entirely reads as a dead sprite being towed.
+		const spreads = Array.from({ length: 24 }, (_, i) =>
+			spread(spineFor(40, wave, i * 40, 0.7, 8, 0))
+		);
+
+		expect(Math.max(...spreads)).toBeGreaterThan(0.5);
+	});
+});

@@ -49,6 +49,15 @@ export type Placement = {
 	 * rather than an animal going somewhere.
 	 */
 	pitch: number;
+	/**
+	 * How hard the fish is working, as a multiple of its own average pace. Drives the
+	 * body wave, so a coasting fish straightens and a bursting one digs in.
+	 *
+	 * Computed here rather than in the renderer because `swimPosition` is what varies
+	 * the speed; deriving it a second time from a separate formula is exactly how
+	 * `pitch` would have drifted from the path it describes.
+	 */
+	effort: number;
 };
 
 /**
@@ -146,7 +155,9 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 			x: here.x,
 			y: here.y,
 			flip: Math.cos(cruise) < 0,
-			pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y)
+			pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y),
+			// The prize cruises on its own slow warp, so it eases rather than tracking.
+			effort: 1 + Math.cos(t * 0.29 + phase) * 0.35
 		};
 	}
 	if (creature.kind === 'pearl') {
@@ -175,7 +186,14 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 			? size.w * (PILL_EDGE + along * bandWidth)
 			: size.w * (0.04 + along * bandWidth);
 
-		return { x, y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6, flip: false, pitch: 0 };
+		return {
+			x,
+			y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6,
+			flip: false,
+			pitch: 0,
+			// A pearl has no body to undulate; the value is inert.
+			effort: 1
+		};
 	}
 
 	const kindSpeed = creature.kind === 'koi' ? 0.5 : creature.kind === 'ghost' ? 0.62 : 1;
@@ -191,8 +209,45 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		y: here.y,
 		flip: here.flip,
 		// A frozen clock gives two identical samples, so a still fish sits level.
-		pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y)
+		pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y),
+		// Read off the warp's own derivative rather than measured from `here`/`ahead`:
+		// the horizontal sweep reverses at each end of its lane, where the measured
+		// speed collapses to nearly zero even though the fish is turning, not coasting.
+		effort: animate ? glideRate(t, phase) : 1
 	};
+}
+
+
+/**
+ * Burst and glide: the clock is warped instead of the path, so the same sinusoid is
+ * traversed quickly in places and slowly in others.
+ *
+ * The two terms and their derivative live together because the body wave reads its
+ * speed from `glideRate`. Written as two separate formulas they would drift, and the
+ * fish would beat hardest at the moment it was actually coasting — the same class of
+ * bug `FIN_FORWARD_REACH` exists to prevent.
+ *
+ * Strictly monotonic by construction: the derivative bottoms out at 1 - 0.541 and
+ * peaks at 1 + 0.541, so it never goes negative and the fish never twitches backwards.
+ */
+const GLIDE_TERMS = [
+	{ gain: 0.9, rate: 0.37, phaseMul: 1 },
+	{ gain: 1.6, rate: 0.13, phaseMul: 1.7 }
+] as const;
+
+function glideWarp(t: number, phase: number): number {
+	let sum = 0;
+	for (const term of GLIDE_TERMS) sum += Math.sin(t * term.rate + phase * term.phaseMul) * term.gain;
+	return sum;
+}
+
+/** d(t + glideWarp)/dt — the fish's speed as a multiple of its own average. */
+function glideRate(t: number, phase: number): number {
+	let sum = 1;
+	for (const term of GLIDE_TERMS) {
+		sum += Math.cos(t * term.rate + phase * term.phaseMul) * term.gain * term.rate;
+	}
+	return sum;
 }
 
 /** Where a swimmer is at time `t` (seconds). Split out so `place` can sample it twice. */
@@ -215,7 +270,7 @@ function swimPosition(
 	 * peaks near 1.54) — if it ever went negative the fish would twitch backwards
 	 * mid-stroke instead of easing.
 	 */
-	const warp = t + Math.sin(t * 0.37 + phase) * 0.9 + Math.sin(t * 0.13 + phase * 1.7) * 1.6;
+	const warp = t + glideWarp(t, phase);
 	const swim = warp * pace;
 
 	// Horizontal sweep. Each fish gets its own lane centre as well as its own
@@ -888,7 +943,7 @@ function drawFish(
 	if (at.flip) ctx.scale(-1, 1);
 
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
-	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const spine = spineFor(spec.length, spec.wave, time, phase, undefined, at.effort);
 	const loop = outline(spine, spec.profile, spec.length);
 
 	drawRearFins(ctx, spec, spine, time, phase);
@@ -912,7 +967,7 @@ function drawGhost(
 	if (at.flip) ctx.scale(-1, 1);
 
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
-	const spine = spineFor(spec.length, spec.wave, time, phase);
+	const spine = spineFor(spec.length, spec.wave, time, phase, undefined, at.effort);
 	const loop = outline(spine, spec.profile, spec.length);
 
 	// Legible, but plainly spent. At 0.4 the outline vanished against the water and
@@ -1045,7 +1100,14 @@ function drawBubble(ctx: CanvasRenderingContext2D, creature: Creature, time: num
 	ctx.clip();
 	ctx.scale(0.62, 0.62);
 	ctx.translate(Math.sin(time / 800 + seed) * 7, Math.cos(time / 1100 + seed) * 4);
-	drawFish(ctx, { x: 0, y: 0, flip: false, pitch: 0 }, SPECIES[speciesFor(creature.id)], time, seed);
+	drawFish(
+		ctx,
+		// Sealed in, so it nudges the wall rather than swimming: a low, steady effort.
+		{ x: 0, y: 0, flip: false, pitch: 0, effort: 0.85 },
+		SPECIES[speciesFor(creature.id)],
+		time,
+		seed
+	);
 	ctx.restore();
 
 	ctx.beginPath();

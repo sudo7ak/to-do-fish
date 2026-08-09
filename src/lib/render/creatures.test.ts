@@ -133,9 +133,16 @@ function fakeCtx() {
  * inequality only ever proved "something moved" — it passed just as happily if the
  * body froze and the bubble trail carried the difference.
  */
-function expectedOutline(id: string, spec: SpeciesSpec, time: number) {
+function expectedOutline(id: string, spec: SpeciesSpec, time: number, effort = 1) {
 	const phase = mix32(hash(id) ^ 0x11) * Math.PI * 2;
-	return outline(spineFor(spec.length, spec.wave, time, phase), spec.profile, spec.length);
+	// `effort` has to come from the same placement the renderer was handed. The body
+	// wave now scales with how hard the fish is working, so recomputing the spine at a
+	// default effort compares the drawn body against one that was never drawn.
+	return outline(
+		spineFor(spec.length, spec.wave, time, phase, undefined, effort),
+		spec.profile,
+		spec.length
+	);
 }
 
 /**
@@ -161,9 +168,15 @@ function drawnPathPoints(ctx: { calls: string[] }): Set<string> {
 const asKey = (p: { x: number; y: number }) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
 
 /** Asserts the species' computed outline was actually traced onto the canvas. */
-function expectBodyDrawn(ctx: { calls: string[] }, id: string, spec: SpeciesSpec, time: number) {
+function expectBodyDrawn(
+	ctx: { calls: string[] },
+	id: string,
+	spec: SpeciesSpec,
+	time: number,
+	effort = 1
+) {
 	const drawn = drawnPathPoints(ctx);
-	const expected = expectedOutline(id, spec, time);
+	const expected = expectedOutline(id, spec, time, effort);
 
 	// The closing point is consumed only as a curve endpoint's midpoint, never as a
 	// control or a moveTo, so it is the one point of the loop that cannot be observed.
@@ -238,8 +251,9 @@ describe('drawCreature — every kind', () => {
 
 		for (const time of [0, 1100]) {
 			const ctx = fakeCtx();
-			drawCreature(ctx, c, place(c, SIZE, time), COLORS, time);
-			expectBodyDrawn(ctx, id, spec, time);
+			const at = place(c, SIZE, time);
+			drawCreature(ctx, c, at, COLORS, time);
+			expectBodyDrawn(ctx, id, spec, time, at.effort);
 		}
 	});
 });
@@ -289,14 +303,15 @@ describe('body drawing follows the spine', () => {
 
 		for (const time of [0, 900]) {
 			const ctx = fakeCtx();
-			drawCreature(ctx, c, place(c, SIZE, time), COLORS, time);
-			expectBodyDrawn(ctx, id, spec, time);
+			const at = place(c, SIZE, time);
+			drawCreature(ctx, c, at, COLORS, time);
+			expectBodyDrawn(ctx, id, spec, time, at.effort);
 		}
 
 		// And the two outlines are genuinely different, so the assertions above are not
 		// both satisfied by one frozen shape.
-		expect(expectedOutline(id, spec, 0).map(asKey)).not.toEqual(
-			expectedOutline(id, spec, 900).map(asKey)
+		expect(expectedOutline(id, spec, 0, place(c, SIZE, 0).effort).map(asKey)).not.toEqual(
+			expectedOutline(id, spec, 900, place(c, SIZE, 900).effort).map(asKey)
 		);
 	});
 
@@ -675,7 +690,7 @@ describe('ghosts', () => {
 			const c = creature('ghost', { id });
 			// A fixed, level placement: `place` now also pitches a swimmer toward its
 			// direction of travel, which is a second `rotate()` and would be counted below.
-			drawCreature(ghost, c, { x: 200, y: 400, flip: false, pitch: 0 }, COLORS, 250);
+			drawCreature(ghost, c, { x: 200, y: 400, flip: false, pitch: 0, effort: 1 }, COLORS, 250);
 
 			// One `rotate()` per fin side: fins are the only thing left in a local frame.
 			const sides = SPECIES[name].fins.reduce(
@@ -704,7 +719,7 @@ describe('ghosts', () => {
 			for (let i = 0; i < 400 && !id; i++) if (speciesFor(`id-${i}`) === name) id = `id-${i}`;
 			const ctx = fakeCtx();
 			// Frozen clock and a shared placement, so only the species differs.
-			drawCreature(ctx, creature('ghost', { id }), { x: 200, y: 400, flip: false, pitch: 0 }, COLORS, 0);
+			drawCreature(ctx, creature('ghost', { id }), { x: 200, y: 400, flip: false, pitch: 0, effort: 1 }, COLORS, 0);
 			return ctx.calls.filter((call) => call.startsWith('quadraticCurveTo(')).join();
 		});
 

@@ -23,6 +23,32 @@ export type Wave = {
 const DEFAULT_SEGMENTS = 8;
 
 /**
+ * Tail sweep as a multiple of the species' own amplitude, given how hard the fish is
+ * currently working. `effort` is 1 at its average pace.
+ *
+ * A fish that beats its tail identically whether it is bursting or coasting is the
+ * single clearest tell that it is a sprite: real bodies straighten on the glide and dig
+ * in to accelerate. The path already varies speed — `swimPosition` warps the clock —
+ * but nothing connected that to the body until now.
+ *
+ * The floor is deliberately not zero. A fish that goes perfectly rigid at low speed
+ * stops reading as alive and starts reading as a dead sprite being towed, which is
+ * worse than the uniform beat this replaces.
+ */
+const GLIDE_DRIVE = 0.34;
+const BURST_DRIVE = 1.45;
+/**
+ * Speed swings by about ±54% around a fish's average, which on its own is too subtle
+ * to read at 40px. Widening it before clamping makes the glide legible as a glide.
+ */
+const EFFORT_GAIN = 1.35;
+
+function effortScale(effort: number): number {
+	const driven = 1 + (effort - 1) * EFFORT_GAIN;
+	return Math.min(BURST_DRIVE, Math.max(GLIDE_DRIVE, driven));
+}
+
+/**
  * Builds a spine of `segments + 1` points, nose first, facing +x.
  *
  * The chain is built by rotation, not by offsetting a straight line: each joint turns
@@ -45,10 +71,12 @@ export function spineFor(
 	wave: Wave,
 	time: number,
 	phase: number,
-	segments: number = DEFAULT_SEGMENTS
+	segments: number = DEFAULT_SEGMENTS,
+	effort: number = 1
 ): Spine {
 	const t = time / 1000;
 	const step = length / segments;
+	const drive = effortScale(effort);
 
 	const points: Spine = [{ x: length / 2, y: 0 }];
 	for (let i = 1; i <= segments; i++) {
@@ -56,7 +84,7 @@ export function spineFor(
 		// Amplitude ramps in along the body: the head barely moves, the tail sweeps.
 		const ramp = u * u;
 		const bend = Math.sin(t * wave.speed + phase - (u * Math.PI * 2) / wave.wavelength);
-		const angle = bend * wave.amplitude * ramp;
+		const angle = bend * wave.amplitude * ramp * drive;
 
 		const previous = points[i - 1];
 		points.push({

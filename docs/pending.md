@@ -52,6 +52,24 @@ reward for finishing.
 
 ## 2. Fish appearance
 
+### 2.0 The rendering-library question is answered — do not reopen
+
+Rive was evaluated properly (harness built, runtime wired, `docs/rive-experiment.md`).
+**No.** Two reasons, both measured rather than argued:
+
+- **Cost.** The runtime is 743 kB of wasm plus 95 kB of JS, gzipped, against a whole
+  app of 52 kB. Roughly a 16× download increase for something offline-first.
+- **It solves the wrong problem.** Frames pulled from `fish_tank_idea.mp4` show the
+  gap is *style and motion*, not rendering primitive: drawn outlines, a mascot eye,
+  uniform crispness at every depth, and a body that ripples instead of bending. An
+  authored asset would carry the same illustration grammar into a heavier runtime.
+
+A colour library (`culori`/`chroma-js`, OKLCH) remains a plausible fit for the palette
+items below — those are perceptual-contrast problems, not drawing problems.
+
+Realism work is planned in
+`docs/superpowers/plans/2026-08-09-fish-realism.md`.
+
 ### 2.1 Fin rework for the nine swimmers — done 2026-08-09
 
 The blade branch is gone. Both styles now share one construction, differing only in
