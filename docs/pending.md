@@ -8,11 +8,11 @@ be read.
 that was closed. This file supersedes its open items — where the two disagree, this
 one is current.
 
-State at the time of writing: 434 unit tests, 57/57 E2E checks, 0 typecheck errors,
-clean build, `main` at `4509fba`.
+State at the time of writing: 456 unit tests, 57/57 E2E checks, 0 typecheck errors,
+clean build.
 
-Each item says whether it was **measured** or is **suspected**, because the ones that
-were reasoned about rather than looked at are the ones that have been wrong before.
+Each item says whether it was **measured**, **looked at**, or **structural**, because
+the ones reasoned about rather than looked at are the ones that have been wrong before.
 
 ---
 
@@ -52,7 +52,7 @@ reward for finishing.
 
 ## 2. Fish appearance
 
-### 2.6 Realism pass — landed 2026-08-09
+### Realism pass — landed 2026-08-09
 
 `docs/superpowers/plans/2026-08-09-fish-realism.md`, merged. Tail beat now follows how
 hard the fish is working; bodies bend into turns; the drawn body outline is gone; the
