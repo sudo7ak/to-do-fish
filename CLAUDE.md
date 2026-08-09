@@ -92,9 +92,10 @@ render/pick.ts       pointer hit-testing
 render/loop.ts       requestAnimationFrame driver
 ```
 
-`drawCreature` has two callers: `ui/Tank.svelte` (the tank) and `ui/Legend.svelte`
-(one static thumbnail per creature kind, drawn from an explicit `Placement` so
-`place()` is bypassed and stays the single owner of position).
+`drawCreature` has two callers: `render/creatures.ts`'s own `drawCreatures`, which
+the tank drives from `routes/+page.svelte`, and `ui/Legend.svelte`, which draws one
+static thumbnail per creature kind from an explicit `Placement` so `place()` is
+bypassed and stays the single owner of position.
 
 `species.ts` holds 13 entries: 9 `SWIMMERS` (ordinary tasks), 3 `TREATS` (guilty
 pleasures, picked by `treatSpeciesFor`), and the `koi`. A body is a `Profile` —
