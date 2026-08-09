@@ -7,7 +7,7 @@ import { spineFor, outline } from './spine';
 import { hash, mix32 } from './rng';
 import { profilePeak } from './spine';
 
-import { WATERLINE } from './water';
+import { WATERLINE, bedTopAt } from './water';
 
 const SIZE = { w: 400, h: 800 };
 const COLORS = palette('calm', 1);
@@ -469,12 +469,17 @@ describe('place — where creatures sit', () => {
 		expect(shallow.y).toBeGreaterThan(WATERLINE);
 	});
 
-	it('settles pearls on the bed, not floating in open water', () => {
-		// Pearls are heavy. Lifted clear of the floor they read as bubbles.
+	it('settles pearls on the sand itself, not under it and not above it', () => {
+		// Pearls are heavy: lifted clear of the floor they read as bubbles. But the old
+		// assertion — inside the bottom 48px of the canvas — was satisfied by pearls
+		// buried 30-55px *below* the bed's surface, which is where they actually were.
+		// The property is that they rest on the surface `bedTopAt` defines.
 		for (let i = 0; i < 40; i++) {
-			const y = place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0).y;
-			expect(y).toBeGreaterThan(SIZE.h - 48);
-			expect(y).toBeLessThan(SIZE.h);
+			const at = place(creature('pearl', { id: `pearl-${i}` }), SIZE, 0);
+			const sand = bedTopAt(at.x, SIZE);
+
+			expect(at.y).toBeLessThan(sand);
+			expect(at.y).toBeGreaterThan(sand - 24);
 		}
 	});
 

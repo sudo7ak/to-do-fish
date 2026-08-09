@@ -1,6 +1,6 @@
 import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
-import { WATERLINE, surfaceOffset, type Size } from './water';
+import { WATERLINE, bedTopAt, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
 import {
 	speciesFor,
@@ -167,6 +167,12 @@ const CRUISE_BOB = 18;
 const PILL_EDGE = 0.74;
 
 /**
+ * How far a pearl's centre sits above the sand, so it rests *on* the bed with its
+ * lower edge just into the grain rather than balancing on top of it.
+ */
+const PEARL_SEAT = 4;
+
+/**
  * The exotic, drained of its colour: what a treat you cannot yet afford is drawn as.
  *
  * A module constant rather than a per-frame spread, so it is the same object on every
@@ -267,9 +273,18 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 			? size.w * (PILL_EDGE + along * bandWidth)
 			: size.w * (0.04 + along * bandWidth);
 
+		// Seated on the sand's real surface, which is what `bedTopAt` is for.
+		//
+		// This used to be `size.h - 14 - …`, a flat line near the bottom of the canvas.
+		// The bed's surface sits ~70px above that, so every pearl was drawn 30–55px
+		// *under* the sand, in the murky base of the substrate gradient and below the
+		// depth every plant roots at — which is why they read as vague rather than as
+		// treasure lying on the floor. Same fault the planting had, in a second place.
+		const rows = (slot % 3) * 5;
+
 		return {
 			x,
-			y: size.h - 14 - (slot % 3) * 11 - mix32(seed ^ 0x5f5e) * 6,
+			y: bedTopAt(x, size) - PEARL_SEAT - rows - mix32(seed ^ 0x5f5e) * 3,
 			flip: false,
 			pitch: 0,
 			// A pearl has no body to undulate; the value is inert.
@@ -1336,14 +1351,24 @@ function drawPearl(ctx: CanvasRenderingContext2D, colors: Palette, time: number,
 	// Slow breathing, so a bed of pearls glimmers out of step rather than pulsing as one.
 	const pulse = 0.5 + 0.5 * Math.sin(t * 1.1 + phase);
 
-	// Halo on the sand beneath.
-	const bloom = ctx.createRadialGradient(0, 0, 1, 0, 0, r * 2.6);
-	bloom.addColorStop(0, `rgba(255, 255, 255, ${0.5 + pulse * 0.32})`);
-	bloom.addColorStop(0.5, `rgba(248, 253, 255, ${0.16 + pulse * 0.12})`);
+	// Contact shadow first: a white bead on pale sand has nothing to seat it, and
+	// without a shadow it floats however correctly it is placed.
+	ctx.save();
+	ctx.beginPath();
+	ctx.ellipse(0.5, r * 0.78, r * 1.15, r * 0.42, 0, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(58, 62, 54, 0.28)';
+	ctx.fill();
+	ctx.restore();
+
+	// Halo on the sand beneath. Tighter than it was: neighbouring pearls' blooms
+	// overlapped into one milky smear, which is half of why a pile read as vague.
+	const bloom = ctx.createRadialGradient(0, 0, 1, 0, 0, r * 1.9);
+	bloom.addColorStop(0, `rgba(255, 255, 255, ${0.38 + pulse * 0.24})`);
+	bloom.addColorStop(0.5, `rgba(248, 253, 255, ${0.1 + pulse * 0.08})`);
 	bloom.addColorStop(1, 'rgba(255, 255, 255, 0)');
 	ctx.fillStyle = bloom;
 	ctx.beginPath();
-	ctx.arc(0, 0, r * 2.6, 0, Math.PI * 2);
+	ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
 	ctx.fill();
 
 	// Body: lit from the upper left, shading to a cool underside.
@@ -1385,23 +1410,24 @@ function drawPearl(ctx: CanvasRenderingContext2D, colors: Palette, time: number,
 	ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
 	ctx.fill();
 
-	// A four-point sparkle that crosses every few seconds — the difference between a
-	// bead that sits there and one that catches the light.
+	// A slow brightening of the catchlight, rather than a four-point star.
+	//
+	// The star was drawn as two crossed strokes reaching past the bead, and at any
+	// zoom it read as a crosshair or a registration mark — a UI symbol sitting on the
+	// sand. Nacre glows; it does not emit rays.
 	const twinkle = Math.max(0, Math.sin(t * 0.9 + phase * 2));
 	if (twinkle > 0.55) {
 		const glint = (twinkle - 0.55) / 0.45;
-		const arm = r * (1.1 + glint * 1.5);
 
 		ctx.save();
 		ctx.globalCompositeOperation = 'lighter';
-		ctx.strokeStyle = `rgba(255, 255, 255, ${glint * 0.9})`;
-		ctx.lineWidth = 1.1;
+		const spark = ctx.createRadialGradient(-r * 0.3, -r * 0.34, 0, -r * 0.3, -r * 0.34, r * 1.05);
+		spark.addColorStop(0, `rgba(255, 255, 255, ${glint * 0.85})`);
+		spark.addColorStop(1, 'rgba(255, 255, 255, 0)');
+		ctx.fillStyle = spark;
 		ctx.beginPath();
-		ctx.moveTo(-arm, 0);
-		ctx.lineTo(arm, 0);
-		ctx.moveTo(0, -arm);
-		ctx.lineTo(0, arm);
-		ctx.stroke();
+		ctx.arc(-r * 0.3, -r * 0.34, r * 1.05, 0, Math.PI * 2);
+		ctx.fill();
 		ctx.restore();
 	}
 }

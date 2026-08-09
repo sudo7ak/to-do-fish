@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	bedTopAt,
 	drawAirBubbles,
+	drawChest,
 	drawFeed,
 	drawPlants,
 	MAX_AIR_BUBBLE,
@@ -275,5 +276,96 @@ describe('the leafy stem', () => {
 	it('still covers the whole roll, so no plant is unreachable', () => {
 		const forms = new Set(Array.from({ length: 400 }, (_, i) => plantFor(i / 399).form));
 		for (const spec of PLANTS) expect(forms.has(spec.form)).toBe(true);
+	});
+});
+
+/** Records rotations and path points, for the chest's lid. */
+function chestCtx() {
+	const rotations: number[] = [];
+	const points: { x: number; y: number }[] = [];
+	const gradient = { addColorStop: () => {} };
+
+	const ctx = {
+		rotations,
+		points,
+		globalAlpha: 1,
+		fillStyle: '' as unknown,
+		strokeStyle: '',
+		lineWidth: 0,
+		save() {},
+		restore() {},
+		beginPath() {},
+		closePath() {},
+		fill() {},
+		stroke() {},
+		ellipse() {},
+		translate() {},
+		fillRect(x: number, y: number, w: number, h: number) {
+			points.push({ x, y }, { x: x + w, y: y + h });
+		},
+		rotate(a: number) {
+			rotations.push(a);
+		},
+		createLinearGradient: () => gradient,
+		createRadialGradient: () => gradient,
+		moveTo(x: number, y: number) {
+			points.push({ x, y });
+		},
+		lineTo(x: number, y: number) {
+			points.push({ x, y });
+		},
+		quadraticCurveTo(_a: number, _b: number, x: number, y: number) {
+			points.push({ x, y });
+		}
+	} as unknown as CanvasRenderingContext2D & {
+		rotations: number[];
+		points: { x: number; y: number }[];
+	};
+
+	return ctx;
+}
+
+describe('the treasure chest', () => {
+	it('sits on the sand, not in the water column', () => {
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 6, 0);
+
+		expect(ctx.points.length).toBeGreaterThan(0);
+		for (const p of ctx.points) {
+			// The lid is drawn in a translated frame, so only absolute points are checked.
+			if (Math.abs(p.x) < 1 && Math.abs(p.y) < 1) continue;
+			if (p.y < 200) continue;
+			expect(p.y).toBeGreaterThan(SIZE.h - 140);
+			expect(p.y).toBeLessThan(SIZE.h + 10);
+		}
+	});
+
+	it('stays shut when there is nothing to keep in it', () => {
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 0, 0);
+
+		for (const a of ctx.rotations) expect(Math.abs(a)).toBeLessThan(0.01);
+	});
+
+	it('opens further the richer you are, and then stops', () => {
+		const lift = (pearls: number) => {
+			const ctx = chestCtx();
+			drawChest(ctx, SIZE, COLORS, pearls, 0);
+			return Math.max(0, ...ctx.rotations.map(Math.abs));
+		};
+
+		expect(lift(4)).toBeGreaterThan(lift(0));
+		expect(lift(12)).toBeGreaterThan(lift(4));
+		// Past the cap it is already wide open; a bigger balance must not fold it over.
+		expect(lift(400)).toBe(lift(14));
+		expect(lift(400)).toBeLessThan(0.45);
+	});
+
+	it('carries the balance past the point the pearls stop being drawn', () => {
+		// Beyond MAX_VISIBLE_PEARLS the bed stops adding beads, so without the chest a
+		// balance of 12 and one of 300 looked identical. The lid is what still moves.
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 40, 0);
+		expect(Math.max(...ctx.rotations.map(Math.abs))).toBeGreaterThan(0);
 	});
 });

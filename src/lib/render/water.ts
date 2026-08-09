@@ -232,6 +232,121 @@ export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors:
 }
 
 /**
+ * Where the chest sits, as a fraction of tank width, and how wide it is.
+ *
+ * Off-centre and clear of the add-pill's band, on the same sand `bedTopAt` gives the
+ * planting, so it is seated in the bed rather than pasted onto it.
+ */
+const CHEST_X = 0.17;
+const CHEST_W = 62;
+
+/**
+ * A weathered chest on the sand, and the home the pearls needed.
+ *
+ * Two jobs. It gives white pearls a dark mass to read against, which is the contrast
+ * problem they had; and it carries the overflow honestly — past `MAX_VISIBLE_PEARLS`
+ * the tank simply stopped drawing them, so 12 and 300 looked identical. The lid opens
+ * as the balance grows, so a large balance is visible as a fuller chest rather than
+ * silently truncated.
+ *
+ * Deliberately not the clipart it came from: no black outline, muted and desaturated,
+ * seated with a contact shadow rather than sitting proud of the sand. It has to look
+ * like an ornament that has been in the tank a while, not a prop dropped on top of it.
+ */
+export function drawChest(
+	ctx: CanvasRenderingContext2D,
+	size: Size,
+	colors: Palette,
+	pearls: number,
+	time: number
+): void {
+	const x = size.w * CHEST_X;
+	const base = bedTopAt(x, size) + 3;
+	const w = CHEST_W;
+	const h = w * 0.52;
+
+	ctx.save();
+
+	// Depth haze, like everything else down here.
+	const depth = Math.min(1, Math.max(0, (base - WATERLINE) / Math.max(1, size.h - WATERLINE)));
+	ctx.globalAlpha = 1 - depth * 0.22;
+
+	// Seated, not floating.
+	ctx.beginPath();
+	ctx.ellipse(x, base + 2, w * 0.56, h * 0.2, 0, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(52, 56, 48, 0.3)';
+	ctx.fill();
+
+	// Light enough to belong here. The first pass used real oak values and the chest
+	// came out near-black against bright sand in a brightly lit tank — a silhouette
+	// rather than an object.
+	const wood = ctx.createLinearGradient(0, base - h, 0, base);
+	wood.addColorStop(0, '#c99a6c');
+	wood.addColorStop(1, '#9a7048');
+
+	// Body.
+	ctx.beginPath();
+	ctx.moveTo(x - w / 2, base);
+	ctx.lineTo(x - w / 2 + 3, base - h * 0.62);
+	ctx.lineTo(x + w / 2 - 3, base - h * 0.62);
+	ctx.lineTo(x + w / 2, base);
+	ctx.closePath();
+	ctx.fillStyle = wood;
+	ctx.fill();
+
+	// Iron straps, darker than the wood rather than outlined in black.
+	ctx.fillStyle = 'rgba(92, 72, 52, 0.42)';
+	for (const at of [-0.26, 0.26]) {
+		ctx.fillRect(x + w * at - 2.5, base - h * 0.6, 5, h * 0.6);
+	}
+
+	// The lid lifts with the balance: shut when broke, wide open when rich.
+	const open = Math.min(1, pearls / 14);
+	// Shallow. Past about 20 degrees the lid stops reading as hinged to the box and
+	// starts reading as a plank floating beside it.
+	const lift = open * 0.34;
+	const glow = pearls > 0 ? 0.35 + 0.25 * Math.sin(time / 900) : 0;
+
+	if (open > 0.02) {
+		// Gold inside, visible through the gap.
+		ctx.beginPath();
+		ctx.ellipse(x, base - h * 0.62, w * 0.42, h * 0.16, 0, Math.PI, 0);
+		ctx.fillStyle = `rgba(240, 200, 110, ${0.45 + glow * 0.6})`;
+		ctx.fill();
+	}
+
+	// Hinged at the back-left top edge, and domed, so it is plainly the same object as
+	// the box rather than a slab resting near it.
+	const lidW = w - 6;
+	ctx.save();
+	ctx.translate(x - w / 2 + 3, base - h * 0.62);
+	ctx.rotate(-lift);
+	ctx.beginPath();
+	ctx.moveTo(0, 0);
+	ctx.lineTo(lidW, 0);
+	ctx.lineTo(lidW, -h * 0.12);
+	ctx.quadraticCurveTo(lidW * 0.5, -h * 0.58, 0, -h * 0.12);
+	ctx.closePath();
+	const lidWood = ctx.createLinearGradient(0, -h * 0.58, 0, 0);
+	lidWood.addColorStop(0, '#c1926a');
+	lidWood.addColorStop(1, '#8a6444');
+	ctx.fillStyle = lidWood;
+	ctx.fill();
+
+	// A pale edge along the rim: the one place the lid needs separating from the box,
+	// done with light rather than with an outline.
+	ctx.strokeStyle = 'rgba(226, 200, 170, 0.4)';
+	ctx.lineWidth = 1.2;
+	ctx.beginPath();
+	ctx.moveTo(0, -h * 0.12);
+	ctx.quadraticCurveTo(lidW * 0.5, -h * 0.58, lidW, -h * 0.12);
+	ctx.stroke();
+	ctx.restore();
+
+	ctx.restore();
+}
+
+/**
  * What grows in the bed.
  *
  * Data only, like `species.ts` for fish. One repeated blade shape is what made the bed
