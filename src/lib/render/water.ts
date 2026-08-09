@@ -237,8 +237,28 @@ export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors:
  * Off-centre and clear of the add-pill's band, on the same sand `bedTopAt` gives the
  * planting, so it is seated in the bed rather than pasted onto it.
  */
-const CHEST_X = 0.17;
+/**
+ * Centred, which is the one stretch of floor nothing else wants.
+ *
+ * Pearls are kept out of the middle because the add-pill used to hide them, so the
+ * centre is already empty; and the pill's own box starts at y≈801 while the chest's
+ * lid tops out around 764, so the two never meet. Off to one side it landed in the
+ * pearl band instead, and beads piled on the lid.
+ */
+const CHEST_X = 0.5;
 const CHEST_W = 62;
+
+/**
+ * The stretch of floor the chest occupies, in pixels.
+ *
+ * One source of truth, because three things have to agree about it: the chest draws
+ * here, the planting must not sprout through it, and pearls must not pile on top of it.
+ * Left to each of them separately, a plant grew straight out of the lid.
+ */
+export function chestBounds(size: Size): { from: number; to: number } {
+	const x = size.w * CHEST_X;
+	return { from: x - CHEST_W * 0.62, to: x + CHEST_W * 0.62 };
+}
 
 /**
  * A weathered chest on the sand, and the home the pearls needed.
@@ -261,86 +281,121 @@ export function drawChest(
 	time: number
 ): void {
 	const x = size.w * CHEST_X;
-	const base = bedTopAt(x, size) + 3;
+	const base = bedTopAt(x, size) + 2;
 	const w = CHEST_W;
-	const h = w * 0.52;
+	const bodyH = w * 0.42;
+	const lidH = w * 0.26;
+	const top = base - bodyH;
 
 	ctx.save();
 
-	// Depth haze, like everything else down here.
-	const depth = Math.min(1, Math.max(0, (base - WATERLINE) / Math.max(1, size.h - WATERLINE)));
-	ctx.globalAlpha = 1 - depth * 0.22;
+	// Opaque. The first version carried the same depth haze as the creatures and came
+	// out 80% transparent, so the planting behind showed straight through the wood and
+	// the chest read as cardboard. Haze is for things suspended in water; this is an
+	// object lying on the floor, and the water in front of it is a few centimetres deep.
 
-	// Seated, not floating.
+	// Seated: a shadow pooled under the base, wider than the chest.
 	ctx.beginPath();
-	ctx.ellipse(x, base + 2, w * 0.56, h * 0.2, 0, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(52, 56, 48, 0.3)';
+	ctx.ellipse(x, base + 1, w * 0.6, bodyH * 0.22, 0, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(58, 60, 48, 0.32)';
 	ctx.fill();
 
-	// Light enough to belong here. The first pass used real oak values and the chest
-	// came out near-black against bright sand in a brightly lit tank — a silhouette
-	// rather than an object.
-	const wood = ctx.createLinearGradient(0, base - h, 0, base);
-	wood.addColorStop(0, '#c99a6c');
-	wood.addColorStop(1, '#9a7048');
+	// Body, very slightly wider at the base so it reads as sitting rather than floating.
+	const wood = ctx.createLinearGradient(0, top, 0, base);
+	wood.addColorStop(0, '#c9a071');
+	wood.addColorStop(0.55, '#a97c50');
+	wood.addColorStop(1, '#87613c');
 
-	// Body.
 	ctx.beginPath();
 	ctx.moveTo(x - w / 2, base);
-	ctx.lineTo(x - w / 2 + 3, base - h * 0.62);
-	ctx.lineTo(x + w / 2 - 3, base - h * 0.62);
+	ctx.lineTo(x - w / 2 + 2, top);
+	ctx.lineTo(x + w / 2 - 2, top);
 	ctx.lineTo(x + w / 2, base);
 	ctx.closePath();
 	ctx.fillStyle = wood;
 	ctx.fill();
 
-	// Iron straps, darker than the wood rather than outlined in black.
-	ctx.fillStyle = 'rgba(92, 72, 52, 0.42)';
-	for (const at of [-0.26, 0.26]) {
-		ctx.fillRect(x + w * at - 2.5, base - h * 0.6, 5, h * 0.6);
+	// Plank seams: what separates a wooden box from a brown rectangle.
+	ctx.strokeStyle = 'rgba(96, 66, 40, 0.35)';
+	ctx.lineWidth = 1;
+	for (const at of [-0.3, 0, 0.3]) {
+		ctx.beginPath();
+		ctx.moveTo(x + w * at, top + 1);
+		ctx.lineTo(x + w * at, base - 1);
+		ctx.stroke();
 	}
 
-	// The lid lifts with the balance: shut when broke, wide open when rich.
+	// Iron bands, and a brass lock plate at the front.
+	ctx.fillStyle = 'rgba(78, 62, 46, 0.55)';
+	for (const at of [-0.34, 0.34]) ctx.fillRect(x + w * at - 2, top, 4, bodyH);
+
+	ctx.fillStyle = '#d8b061';
+	ctx.fillRect(x - 4, top + bodyH * 0.22, 8, bodyH * 0.34);
+	ctx.fillStyle = 'rgba(90, 62, 30, 0.7)';
+	ctx.fillRect(x - 1, top + bodyH * 0.36, 2, bodyH * 0.14);
+
+	// How wide the lid stands, and how full the chest looks.
 	const open = Math.min(1, pearls / 14);
-	// Shallow. Past about 20 degrees the lid stops reading as hinged to the box and
-	// starts reading as a plank floating beside it.
 	const lift = open * 0.34;
-	const glow = pearls > 0 ? 0.35 + 0.25 * Math.sin(time / 900) : 0;
 
 	if (open > 0.02) {
-		// Gold inside, visible through the gap.
+		// The dark inside, then the gold. Without the shadow the contents look painted on.
 		ctx.beginPath();
-		ctx.ellipse(x, base - h * 0.62, w * 0.42, h * 0.16, 0, Math.PI, 0);
-		ctx.fillStyle = `rgba(240, 200, 110, ${0.45 + glow * 0.6})`;
+		ctx.ellipse(x, top, w * 0.44, lidH * 0.34, 0, Math.PI, 0);
+		ctx.fillStyle = 'rgba(48, 34, 24, 0.85)';
+		ctx.fill();
+
+		const shimmer = 0.5 + 0.5 * Math.sin(time / 900);
+		ctx.beginPath();
+		ctx.ellipse(x, top - 1, w * 0.38 * open, lidH * 0.24 * open, 0, Math.PI, 0);
+		ctx.fillStyle = `rgba(243, 205, 118, ${0.7 + shimmer * 0.3})`;
 		ctx.fill();
 	}
 
-	// Hinged at the back-left top edge, and domed, so it is plainly the same object as
-	// the box rather than a slab resting near it.
-	const lidW = w - 6;
+	// Lid: hinged on the back edge of the body, springing from the same line the body
+	// ends on, so the two are plainly one object.
 	ctx.save();
-	ctx.translate(x - w / 2 + 3, base - h * 0.62);
+	ctx.translate(x - w / 2 + 2, top);
 	ctx.rotate(-lift);
+	const lidW = w - 4;
+
+	// A solid dome with a flat bottom edge.
+	//
+	// The first version traced two nearly identical arcs and closed between them, which
+	// fills a thin crescent rather than a lid — on screen it read as a rainbow floating
+	// above the box. One curve, closed straight across its own base, is the whole shape.
 	ctx.beginPath();
 	ctx.moveTo(0, 0);
-	ctx.lineTo(lidW, 0);
-	ctx.lineTo(lidW, -h * 0.12);
-	ctx.quadraticCurveTo(lidW * 0.5, -h * 0.58, 0, -h * 0.12);
+	ctx.quadraticCurveTo(lidW * 0.5, -lidH * 2.1, lidW, 0);
 	ctx.closePath();
-	const lidWood = ctx.createLinearGradient(0, -h * 0.58, 0, 0);
-	lidWood.addColorStop(0, '#c1926a');
-	lidWood.addColorStop(1, '#8a6444');
+
+	const lidWood = ctx.createLinearGradient(0, -lidH, 0, 0);
+	lidWood.addColorStop(0, '#d8ae7d');
+	lidWood.addColorStop(1, '#9a7048');
 	ctx.fillStyle = lidWood;
 	ctx.fill();
 
-	// A pale edge along the rim: the one place the lid needs separating from the box,
-	// done with light rather than with an outline.
-	ctx.strokeStyle = 'rgba(226, 200, 170, 0.4)';
-	ctx.lineWidth = 1.2;
+	// Bands carried over the lid, clipped to it so they cannot trail off into the water.
+	ctx.save();
+	ctx.clip();
+	ctx.strokeStyle = 'rgba(78, 62, 46, 0.45)';
+	ctx.lineWidth = 3.4;
+	for (const at of [0.2, 0.8]) {
+		ctx.beginPath();
+		ctx.moveTo(lidW * at, 0);
+		ctx.quadraticCurveTo(lidW * at, -lidH * 1.2, lidW * 0.5, -lidH * 1.35);
+		ctx.stroke();
+	}
+
+	// Light along the crown, which is what gives it a curve rather than a flat cap.
+	ctx.strokeStyle = 'rgba(255, 238, 210, 0.5)';
+	ctx.lineWidth = 1.6;
 	ctx.beginPath();
-	ctx.moveTo(0, -h * 0.12);
-	ctx.quadraticCurveTo(lidW * 0.5, -h * 0.58, lidW, -h * 0.12);
+	ctx.moveTo(lidW * 0.12, -lidH * 0.5);
+	ctx.quadraticCurveTo(lidW * 0.5, -lidH * 1.75, lidW * 0.88, -lidH * 0.5);
 	ctx.stroke();
+	ctx.restore();
+
 	ctx.restore();
 
 	ctx.restore();
@@ -440,9 +495,14 @@ function drawPlantLayer(
 	ctx.save();
 	ctx.lineCap = 'round';
 
+	const chest = chestBounds(size);
+
 	for (let i = 0; i < clumps; i++) {
 		const jitter = noise(i, opts.salt);
 		const x = (i / clumps) * size.w + jitter * 30;
+
+		// Nothing roots inside the chest. A clump landing on it grew through the lid.
+		if (x > chest.from && x < chest.to) continue;
 		// Deterministic, and never `i % PLANTS.length`: a stride that shares a factor
 		// with the table length collapses the bed to one or two species, the same way
 		// `hash % 6` once made six fish species render as two.
@@ -876,11 +936,15 @@ export function drawTank(
 	ctx: CanvasRenderingContext2D,
 	size: Size,
 	colors: Palette,
-	time: number
+	time: number,
+	pearls = 0
 ): void {
 	drawWater(ctx, size, colors);
 	drawCaustics(ctx, size, time, colors.light);
 	drawSubstrate(ctx, size, colors);
+	// Between the sand and the planting: grass grows in front of the chest, which hides
+	// its base and settles it into the bed instead of standing it on top of everything.
+	drawChest(ctx, size, colors, pearls, time);
 	drawPlants(ctx, size, colors, time);
 	drawMotes(ctx, size, time, colors.light);
 	drawAirBubbles(ctx, size, time, colors.light);

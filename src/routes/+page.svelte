@@ -7,7 +7,7 @@
 	import { pearlBalance, canAfford } from '$lib/store/pearls';
 	import { buildScene } from '$lib/scene/build';
 	import { palette } from '$lib/render/palette';
-	import { drawTank, drawForeground, drawFeed, drawChest } from '$lib/render/water';
+	import { drawTank, drawForeground, drawFeed } from '$lib/render/water';
 	import { drawCreatures } from '$lib/render/creatures';
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
@@ -75,9 +75,7 @@
 		const time = frame.animate ? frame.time : 0;
 		lastFrame = { time, size, animate: frame.animate };
 
-		drawTank(ctx, size, colors, time);
-		// Scenery, drawn before the creatures so fish pass in front of it.
-		drawChest(ctx, size, colors, scene.pearls, time);
+		drawTank(ctx, size, colors, time, scene.pearls);
 		// Behind the creatures: the fish rise through the food, not under it.
 		drawFeed(ctx, size, time, frame.animate ? scene.feeding : 0);
 		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate, scene.feeding);

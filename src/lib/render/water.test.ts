@@ -296,6 +296,7 @@ function chestCtx() {
 		restore() {},
 		beginPath() {},
 		closePath() {},
+		clip() {},
 		fill() {},
 		stroke() {},
 		ellipse() {},

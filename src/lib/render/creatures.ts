@@ -1,6 +1,6 @@
 import type { Creature } from '../scene/types';
 import type { Palette } from './palette';
-import { WATERLINE, bedTopAt, surfaceOffset, type Size } from './water';
+import { WATERLINE, bedTopAt, chestBounds, surfaceOffset, type Size } from './water';
 import { hash, mix32 } from './rng';
 import {
 	speciesFor,
@@ -167,10 +167,13 @@ const CRUISE_BOB = 18;
 const PILL_EDGE = 0.74;
 
 /**
- * How far a pearl's centre sits above the sand, so it rests *on* the bed with its
- * lower edge just into the grain rather than balancing on top of it.
+ * How far a pearl's centre sits above the sand.
+ *
+ * Less than its radius (7.5), so the bead's lower third is buried in the grain. A
+ * sphere resting exactly tangent to a surface still reads as hovering; things that sit
+ * on sand sink slightly into it.
  */
-const PEARL_SEAT = 4;
+const PEARL_SEAT = 4.5;
 
 /**
  * The exotic, drained of its colour: what a treat you cannot yet afford is drawn as.
@@ -269,9 +272,22 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		const along = (slot * 0.6180339887) % 1;
 		const bandWidth = 1 - PILL_EDGE - 0.04;
 
-		const x = rightSide
+		// Dealt to the far end of each band first. Golden-ratio spacing alone still let
+		// consecutive pearls land within a bead of each other, and two overlapping beads
+		// read as one smeared blob rather than as two pearls.
+		const raw = rightSide
 			? size.w * (PILL_EDGE + along * bandWidth)
-			: size.w * (0.04 + along * bandWidth);
+			: size.w * (0.04 + (1 - along) * bandWidth);
+
+		// Pearls lie beside the chest, never on it: a bead drawn over the lid reads as
+		// stuck to the wood rather than spilled onto the sand.
+		const chest = chestBounds(size);
+		const x =
+			raw > chest.from && raw < chest.to
+				? raw < (chest.from + chest.to) / 2
+					? chest.from - 6
+					: chest.to + 6
+				: raw;
 
 		// Seated on the sand's real surface, which is what `bedTopAt` is for.
 		//
@@ -280,11 +296,12 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		// *under* the sand, in the murky base of the substrate gradient and below the
 		// depth every plant roots at — which is why they read as vague rather than as
 		// treasure lying on the floor. Same fault the planting had, in a second place.
-		const rows = (slot % 3) * 5;
-
+		// No row lifting. Staggering pearls 0/5/10px up from the sand was meant to read as
+		// depth into the bed; it read as three of them hovering, with their own contact
+		// shadows visible on the sand underneath. Anything on the floor sits on the floor.
 		return {
 			x,
-			y: bedTopAt(x, size) - PEARL_SEAT - rows - mix32(seed ^ 0x5f5e) * 3,
+			y: bedTopAt(x, size) - PEARL_SEAT + mix32(seed ^ 0x5f5e) * 1.5,
 			flip: false,
 			pitch: 0,
 			// A pearl has no body to undulate; the value is inert.
