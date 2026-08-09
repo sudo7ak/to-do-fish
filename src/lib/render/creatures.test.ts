@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { place, drawCreature, drawCreatures, speciesFor } from './creatures';
+import { place, drawCreature, drawCreatures, speciesFor, MAX_TURN_RATE } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
 import { SPECIES, SWIMMERS, type SpeciesSpec } from './species';
@@ -1098,5 +1098,89 @@ describe('feeding stirs the shoal', () => {
 		// The loop freezes the clock rather than the fish. A flourish that still fired
 		// would be motion the user asked not to see.
 		expect(bodyPoints(1, false)).toEqual(bodyPoints(0, false));
+	});
+});
+
+describe('heading is only read from real travel', () => {
+	const SPAN = 60000;
+	const STEP = 80;
+
+	/** Peak speed, pitch and turn over a minute of swimming. */
+	const survey = (c: Creature) => {
+		let maxSpeed = 0;
+		let maxPitch = 0;
+		let maxTurn = 0;
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let prev = place(c, SIZE, 0);
+
+		for (let ms = 0; ms <= SPAN; ms += STEP) {
+			const at = place(c, SIZE, ms);
+			maxSpeed = Math.max(maxSpeed, Math.hypot(at.x - prev.x, at.y - prev.y) * (1000 / STEP));
+			maxPitch = Math.max(maxPitch, Math.abs(at.pitch));
+			maxTurn = Math.max(maxTurn, Math.abs(at.turn));
+			minX = Math.min(minX, at.x);
+			maxX = Math.max(maxX, at.x);
+			prev = at;
+		}
+
+		return { maxSpeed, maxPitch, maxTurn, range: maxX - minX };
+	};
+
+	const treat = (): Creature => ({
+		id: 'treat-1',
+		kind: 'treat',
+		label: 't',
+		depth: 0,
+		tapRadius: 36,
+		cost: 3
+	});
+
+	it('never reports a turn rate no animal could perform', () => {
+		// Measured at 19.3 rad/s before this guard: over a thousand degrees a second, on
+		// a fish crossing less than a pixel per sample. `turnFrom` divides the heading
+		// change by the lookahead, so sub-pixel noise came out multiplied by 12.
+		for (const c of [treat(), creature('fish', { id: 'sp-3' }), creature('koi', { id: 'k' })]) {
+			expect(survey(c).maxTurn).toBeLessThanOrEqual(MAX_TURN_RATE);
+		}
+	});
+
+	it('reads no heading at all from a creature that is not going anywhere', () => {
+		const still: Creature = { ...treat(), id: 'motionless' };
+		const frozen = place(still, SIZE, 5000, false);
+
+		expect(frozen.pitch).toBe(0);
+		expect(frozen.turn).toBe(0);
+	});
+
+	it('still lets an ordinary fish tip as it climbs', () => {
+		// The guard must not silence real motion — a fish that never pitches is the bug
+		// vertical swimming was added to fix.
+		expect(survey(creature('fish', { id: 'sp-3' })).maxPitch).toBeGreaterThan(0.05);
+	});
+
+	it('gives the prize a patrol rather than a hover', () => {
+		// It cruised an 84px box at 10.6 px/s — a quarter of an ordinary fish's speed,
+		// one lap a minute — which read as hovering in place rather than cruising.
+		const prize = survey(treat());
+		const ordinary = survey(creature('fish', { id: 'sp-3' }));
+
+		expect(prize.maxSpeed).toBeGreaterThan(ordinary.maxSpeed * 0.4);
+		expect(prize.range).toBeGreaterThan(130);
+	});
+
+	it('keeps the prize in its lane under the surface', () => {
+		// Wider than it was, but still the surface lane: the prize sits above the shoal
+		// so it stays the thing your eye lands on.
+		let minY = Infinity;
+		let maxY = -Infinity;
+		for (let ms = 0; ms <= SPAN; ms += STEP) {
+			const at = place(treat(), SIZE, ms);
+			minY = Math.min(minY, at.y);
+			maxY = Math.max(maxY, at.y);
+		}
+
+		expect(minY).toBeGreaterThan(WATERLINE);
+		expect(maxY).toBeLessThan(WATERLINE + 120);
 	});
 });

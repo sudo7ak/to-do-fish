@@ -82,12 +82,29 @@ const MAX_PITCH = 0.4;
 const PITCH_LOOKAHEAD = 0.08;
 
 /**
+ * The shortest step, in pixels, that carries a usable heading.
+ *
+ * Below this the direction of travel is numerical noise, not a direction. The surface
+ * prize crossed 0.85px per sample and its measured turn rate reached 19.3 rad/s —
+ * over a thousand degrees a second — because `turnFrom` divides the heading change by
+ * the lookahead and so multiplies that noise by 12. On screen it read as a stationary
+ * fish permanently bent to full arc and pinned nose-down at the pitch clamp.
+ *
+ * Kept well under an ordinary fish's slowest glide (~1.1px per sample) so the guard
+ * silences noise without silencing real motion.
+ */
+const MIN_TRAVEL = 0.35;
+
+/** No animal turns faster than this, and nothing in a tank should appear to. */
+export const MAX_TURN_RATE = 3;
+
+/**
  * Pitch from two samples of the real path, rather than a second formula that would
  * drift out of step with it. `dx` is taken as a magnitude because left-and-right is
  * already carried by `flip`; this is only the climb angle.
  */
 function pitchFrom(dx: number, dy: number): number {
-	if (dx === 0 && dy === 0) return 0;
+	if (Math.hypot(dx, dy) < MIN_TRAVEL) return 0;
 	return Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.atan2(dy, Math.abs(dx))));
 }
 
@@ -99,6 +116,13 @@ function pitchFrom(dx: number, dy: number): number {
  * drawn rather than inventing a second formula alongside it.
  */
 function turnFrom(behind: Point, here: Point, ahead: Point, dt: number): number {
+	const inLeg = Math.hypot(here.x - behind.x, here.y - behind.y);
+	const outLeg = Math.hypot(ahead.x - here.x, ahead.y - here.y);
+
+	// Two headings are needed, and a heading needs travel. If either leg is too short to
+	// carry one, there is no turn to report — only the noise between two nearby points.
+	if (inLeg < MIN_TRAVEL || outLeg < MIN_TRAVEL) return 0;
+
 	const before = Math.atan2(here.y - behind.y, here.x - behind.x);
 	const after = Math.atan2(ahead.y - here.y, ahead.x - here.x);
 
@@ -107,7 +131,7 @@ function turnFrom(behind: Point, here: Point, ahead: Point, dt: number): number 
 	while (delta > Math.PI) delta -= Math.PI * 2;
 	while (delta < -Math.PI) delta += Math.PI * 2;
 
-	return delta / dt;
+	return Math.max(-MAX_TURN_RATE, Math.min(MAX_TURN_RATE, delta / dt));
 }
 
 /** Water column available to swimmers, leaving the surface band and the planting alone. */
@@ -122,6 +146,19 @@ const EYE_T = 0.12;
 
 /** How far below the waterline the treat fish cruises. */
 const TREAT_DRAFT = 34;
+
+/**
+ * The prize's patrol: how fast it works along its lane, how wide that lane is as a
+ * fraction of tank width, and how far it rises and falls within it.
+ *
+ * It used to run at 0.1 and 0.1 — an 84px box at 10.6 px/s, a quarter of an ordinary
+ * fish's speed and one lap a minute. Slow was the intent; that slow read as hovering.
+ * It still cruises the surface lane, above the shoal, so it stays the thing your eye
+ * lands on.
+ */
+const CRUISE_RATE = 0.22;
+const CRUISE_SWEEP = 0.2;
+const CRUISE_BOB = 18;
 
 /**
  * Where the add-pill's shadow starts, as a fraction of width. Pearls stay outside
@@ -165,28 +202,43 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		// thing your eye lands on rather than another fish in the shoal. Same warped
 		// clock as the shoal, so it saunters rather than tracking at a fixed rate.
 		const phase = mix32(seed ^ 0x77) * Math.PI * 2;
-		const cruise = (t + Math.sin(t * 0.29 + phase) * 1.2) * 0.1;
+		const cruise = (t + Math.sin(t * 0.29 + phase) * 1.2) * CRUISE_RATE;
 
 		const treatAt = (at: number) => {
-			const c = (at + Math.sin(at * 0.29 + phase) * 1.2) * 0.1;
-			const tx = spreadX(seed, size) + size.w * Math.sin(c) * 0.1;
-			return {
-				x: tx,
-				y: WATERLINE + surfaceOffset(tx, at * 1000) + TREAT_DRAFT + Math.sin(c * 1.7 + phase) * 12
-			};
+			const c = (at + Math.sin(at * 0.29 + phase) * 1.2) * CRUISE_RATE;
+			// Clamped like the shoal's lane. A wider patrol reaches the glass, and the
+			// prize is the widest creature in the tank, so it hits it first.
+			const drift = spreadX(seed, size) + size.w * Math.sin(c) * CRUISE_SWEEP;
+			const tx = Math.min(size.w * 0.9, Math.max(size.w * 0.1, drift));
+			// The fish's own path, and separately the lane it hangs from.
+			//
+			// `surfaceOffset` is the ripple of the water above, and it moves far faster
+			// than the fish does. Sampling heading from a `y` that included it made the
+			// prize tip to follow the surface wave rather than its own swimming — both
+			// prizes sat pinned nose-down at the pitch clamp, which is what read as
+			// wrong. It positions the lane; it must not steer the animal.
+			const swim = TREAT_DRAFT + Math.sin(c * 1.7 + phase) * CRUISE_BOB;
+			return { x: tx, swimY: WATERLINE + swim, y: WATERLINE + surfaceOffset(tx, at * 1000) + swim };
 		};
 
 		const here = treatAt(t);
 		const ahead = treatAt(t + PITCH_LOOKAHEAD);
+		const behind = treatAt(t - PITCH_LOOKAHEAD);
+		const heading = (p: { x: number; swimY: number }) => ({ x: p.x, y: p.swimY });
 
 		return {
 			x: here.x,
 			y: here.y,
 			flip: Math.cos(cruise) < 0,
-			pitch: pitchFrom(ahead.x - here.x, ahead.y - here.y),
+			// A frozen clock still advances the lookahead samples, so without this the
+			// prize kept tipping and bending under reduced motion while the tank held
+			// still — motion the user asked not to see.
+			pitch: animate ? pitchFrom(ahead.x - here.x, ahead.swimY - here.swimY) : 0,
 			// The prize cruises on its own slow warp, so it eases rather than tracking.
-			effort: 1 + Math.cos(t * 0.29 + phase) * 0.35,
-			turn: turnFrom(treatAt(t - PITCH_LOOKAHEAD), here, ahead, PITCH_LOOKAHEAD)
+			effort: animate ? 1 + Math.cos(t * 0.29 + phase) * 0.35 : 1,
+			turn: animate
+				? turnFrom(heading(behind), heading(here), heading(ahead), PITCH_LOOKAHEAD)
+				: 0
 		};
 	}
 	if (creature.kind === 'pearl') {
