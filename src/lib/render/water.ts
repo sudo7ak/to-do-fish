@@ -339,17 +339,13 @@ export function drawChest(
 	const lift = open * 0.34;
 
 	if (open > 0.02) {
-		// The dark inside, then the gold. Without the shadow the contents look painted on.
+		// The dark inside first: without it the contents read as painted on the rim.
 		ctx.beginPath();
 		ctx.ellipse(x, top, w * 0.44, lidH * 0.34, 0, Math.PI, 0);
-		ctx.fillStyle = 'rgba(48, 34, 24, 0.85)';
+		ctx.fillStyle = 'rgba(44, 31, 22, 0.9)';
 		ctx.fill();
 
-		const shimmer = 0.5 + 0.5 * Math.sin(time / 900);
-		ctx.beginPath();
-		ctx.ellipse(x, top - 1, w * 0.38 * open, lidH * 0.24 * open, 0, Math.PI, 0);
-		ctx.fillStyle = `rgba(243, 205, 118, ${0.7 + shimmer * 0.3})`;
-		ctx.fill();
+		drawHoard(ctx, x, top, w, lidH, open, time);
 	}
 
 	// Lid: hinged on the back edge of the body, springing from the same line the body
@@ -397,6 +393,102 @@ export function drawChest(
 	ctx.restore();
 
 	ctx.restore();
+
+	ctx.restore();
+}
+
+/**
+ * Gold and gemstones heaped in the chest's mouth.
+ *
+ * Clipped to the mouth, so however high the pile is dealt nothing floats out of the
+ * box. The heap grows with the balance: at a few pearls it is a glint of coins, and
+ * a large balance fills the chest — which is the whole reason the chest exists, since
+ * the bed stops adding beads at `MAX_VISIBLE_PEARLS` and the balance has to show
+ * somewhere.
+ *
+ * No gradients: this runs every frame, and a per-gem gradient would be dozens of
+ * allocations a second. Flat fills plus a lighter facet do the same job at this size.
+ */
+// Mostly diamond: white and ice, with one warm stone so the hoard is not monochrome.
+// Four pastels read as boiled sweets rather than as cut gems.
+const GEM_COLOURS = ['#ffffff', '#cdeeff', '#eaf7ff', '#ffd0e4'] as const;
+
+function drawHoard(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	top: number,
+	w: number,
+	lidH: number,
+	open: number,
+	time: number
+): void {
+	const t = time / 1000;
+
+	ctx.save();
+	ctx.beginPath();
+	ctx.ellipse(x, top + 1, w * 0.42, lidH * 0.5, 0, Math.PI, 0);
+	ctx.clip();
+
+	// Coins: flat ellipses, stacked densest in the middle where a real heap mounds.
+	const coins = Math.round(4 + open * 8);
+	for (let i = 0; i < coins; i++) {
+		const across = (noise(i, 91) - 0.5) * w * 0.72;
+		const rise = noise(i, 93) * lidH * 0.46 * open;
+		const r = 2.6 + noise(i, 95) * 1.9;
+		const shimmer = 0.72 + 0.28 * Math.sin(t * 1.6 + i * 1.9);
+
+		ctx.beginPath();
+		ctx.ellipse(x + across, top - rise, r, r * 0.62, 0, 0, Math.PI * 2);
+		ctx.fillStyle = `rgba(240, 198, 92, ${shimmer})`;
+		ctx.fill();
+
+		// A brighter top edge, which is what makes a disc read as metal rather than a dot.
+		ctx.beginPath();
+		ctx.ellipse(x + across, top - rise - r * 0.22, r * 0.72, r * 0.26, 0, 0, Math.PI * 2);
+		ctx.fillStyle = `rgba(255, 240, 190, ${shimmer * 0.75})`;
+		ctx.fill();
+	}
+
+	// Gems: a kite with one lit facet, which is the cheapest shape that reads as cut
+	// stone. A circle would just be another coin in a different colour.
+	const gems = Math.round(1 + open * 3);
+	for (let i = 0; i < gems; i++) {
+		const across = (noise(i, 97) - 0.5) * w * 0.56;
+		const rise = lidH * (0.12 + noise(i, 99) * 0.3) * open;
+		const r = 2.4 + noise(i, 101) * 1.5;
+		const gx = x + across;
+		const gy = top - rise;
+		const colour = GEM_COLOURS[Math.floor(noise(i, 103) * GEM_COLOURS.length)];
+
+		ctx.beginPath();
+		ctx.moveTo(gx, gy - r);
+		ctx.lineTo(gx + r * 0.78, gy);
+		ctx.lineTo(gx, gy + r * 0.9);
+		ctx.lineTo(gx - r * 0.78, gy);
+		ctx.closePath();
+		ctx.fillStyle = colour;
+		ctx.fill();
+
+		// Lit facet down one side, so the stone has an inside.
+		ctx.beginPath();
+		ctx.moveTo(gx, gy - r);
+		ctx.lineTo(gx + r * 0.78, gy);
+		ctx.lineTo(gx, gy);
+		ctx.closePath();
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+		ctx.fill();
+
+		// Twinkle: each stone catches the light on its own clock, so the hoard glitters
+		// rather than pulsing as one object.
+		const spark = Math.sin(t * 1.1 + i * 2.4);
+		if (spark > 0.75) {
+			const glint = (spark - 0.75) / 0.25;
+			ctx.beginPath();
+			ctx.ellipse(gx, gy - r * 0.35, r * 0.9 * glint, r * 0.28 * glint, 0, 0, Math.PI * 2);
+			ctx.fillStyle = `rgba(255, 255, 255, ${0.85 * glint})`;
+			ctx.fill();
+		}
+	}
 
 	ctx.restore();
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	bedTopAt,
+	chestBounds,
 	drawAirBubbles,
 	drawChest,
 	drawFeed,
@@ -283,11 +284,13 @@ describe('the leafy stem', () => {
 function chestCtx() {
 	const rotations: number[] = [];
 	const points: { x: number; y: number }[] = [];
+	const fills: string[] = [];
 	const gradient = { addColorStop: () => {} };
 
 	const ctx = {
 		rotations,
 		points,
+		fills,
 		globalAlpha: 1,
 		fillStyle: '' as unknown,
 		strokeStyle: '',
@@ -297,9 +300,13 @@ function chestCtx() {
 		beginPath() {},
 		closePath() {},
 		clip() {},
-		fill() {},
+		fill() {
+			fills.push(typeof ctx.fillStyle === 'string' ? ctx.fillStyle : '');
+		},
 		stroke() {},
-		ellipse() {},
+		ellipse(x: number, y: number) {
+			points.push({ x, y });
+		},
 		translate() {},
 		fillRect(x: number, y: number, w: number, h: number) {
 			points.push({ x, y }, { x: x + w, y: y + h });
@@ -321,6 +328,7 @@ function chestCtx() {
 	} as unknown as CanvasRenderingContext2D & {
 		rotations: number[];
 		points: { x: number; y: number }[];
+		fills: string[];
 	};
 
 	return ctx;
@@ -368,5 +376,38 @@ describe('the treasure chest', () => {
 		const ctx = chestCtx();
 		drawChest(ctx, SIZE, COLORS, 40, 0);
 		expect(Math.max(...ctx.rotations.map(Math.abs))).toBeGreaterThan(0);
+	});
+});
+
+describe('the hoard', () => {
+	/** Gold laid down, which only the hoard paints. */
+	const goldFills = (pearls: number) => {
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, pearls, 4000);
+		return ctx.fills.filter((c) => c.startsWith('rgba(240, 198, 92'));
+	};
+
+	it('shows nothing when the chest is shut', () => {
+		// Counting marks inside the chest's bounds would count the box's own lock plate
+		// and bands. Gold is painted by the hoard and nothing else.
+		expect(goldFills(0).length).toBe(0);
+	});
+
+	it('heaps higher the larger the balance', () => {
+		expect(goldFills(14).length).toBeGreaterThan(goldFills(3).length);
+	});
+
+	it('keeps every coin and stone inside the chest', () => {
+		// Clipped in the renderer, but the geometry should not rely on the clip: a heap
+		// dealt outside the box would still be wrong if the clip were ever removed.
+		const bounds = chestBounds(SIZE);
+		const ctx = chestCtx();
+		drawChest(ctx, SIZE, COLORS, 40, 4000);
+
+		for (const p of ctx.points) {
+			if (p.y < 200) continue; // lid, drawn in its own translated frame
+			expect(p.x).toBeGreaterThan(bounds.from - 6);
+			expect(p.x).toBeLessThan(bounds.to + 6);
+		}
 	});
 });
