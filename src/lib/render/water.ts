@@ -241,7 +241,7 @@ export function drawSubstrate(ctx: CanvasRenderingContext2D, size: Size, colors:
  * `stiffness` resists the current: eelgrass streams, a fern barely moves.
  */
 export type PlantSpec = {
-	form: 'ribbon' | 'broadleaf' | 'bushy';
+	form: 'ribbon' | 'broadleaf' | 'bushy' | 'leafy';
 	/** Height as a fraction of tank height, before per-clump jitter. */
 	height: number;
 	/** Blade half-width in px, at layer scale 1. */
@@ -249,6 +249,11 @@ export type PlantSpec = {
 	/** Blades in one clump. */
 	blades: number;
 	stiffness: number;
+	/**
+	 * Relative frequency. Defaults to 1; below that the plant is a feature rather than
+	 * groundcover, and the bed reads as planted rather than as one species repeated.
+	 */
+	weight?: number;
 };
 
 export const PLANTS: PlantSpec[] = [
@@ -259,8 +264,24 @@ export const PLANTS: PlantSpec[] = [
 	// A low bushy stand of fine leaflets — reads as mass rather than as blades.
 	{ form: 'bushy', height: 0.1, width: 1.8, blades: 7, stiffness: 0.95 },
 	// Foreground carpet: short, dense, and it hides where the taller stands meet sand.
-	{ form: 'ribbon', height: 0.075, width: 2.2, blades: 7, stiffness: 0.7 }
+	{ form: 'ribbon', height: 0.075, width: 2.2, blades: 7, stiffness: 0.7 },
+	// A tall leafy stem — dense leaflets up a curving stalk. Deliberately uncommon: it
+	// is the tallest and busiest thing in the bed, and a stand of them would be a hedge.
+	{ form: 'leafy', height: 0.21, width: 2.2, blades: 3, stiffness: 0.75, weight: 0.6 }
 ];
+
+/** Summed once: the draw path runs every frame and must not add work per clump. */
+const PLANT_WEIGHT_TOTAL = PLANTS.reduce((sum, plant) => sum + (plant.weight ?? 1), 0);
+
+/** Picks a plant by weight from a 0–1 roll. */
+export function plantFor(roll: number): PlantSpec {
+	let remaining = roll * PLANT_WEIGHT_TOTAL;
+	for (const plant of PLANTS) {
+		remaining -= plant.weight ?? 1;
+		if (remaining <= 0) return plant;
+	}
+	return PLANTS[PLANTS.length - 1];
+}
 
 /**
  * A gust travelling across the tank, in radians at `x`.
@@ -310,7 +331,7 @@ function drawPlantLayer(
 		// Deterministic, and never `i % PLANTS.length`: a stride that shares a factor
 		// with the table length collapses the bed to one or two species, the same way
 		// `hash % 6` once made six fish species render as two.
-		const spec = PLANTS[Math.floor(noise(i, opts.salt + 31) * PLANTS.length)];
+		const spec = plantFor(noise(i, opts.salt + 31));
 
 		drawClump(ctx, size, color, spec, x, jitter, t, opts);
 	}
@@ -355,7 +376,9 @@ function drawClump(
 		ctx.fillStyle = tone;
 		ctx.strokeStyle = tone;
 
-		if (spec.form === 'bushy') {
+		if (spec.form === 'leafy') {
+			drawLeafy(ctx, bx, base, height, width, lean, splay);
+		} else if (spec.form === 'bushy') {
 			drawBushy(ctx, bx, base, height, width, lean + splay);
 		} else {
 			drawBlade(ctx, bx, base, height, width, lean, splay, spec.form === 'broadleaf', tone);
@@ -468,6 +491,70 @@ function bladeWash(
 
 	perCtx.set(key, wash);
 	return wash;
+}
+
+/**
+ * A leafy stem: a curving stalk carrying paired leaflets all the way up.
+ *
+ * Leaflets are angled off the stem's own local direction rather than off vertical, so
+ * they keep pointing "up the plant" as the stalk bends instead of fanning sideways when
+ * it leans. They shrink toward the tip, which is what makes a stem read as growing
+ * rather than as a bottle brush.
+ */
+function drawLeafy(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	base: number,
+	height: number,
+	width: number,
+	lean: number,
+	splay: number
+): void {
+	const SEGMENTS = 20;
+	const stem: { x: number; y: number }[] = [];
+	for (let s = 0; s <= SEGMENTS; s++) {
+		const u = s / SEGMENTS;
+		stem.push({ x: x + lean * u * u + splay * u ** 1.4, y: base - height * u });
+	}
+
+	ctx.lineWidth = Math.max(1, width * 0.6);
+	ctx.beginPath();
+	ctx.moveTo(stem[0].x, stem[0].y);
+	for (const p of stem) ctx.lineTo(p.x, p.y);
+	ctx.stroke();
+
+	for (let s = 1; s <= SEGMENTS; s++) {
+		const u = s / SEGMENTS;
+		const here = stem[s];
+		const along = Math.atan2(here.y - stem[s - 1].y, here.x - stem[s - 1].x);
+		// Long enough that neighbouring whorls overlap. Sparse leaflets on a bare stalk
+		// read as a twig; the plant this is drawn from is dense enough to be a column.
+		const leaf = width * 5.4 * (1 - u * 0.45);
+
+		for (const side of [-1, 1] as const) {
+			// Swept back toward the base, as a growing leaf is, not square to the stem.
+			const angle = along + side * 0.78;
+			const tipX = here.x + Math.cos(angle) * leaf;
+			const tipY = here.y + Math.sin(angle) * leaf;
+			const belly = leaf * 0.3;
+
+			ctx.beginPath();
+			ctx.moveTo(here.x, here.y);
+			ctx.quadraticCurveTo(
+				here.x + Math.cos(angle) * leaf * 0.5 - Math.sin(angle) * belly,
+				here.y + Math.sin(angle) * leaf * 0.5 + Math.cos(angle) * belly,
+				tipX,
+				tipY
+			);
+			ctx.quadraticCurveTo(
+				here.x + Math.cos(angle) * leaf * 0.5 + Math.sin(angle) * belly,
+				here.y + Math.sin(angle) * leaf * 0.5 - Math.cos(angle) * belly,
+				here.x,
+				here.y
+			);
+			ctx.fill();
+		}
+	}
 }
 
 /** A low stand of fine leaflets: mass rather than blades. */

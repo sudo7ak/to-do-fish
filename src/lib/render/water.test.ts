@@ -7,6 +7,7 @@ import {
 	MAX_AIR_BUBBLE,
 	MAX_FLAKE,
 	PLANTS,
+	plantFor,
 	WATERLINE
 } from './water';
 import { palette } from './palette';
@@ -248,5 +249,31 @@ describe('the feeding flourish', () => {
 		};
 
 		expect(depthAt(0.3)).toBeGreaterThan(depthAt(0.9));
+	});
+});
+
+describe('the leafy stem', () => {
+	it('is in the table, and is the tallest thing in the bed', () => {
+		const leafy = PLANTS.find((p) => p.form === 'leafy');
+		expect(leafy).toBeDefined();
+		expect(Math.max(...PLANTS.map((p) => p.height))).toBe(leafy!.height);
+	});
+
+	it('stays rare, so the bed is planted rather than hedged', () => {
+		// Weighted below 1: it is the busiest plant here and a stand of them is a wall.
+		const drawn: Record<string, number> = {};
+		for (let i = 0; i <= 400; i++) {
+			const spec = plantFor(i / 400);
+			drawn[spec.form] = (drawn[spec.form] ?? 0) + 1;
+		}
+
+		const share = (drawn.leafy ?? 0) / 401;
+		expect(share).toBeGreaterThan(0);
+		expect(share).toBeLessThan(1 / PLANTS.length);
+	});
+
+	it('still covers the whole roll, so no plant is unreachable', () => {
+		const forms = new Set(Array.from({ length: 400 }, (_, i) => plantFor(i / 399).form));
+		for (const spec of PLANTS) expect(forms.has(spec.form)).toBe(true);
 	});
 });
