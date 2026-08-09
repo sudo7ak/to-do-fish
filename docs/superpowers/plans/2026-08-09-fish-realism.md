@@ -1,5 +1,11 @@
 # Fish Realism Implementation Plan
 
+> **Status: merged 2026-08-09.** Phases 0, 1.1, 1.2, 2 and 3 landed. **Phase 1.3
+> (pectoral sculling) and Phase 4 (separation and steering) were not done** — after the
+> body outline came off, the remaining artificiality did not look like a fin-motion
+> problem, and Phase 4 was always contingent on the earlier phases falling short.
+> Anything still open is tracked in `docs/pending.md`, not here.
+
 **Goal:** Make the tank's creatures read as living animals rather than illustrations,
 without losing the identity the app encodes in them.
 

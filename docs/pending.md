@@ -52,6 +52,24 @@ reward for finishing.
 
 ## 2. Fish appearance
 
+### 2.6 Realism pass — landed 2026-08-09
+
+`docs/superpowers/plans/2026-08-09-fish-realism.md`, merged. Tail beat now follows how
+hard the fish is working; bodies bend into turns; the drawn body outline is gone; the
+mascot eye is a dark iris; creatures and planting fade with depth; fins are thinner at
+the margin. The bed was rebuilt: planting roots in the sand's real surface, sway is a
+current crossing the tank rather than one shared frequency, and there are four kinds of
+plant instead of one repeated blade.
+
+**Still open from that work:**
+
+- **Pectoral sculling** (plan 1.3) and **separation/steering** (plan Phase 4) were not
+  done. Fish still pass through one another.
+- The **bushy** plant form is the weakest of the four — it reads as straw rather than
+  as mass.
+- The sand is a plain band. Leaf litter where blades meet it would soften the junction.
+- Clumps can still read slightly as sheaves; widening the root spread would help.
+
 ### 2.0 The rendering-library question is answered — do not reopen
 
 Rive was evaluated properly (harness built, runtime wired, `docs/rive-experiment.md`).
