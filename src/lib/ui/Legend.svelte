@@ -236,10 +236,12 @@
 		inset: auto 0 0 0;
 		z-index: 23;
 		max-width: 34rem;
-		max-height: 82vh;
+		/* dvh, not vh: on mobile Safari `vh` is the tallest-possible viewport, so with
+		   the URL bar showing, 82vh already overflows the visible area. */
+		max-height: 82dvh;
 		overflow-y: auto;
 		margin: 0 auto;
-		padding: 1.5rem 1.5rem calc(1.5rem + env(safe-area-inset-bottom));
+		padding: 1.25rem 1.25rem 0;
 		border-radius: 1.25rem 1.25rem 0 0;
 		background: rgba(255, 255, 255, 0.85);
 		backdrop-filter: blur(18px);
@@ -256,14 +258,14 @@
 	}
 
 	h2 {
-		margin: 0 0 1rem;
+		margin: 0 0 0.85rem;
 		font-size: 1.15rem;
 		font-weight: 600;
 	}
 
 	ul {
 		display: grid;
-		gap: 0.9rem;
+		gap: 0.65rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -299,8 +301,21 @@
 		opacity: 0.75;
 	}
 
+	/*
+	 * Pinned to the foot of the sheet rather than sitting at the end of the list.
+	 *
+	 * Seven rows overflow a 667px phone, so the sheet scrolls internally — and the
+	 * dismiss control was the thing below the fold. A modal whose only exit is
+	 * off-screen, on a sheet that opens by itself on a first visit, is a trap. The
+	 * gradient is the scroll affordance: content fading under the button is what says
+	 * there is more above it.
+	 */
 	.actions {
-		margin-top: 1.25rem;
+		position: sticky;
+		bottom: 0;
+		margin-top: 0.75rem;
+		padding: 0.75rem 0 calc(1rem + env(safe-area-inset-bottom));
+		background: linear-gradient(to top, rgba(242, 246, 247, 0.98) 62%, rgba(242, 246, 247, 0));
 	}
 
 	button {
