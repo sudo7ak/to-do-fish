@@ -6,7 +6,11 @@ const USER = { id: 'user-1', email: 'someone@example.com' };
 
 function fakeClient(session: { user: typeof USER } | null = null) {
 	const listeners: ((session: { user: typeof USER } | null) => void)[] = [];
-	const state = { signedIn: false, signedOut: false };
+	const state = {
+		signedIn: false,
+		signedOut: false,
+		signInCalls: [] as { provider: string; options?: { redirectTo?: string } }[]
+	};
 
 	return {
 		get signedIn() {
@@ -15,14 +19,18 @@ function fakeClient(session: { user: typeof USER } | null = null) {
 		get signedOut() {
 			return state.signedOut;
 		},
+		get signInCalls() {
+			return state.signInCalls;
+		},
 		auth: {
 			getSession: async () => ({ data: { session }, error: null }),
 			onAuthStateChange(callback: (event: string, s: { user: typeof USER } | null) => void) {
 				listeners.push((s) => callback('x', s));
 				return { data: { subscription: { unsubscribe() {} } } };
 			},
-			async signInWithOAuth() {
+			async signInWithOAuth(options: { provider: string; options?: { redirectTo?: string } }) {
 				state.signedIn = true;
+				state.signInCalls.push(options);
 				return { error: null };
 			},
 			async signOut() {
@@ -33,7 +41,12 @@ function fakeClient(session: { user: typeof USER } | null = null) {
 		emit(next: { user: typeof USER } | null) {
 			for (const listener of listeners) listener(next);
 		}
-	} as unknown as AuthClient & { signedIn: boolean; signedOut: boolean; emit: (s: unknown) => void };
+	} as unknown as AuthClient & {
+		signedIn: boolean;
+		signedOut: boolean;
+		signInCalls: { provider: string; options?: { redirectTo?: string } }[];
+		emit: (s: unknown) => void;
+	};
 }
 
 describe('createAuth', () => {
@@ -79,6 +92,25 @@ describe('createAuth', () => {
 		await auth.signOut();
 
 		expect(client.signedOut).toBe(true);
+	});
+
+	it('asks the client to sign in with Google, redirecting without a query string', async () => {
+		// The test environment is plain node, with no `window`; signIn() reads
+		// window.location.href, so a fake stands in for the address bar here.
+		vi.stubGlobal('window', { location: { href: 'https://example.com/app?code=abc123' } });
+
+		const client = fakeClient(null);
+		const auth = createAuth(client);
+		await auth.ready;
+
+		await auth.signIn();
+
+		expect(client.signInCalls).toHaveLength(1);
+		expect(client.signInCalls[0].provider).toBe('google');
+		// A shared or bookmarked link must never carry someone's auth code back in.
+		expect(client.signInCalls[0].options?.redirectTo).toBe('https://example.com/app');
+
+		vi.unstubAllGlobals();
 	});
 });
 
