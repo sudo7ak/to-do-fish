@@ -22,7 +22,12 @@ export type RenderLoopOptions = {
 	cancelRaf?: (handle: number) => void;
 	isHidden?: () => boolean;
 	prefersReducedMotion?: () => boolean;
-	wakeTarget?: EventTarget;
+	/** Everything the wake events are listened for on. Defaults to document and window. */
+	wakeTargets?: EventTarget[];
+	/** Wall clock, in milliseconds, used only by the watchdog. */
+	now?: () => number;
+	startWatchdog?: (tick: () => void, everyMs: number) => number;
+	stopWatchdog?: (handle: number) => void;
 };
 
 export type RenderLoop = { start(): void; stop(): void };
@@ -34,16 +39,33 @@ export type RenderLoop = { start(): void; stop(): void };
  */
 const MAX_FRAME_MS = 100;
 
+/**
+ * The wake-ups a backgrounded tab can come back through. `visibilitychange` alone is
+ * not enough on mobile: a frozen tab (Page Lifecycle) is thawed with `resume`, and a
+ * tab restored from the back/forward cache only gets `pageshow`. Missing those left
+ * the tank dead until reload.
+ */
+const WAKE_EVENTS = ['visibilitychange', 'pageshow', 'resume', 'focus'] as const;
+
+/** How often the watchdog looks, and how long a visible-but-silent tank may go unnoticed. */
+const WATCHDOG_EVERY_MS = 1000;
+const STALL_MS = 2000;
+
 export function createRenderLoop(options: RenderLoopOptions): RenderLoop {
 	const raf = options.raf ?? defaultRaf;
 	const cancelRaf = options.cancelRaf ?? defaultCancelRaf;
 	const isHidden = options.isHidden ?? defaultIsHidden;
 	const prefersReducedMotion = options.prefersReducedMotion ?? defaultReducedMotion;
-	const wakeTarget = options.wakeTarget ?? defaultWakeTarget();
+	const wakeTargets = options.wakeTargets ?? defaultWakeTargets();
+	const now = options.now ?? (() => Date.now());
+	const startWatchdog = options.startWatchdog ?? defaultStartWatchdog;
+	const stopWatchdog = options.stopWatchdog ?? defaultStopWatchdog;
 
 	let handle: number | undefined;
+	let watchdog: number | undefined;
 	let running = false;
 	let lastTime: number | undefined;
+	let lastFrameAt = 0;
 
 	function frame(time: number) {
 		handle = undefined;
@@ -52,6 +74,7 @@ export function createRenderLoop(options: RenderLoopOptions): RenderLoop {
 		// starts fresh instead of inheriting the gap.
 		const dt = lastTime === undefined ? 0 : Math.min(time - lastTime, MAX_FRAME_MS);
 		lastTime = time;
+		lastFrameAt = now();
 
 		try {
 			options.draw({ time, dt, animate: !prefersReducedMotion() });
@@ -74,23 +97,44 @@ export function createRenderLoop(options: RenderLoopOptions): RenderLoop {
 		lastTime = undefined;
 	}
 
-	const onVisibilityChange = () => {
-		if (isHidden()) pause();
-		else schedule();
+	/**
+	 * A backgrounded tab's pending frame is dropped without the callback ever running,
+	 * so `handle` still holds a number that will never come back and `schedule()` — which
+	 * refuses to double-book — would return early forever. Clearing it first is what makes
+	 * the wake-up actually wake anything.
+	 */
+	const wake = () => {
+		if (!running) return;
+		pause();
+		schedule();
+	};
+
+	const tick = () => {
+		if (!running || isHidden()) return;
+		if (now() - lastFrameAt < STALL_MS) return;
+		wake();
 	};
 
 	return {
 		start() {
 			if (running) return;
 			running = true;
-			wakeTarget?.addEventListener('visibilitychange', onVisibilityChange);
+			lastFrameAt = now();
+			for (const target of wakeTargets) {
+				for (const event of WAKE_EVENTS) target.addEventListener(event, wake);
+			}
+			watchdog = startWatchdog(tick, WATCHDOG_EVERY_MS);
 			schedule();
 		},
 
 		stop() {
 			running = false;
 			pause();
-			wakeTarget?.removeEventListener('visibilitychange', onVisibilityChange);
+			for (const target of wakeTargets) {
+				for (const event of WAKE_EVENTS) target.removeEventListener(event, wake);
+			}
+			if (watchdog !== undefined) stopWatchdog(watchdog);
+			watchdog = undefined;
 		}
 	};
 }
@@ -107,6 +151,16 @@ function defaultReducedMotion(): boolean {
 	return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function defaultWakeTarget(): EventTarget | undefined {
-	return typeof document === 'undefined' ? undefined : document;
+function defaultWakeTargets(): EventTarget[] {
+	// `visibilitychange` and `resume` land on the document, `pageshow` and `focus` on
+	// the window. Listening to both on both is harmless and saves a per-event table.
+	const targets: EventTarget[] = [];
+	if (typeof document !== 'undefined') targets.push(document);
+	if (typeof window !== 'undefined') targets.push(window);
+	return targets;
 }
+
+const defaultStartWatchdog = (tick: () => void, everyMs: number) =>
+	setInterval(tick, everyMs) as unknown as number;
+
+const defaultStopWatchdog = (handle: number) => clearInterval(handle);

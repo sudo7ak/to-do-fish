@@ -82,15 +82,22 @@
 		const rollover = () => (now = today());
 		const clock = setInterval(rollover, 20_000);
 		// A sleeping machine runs no timers, so the wake is where the day usually turns.
-		document.addEventListener('visibilitychange', rollover);
-		window.addEventListener('focus', rollover);
+		// A phone gives back more than one kind of wake: a frozen tab thaws with
+		// `resume` and a back/forward-cache restore only fires `pageshow`.
+		const wakeEvents = ['visibilitychange', 'pageshow', 'resume', 'focus'];
+		for (const event of wakeEvents) {
+			document.addEventListener(event, rollover);
+			window.addEventListener(event, rollover);
+		}
 
-		// Both the interval and the visibilitychange listener leak without this.
+		// Both the interval and the wake listeners leak without this.
 		return () => {
 			ticker.stop();
 			clearInterval(clock);
-			document.removeEventListener('visibilitychange', rollover);
-			window.removeEventListener('focus', rollover);
+			for (const event of wakeEvents) {
+				document.removeEventListener(event, rollover);
+				window.removeEventListener(event, rollover);
+			}
 		};
 	});
 

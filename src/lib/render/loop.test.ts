@@ -13,6 +13,11 @@ function fakeRaf() {
 			return id;
 		},
 		cancel: (id: number) => pending.delete(id),
+		/**
+		 * Throws away scheduled callbacks without running them — what a mobile browser
+		 * does to a frozen tab. The loop is never told.
+		 */
+		drop: () => pending.clear(),
 		/** Runs whatever is currently scheduled, at the given timestamp. */
 		flush(time: number) {
 			const callbacks = [...pending.entries()];
@@ -25,18 +30,43 @@ function fakeRaf() {
 	};
 }
 
+/** A hand-driven stand-in for setInterval, so the watchdog can be ticked on demand. */
+function fakeTimer() {
+	let cb: (() => void) | undefined;
+	return {
+		start: (fn: () => void) => {
+			cb = fn;
+			return 1;
+		},
+		stop: () => {
+			cb = undefined;
+		},
+		tick() {
+			cb?.();
+		},
+		get armed() {
+			return cb !== undefined;
+		}
+	};
+}
+
 function setup(over: Parameters<typeof createRenderLoop>[0] extends never ? never : object = {}) {
 	const clock = fakeRaf();
 	const frames: Frame[] = [];
 	const wakeTarget = new EventTarget();
+	const timer = fakeTimer();
 	let hidden = false;
+	let now = 0;
 
 	const loop = createRenderLoop({
 		draw: (frame) => frames.push(frame),
 		raf: clock.raf,
 		cancelRaf: clock.cancel,
 		isHidden: () => hidden,
-		wakeTarget,
+		wakeTargets: [wakeTarget],
+		startWatchdog: timer.start,
+		stopWatchdog: timer.stop,
+		now: () => now,
 		...over
 	});
 
@@ -45,6 +75,11 @@ function setup(over: Parameters<typeof createRenderLoop>[0] extends never ? neve
 		clock,
 		frames,
 		wakeTarget,
+		timer,
+		advance(ms: number) {
+			now += ms;
+		},
+		/** Backgrounds the tab the way a browser that still reports visibility does. */
 		hide() {
 			hidden = true;
 			wakeTarget.dispatchEvent(new Event('visibilitychange'));
@@ -52,6 +87,13 @@ function setup(over: Parameters<typeof createRenderLoop>[0] extends never ? neve
 		show() {
 			hidden = false;
 			wakeTarget.dispatchEvent(new Event('visibilitychange'));
+		},
+		/** Backgrounds the tab silently: the scheduled frame is dropped, no event fires. */
+		dropFrames() {
+			clock.drop();
+		},
+		wake(event: string) {
+			wakeTarget.dispatchEvent(new Event(event));
 		}
 	};
 }
@@ -186,6 +228,129 @@ describe('render loop — hidden tab', () => {
 		clock.flush(16);
 
 		expect(frames).toHaveLength(0);
+	});
+
+	it('stops listening for every other wake event once stopped', () => {
+		const { loop, clock, frames, wake } = setup();
+
+		loop.start();
+		loop.stop();
+		for (const event of ['pageshow', 'resume', 'focus']) wake(event);
+		clock.flush(16);
+
+		expect(frames).toHaveLength(0);
+	});
+});
+
+describe('render loop — a frozen tab', () => {
+	// Mobile Chrome freezes a backgrounded tab: the scheduled frame is dropped and
+	// no `visibilitychange` need ever fire. The loop must not be left believing a
+	// frame is still in flight, or every later wake-up is a no-op and the tank is
+	// dead until reload. This shipped.
+	it('recovers when the frame in flight was dropped and only pageshow fires', () => {
+		const { loop, clock, frames, dropFrames, wake } = setup();
+
+		loop.start();
+		clock.flush(16);
+		dropFrames();
+		wake('pageshow');
+		clock.flush(32);
+
+		expect(frames).toHaveLength(2);
+		loop.stop();
+	});
+
+	it('recovers on resume, which is all a thawed tab gets', () => {
+		const { loop, clock, frames, dropFrames, wake } = setup();
+
+		loop.start();
+		clock.flush(16);
+		dropFrames();
+		wake('resume');
+		clock.flush(32);
+
+		expect(frames).toHaveLength(2);
+		loop.stop();
+	});
+
+	it('recovers on focus', () => {
+		const { loop, clock, frames, dropFrames, wake } = setup();
+
+		loop.start();
+		clock.flush(16);
+		dropFrames();
+		wake('focus');
+		clock.flush(32);
+
+		expect(frames).toHaveLength(2);
+		loop.stop();
+	});
+
+	it('restarts a visible tank that has gone quiet, with no wake event at all', () => {
+		// The watchdog is the backstop: timers survive where requestAnimationFrame
+		// does not, so a tank that stopped drawing while visible comes back by itself.
+		const { loop, clock, frames, dropFrames, timer, advance } = setup();
+
+		loop.start();
+		clock.flush(16);
+		dropFrames();
+		advance(5000);
+		timer.tick();
+		clock.flush(32);
+
+		expect(frames).toHaveLength(2);
+		loop.stop();
+	});
+
+	it('leaves a healthy loop alone', () => {
+		const { loop, clock, frames, timer, advance } = setup();
+
+		loop.start();
+		clock.flush(16);
+		advance(200);
+		timer.tick();
+		clock.flush(32);
+
+		expect(frames).toHaveLength(2);
+		expect(clock.scheduled).toBe(1);
+		loop.stop();
+	});
+
+	it('does not revive a hidden tab', () => {
+		const { loop, clock, frames, hide, timer, advance } = setup();
+
+		loop.start();
+		clock.flush(16);
+		hide();
+		advance(5000);
+		timer.tick();
+		clock.flush(32);
+
+		expect(frames).toHaveLength(1);
+		loop.stop();
+	});
+
+	it('stops the watchdog when the loop stops', () => {
+		const { loop, timer } = setup();
+
+		loop.start();
+		expect(timer.armed).toBe(true);
+		loop.stop();
+
+		expect(timer.armed).toBe(false);
+	});
+
+	it('does not report the frozen stretch as one enormous frame', () => {
+		const { loop, clock, frames, dropFrames, wake } = setup();
+
+		loop.start();
+		clock.flush(16);
+		dropFrames();
+		wake('resume');
+		clock.flush(3_600_000);
+
+		expect(frames[1].dt).toBeLessThanOrEqual(100);
+		loop.stop();
 	});
 });
 
