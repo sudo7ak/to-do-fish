@@ -24,6 +24,12 @@ export type SyncStatus = {
 	at?: number;
 };
 
+/**
+ * Why a sync was asked for. Policy applies only to `'wake'`: a user's own edit, a
+ * tap on Sync now, and an account change must never be throttled or skipped.
+ */
+export type SyncReason = 'wake' | 'write' | 'manual' | 'account';
+
 export type SyncingOptions = {
 	local: TaskStore;
 	remote: Remote;
@@ -83,6 +89,8 @@ export class SyncingTaskStore implements TaskStore {
 	#pending: number | undefined;
 	/** Set on every successful sync, and never cleared — see `#status`. */
 	#lastSyncedAt: number | undefined;
+	/** The sync currently running, shared by every caller that arrives while it does. */
+	#inFlight: Promise<void> | undefined;
 
 	/**
 	 * A merge that must not be written down: the remote holds a shape this build does
@@ -136,7 +144,22 @@ export class SyncingTaskStore implements TaskStore {
 		await this.#local.save(claimFor(snapshot, this.#owner));
 
 		if (this.#pending !== undefined) this.#clearTimer(this.#pending);
-		this.#pending = this.#setTimer(() => void this.sync(), this.#debounceMs);
+		this.#pending = this.#setTimer(() => void this.sync('write'), this.#debounceMs);
+	}
+
+	/**
+	 * Three triggers can land in one tick — visibilitychange, focus, and a debounced
+	 * write. They would each do a full pull, merge and push against the same data.
+	 * Sharing the promise makes them one round trip, and every caller still resolves
+	 * when it finishes.
+	 */
+	sync(reason: SyncReason = 'manual'): Promise<void> {
+		if (this.#inFlight) return this.#inFlight;
+
+		this.#inFlight = this.#runSync(reason).finally(() => {
+			this.#inFlight = undefined;
+		});
+		return this.#inFlight;
 	}
 
 	/**
@@ -146,7 +169,7 @@ export class SyncingTaskStore implements TaskStore {
 	 * `StorageUnavailableError` as a real failure mode — so the whole body shares one
 	 * catch rather than guarding pull and push alone.
 	 */
-	async sync(): Promise<void> {
+	async #runSync(_reason: SyncReason): Promise<void> {
 		this.#status('syncing');
 
 		try {

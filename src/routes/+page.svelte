@@ -165,7 +165,7 @@
 			// account claim, so this is what drops the previous account's tank out of
 			// memory — and it has to happen even when the first sync fails, or an edit
 			// made while offline would be written back under the new account's name.
-			void store.hydrate().then(() => syncing?.sync());
+			void store.hydrate().then(() => syncing?.sync('account'));
 		});
 
 		// A sleeping machine runs no timers, so the wake is where the day usually turns.
@@ -177,7 +177,7 @@
 		// listener at all.
 		const wake = () => {
 			rollover();
-			void syncing?.sync();
+			void syncing?.sync('wake');
 		};
 		const wakeTargets: [EventTarget, string][] = [
 			[document, 'visibilitychange'],
@@ -292,7 +292,7 @@
 			now={clock}
 			onSignIn={() => void auth.signIn()}
 			onSignOut={() => void auth.signOut()}
-			onSyncNow={() => void syncing?.sync()}
+			onSyncNow={() => void syncing?.sync('manual')}
 		/>
 	{/snippet}
 

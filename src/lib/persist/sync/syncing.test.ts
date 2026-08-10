@@ -51,10 +51,12 @@ function fakeLocal(initial: Snapshot = snapshot()) {
 function fakeRemote(initial: Snapshot = snapshot()) {
 	return {
 		pushes: [] as Snapshot[],
+		pulls: 0,
 		pullResult: initial,
 		pullError: undefined as unknown,
 		pushError: undefined as unknown,
 		async pull() {
+			this.pulls++;
 			if (this.pullError) throw this.pullError;
 			return this.pullResult;
 		},
@@ -64,6 +66,7 @@ function fakeRemote(initial: Snapshot = snapshot()) {
 		}
 	} satisfies Remote & {
 		pushes: Snapshot[];
+		pulls: number;
 		pullResult: Snapshot;
 		pullError: unknown;
 		pushError: unknown;
@@ -360,6 +363,49 @@ describe('SyncingTaskStore — sync', () => {
 
 		expect(external).not.toHaveBeenCalled();
 		expect(localStore.saves).toHaveLength(0);
+	});
+});
+
+describe('SyncingTaskStore — one sync at a time', () => {
+	it('collapses concurrent syncs into a single round trip', async () => {
+		// Three triggers in the same tick is the ordinary case: a tab switch fires
+		// visibilitychange and focus, and a debounced write can land on top.
+		const remote = fakeRemote();
+		let release: () => void = () => {};
+		remote.pull = () => {
+			remote.pulls++;
+			return new Promise((resolve) => {
+				release = () => resolve(remote.pullResult);
+			});
+		};
+		const { store } = setup(fakeLocal(), remote);
+
+		const all = Promise.all([store.sync(), store.sync(), store.sync()]);
+		release();
+		await all;
+
+		expect(remote.pulls).toBe(1);
+	});
+
+	it('lets a later sync run once the first has finished', async () => {
+		// Single-flight must not become a lock: the next wake still syncs.
+		const { store, remote } = setup();
+
+		await store.sync();
+		await store.sync();
+
+		expect(remote.pulls).toBe(2);
+	});
+
+	it('still resolves every caller when the shared sync fails', async () => {
+		const remote = fakeRemote();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		const { store } = setup(fakeLocal(), remote);
+
+		await expect(Promise.all([store.sync(), store.sync()])).resolves.toEqual([
+			undefined,
+			undefined
+		]);
 	});
 });
 
