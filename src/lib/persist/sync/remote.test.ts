@@ -36,8 +36,10 @@ function fakeClient(
 		upserts,
 		from(table: string) {
 			return {
-				select: async () =>
-					fail ? { data: null, error: fail } : { data: seed[table] ?? [], error: null },
+				select: () => ({
+					eq: async () =>
+						fail ? { data: null, error: fail } : { data: seed[table] ?? [], error: null }
+				}),
 				upsert: async (rows: unknown[]) => {
 					if (fail) return { error: fail };
 					upserts[table] = [...(upserts[table] ?? []), ...rows];
@@ -215,7 +217,11 @@ describe('SupabaseRemote — a newer schema', () => {
 		});
 	});
 
-	it('still allows the pull, so an out-of-date device can be read', async () => {
+	it('still allows the pull, and reports the version it actually found', async () => {
+		// `toBeDefined()` used to be the whole assertion here, and it passed while the
+		// caller had no way to learn the remote was newer — so the merged rows were
+		// written to localStorage stamped with this build's version and would never be
+		// migrated. The version has to come back for that decision to be makeable.
 		const client = fakeClient({
 			settings: [
 				{
@@ -225,9 +231,49 @@ describe('SupabaseRemote — a newer schema', () => {
 					version: SCHEMA_VERSION + 1,
 					updated_at: 1
 				}
-			]
+			],
+			koi: [{ user_id: USER, date: '2026-08-09', earned_at: 5 }]
 		});
 
-		await expect(new SupabaseRemote(client, USER).pull()).resolves.toBeDefined();
+		const pulled = await new SupabaseRemote(client, USER).pull();
+
+		expect(pulled.version).toBe(SCHEMA_VERSION + 1);
+		expect(pulled.settings).toEqual({ environment: 'calm', seenLegend: true, updatedAt: 1 });
+		expect(pulled.koi).toEqual([{ date: '2026-08-09', earnedAt: 5 }]);
+	});
+});
+
+describe('SupabaseRemote — reads are scoped to the account (I4)', () => {
+	it('filters every select by user_id rather than trusting RLS alone', async () => {
+		const filters: Record<string, [string, string][]> = {};
+		const client: SupabaseLike = {
+			from: (table: string) => ({
+				select: () => ({
+					eq: async (column: string, value: string) => {
+						(filters[table] ??= []).push([column, value]);
+						return { data: [], error: null };
+					}
+				}),
+				upsert: async () => ({ error: null })
+			})
+		};
+
+		await new SupabaseRemote(client, USER).pull();
+
+		expect(filters).toEqual({
+			tasks: [['user_id', USER]],
+			koi: [['user_id', USER]],
+			settings: [['user_id', USER]]
+		});
+	});
+});
+
+describe('SupabaseRemote — an account with no settings row', () => {
+	it('reports the settings as absent rather than synthesising a zero-stamped record', async () => {
+		// A synthesised `updatedAt: 0` ties with migrated local settings and the tie
+		// goes to remote, which silently discards the user's environment choice.
+		const pulled = await new SupabaseRemote(fakeClient(), USER).pull();
+
+		expect(pulled.settings).toBeUndefined();
 	});
 });

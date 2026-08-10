@@ -1,5 +1,5 @@
-import { SCHEMA_VERSION, type Snapshot } from '../../types';
-import type { Push } from './merge';
+import { SCHEMA_VERSION } from '../../types';
+import type { Push, RemoteSnapshot } from './merge';
 import {
 	fromKoiRow,
 	fromSettingsRow,
@@ -22,13 +22,15 @@ import {
 /** The slice of the Supabase client actually used, so a test can supply a fake. */
 export type SupabaseLike = {
 	from(table: string): {
-		select(columns?: string): Promise<{ data: unknown[] | null; error: unknown }>;
+		select(columns?: string): {
+			eq(column: string, value: string): Promise<{ data: unknown[] | null; error: unknown }>;
+		};
 		upsert(rows: unknown[], options?: { onConflict: string }): Promise<{ error: unknown }>;
 	};
 };
 
 export interface Remote {
-	pull(): Promise<Snapshot>;
+	pull(): Promise<RemoteSnapshot>;
 	push(push: Push): Promise<void>;
 }
 
@@ -63,7 +65,7 @@ export class SupabaseRemote implements Remote {
 		this.#userId = userId;
 	}
 
-	async pull(): Promise<Snapshot> {
+	async pull(): Promise<RemoteSnapshot> {
 		const [tasks, koi, settings] = await Promise.all([
 			this.#select<TaskRow>('tasks'),
 			this.#select<KoiRow>('koi'),
@@ -74,13 +76,17 @@ export class SupabaseRemote implements Remote {
 		this.#remoteVersion = row?.version ?? SCHEMA_VERSION;
 
 		return {
-			version: SCHEMA_VERSION,
+			// The version actually found, not this build's. The caller has to be able to
+			// tell that the rows it just read were written by a newer client, or it will
+			// store them under a version number that is a lie and they will never be
+			// migrated.
+			version: this.#remoteVersion,
 			tasks: tasks.map(fromTaskRow),
 			koi: koi.map(fromKoiRow),
-			// An account with no settings row yet is not an error; it is a first sync.
-			settings: row
-				? fromSettingsRow(row)
-				: { environment: 'progress', seenLegend: false, updatedAt: 0 }
+			// An account with no settings row yet is not an error; it is a first sync,
+			// and `undefined` says so. Synthesising a default here would manufacture a
+			// record that competes with the local one and, on a tie, beats it.
+			...(row ? { settings: fromSettingsRow(row) } : {})
 		};
 	}
 
@@ -117,8 +123,15 @@ export class SupabaseRemote implements Remote {
 		}
 	}
 
+	/**
+	 * Filtered by `user_id` even though RLS already scopes the read. RLS is the
+	 * boundary and stays it; this is the second line. Without it a policy typo does
+	 * not degrade gracefully — `fromTaskRow` drops `user_id`, so a row belonging to
+	 * someone else becomes indistinguishable from your own the moment it is mapped,
+	 * and the next push re-homes it under your id.
+	 */
 	async #select<T>(table: string): Promise<T[]> {
-		const { data, error } = await this.#client.from(table).select('*');
+		const { data, error } = await this.#client.from(table).select('*').eq('user_id', this.#userId);
 		if (error) throw classify(error, `Could not read ${table}`);
 		return (data ?? []) as T[];
 	}
