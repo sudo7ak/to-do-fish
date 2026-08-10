@@ -6,10 +6,16 @@ once per project and a script would be read less often than this file.
 
 ## 1. Project
 
-Create a Supabase project. Note the project URL and the **anon** key from
-Settings → API. The anon key is public by design and ships in the built JavaScript;
-row-level security is the boundary, not the key. The **service role** key must never
-appear in this repository or in a build.
+Create a Supabase project. Note the project URL and the **publishable** key
+(`sb_publishable_…`), both offered by the Copy menu on the project home, or under
+Settings → API. Supabase used to call this the *anon* key and still issues legacy
+JWT-shaped ones under Settings → API → Legacy API keys; either works, and the
+publishable key is the current form.
+
+It is public by design and ships in the built JavaScript — row-level security is the
+boundary, not the key. What must never appear in this repository, in a build, or in
+`.env.local` is the **secret** key (`sb_secret_…`, formerly the service role key):
+it bypasses RLS entirely.
 
 ## 2. Schema
 
@@ -46,7 +52,7 @@ awkward to read in a build) under Settings → Secrets and variables → Actions
 Variables:
 
 - `PUBLIC_SUPABASE_URL`
-- `PUBLIC_SUPABASE_ANON_KEY`
+- `PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
 Locally, put the same two in `.env.local`, which is gitignored.
 

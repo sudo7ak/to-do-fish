@@ -1,5 +1,6 @@
 -- The whole server side of the fish tank. Three tables, RLS on all of them, and no
--- server-side code: the anon key plus these policies are the entire security model.
+-- server-side code: the publishable key plus these policies are the entire security
+-- model. That key is public and RLS is what actually constrains it.
 --
 -- Timestamps are client epoch milliseconds, deliberately. `updated_at` is the input
 -- to last-write-wins and the client owns it; a database default would introduce a

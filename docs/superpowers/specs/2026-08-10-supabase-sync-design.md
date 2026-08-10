@@ -77,8 +77,8 @@ and it is thin because the policy lives next door.
 ## Data model
 
 Three tables, all keyed by `user_id`, all with RLS `user_id = auth.uid()`. No service
-key, no server-side code, no edge functions. The anon key plus RLS is the whole
-security model.
+key, no server-side code, no edge functions. The publishable key plus RLS is the
+whole security model.
 
 ```sql
 create table tasks (
@@ -201,8 +201,8 @@ file, so there is no 404 — but `detectSessionInUrl` has to run before anything
 rewrites the URL, and the URL must be cleaned after the code exchange so that a
 shared or bookmarked link never carries an auth code.
 
-**Config** is `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY`, baked at build
-time from GitHub Actions repository variables. The anon key is public by design; RLS
+**Config** is `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_PUBLISHABLE_KEY`, baked at
+build time from GitHub Actions repository variables. That key is public by design; RLS
 is the boundary, not the key.
 
 **Missing config is not an error.** With the variables absent — local dev, a fork, a

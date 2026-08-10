@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { writable, type Readable } from 'svelte/store';
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY } from '$env/static/public';
 import type { SupabaseLike } from '../persist/sync/remote';
 
 /**
@@ -39,13 +39,13 @@ export type Auth = {
 };
 
 export function isSyncConfigured(): boolean {
-	return Boolean(PUBLIC_SUPABASE_URL && PUBLIC_SUPABASE_ANON_KEY);
+	return Boolean(PUBLIC_SUPABASE_URL && PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 }
 
 export function defaultClient(): (AuthClient & SupabaseLike) | null {
 	if (!isSyncConfigured()) return null;
 
-	return createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+	return createClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
 		auth: {
 			persistSession: true,
 			autoRefreshToken: true,
