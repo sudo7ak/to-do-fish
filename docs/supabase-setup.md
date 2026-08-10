@@ -53,3 +53,31 @@ Locally, put the same two in `.env.local`, which is gitignored.
 With both absent the app builds and runs local-only with sign-in hidden. That is a
 supported state, not a broken one: it is how the E2E sweep and the screenshot
 scripts run without a cloud account.
+
+## 5. Manual verification checklist
+
+None of this is covered by `npm test` or `npm run e2e`, which run against fakes and
+against an unconfigured build. Every item below needs a real project and a real
+Google account, and each one guards something that fails silently rather than
+loudly.
+
+- [ ] **`schema.sql` executes.** Nothing proves the DDL parses, that the `check`
+      constraints match what `toTaskRow` emits, or that `on delete cascade` against
+      `auth.users` resolves, until it has been run once.
+- [ ] **Anonymous reads return nothing.** The `set role anon` check in section 2.
+- [ ] **RLS actually isolates two accounts.** Sign in as one, create a task, sign in
+      as a second on another device, and confirm the first account's task is not
+      visible. No automated test involves two user ids.
+- [ ] **The OAuth round trip completes.** PKCE exchanges, and the session persists
+      across a reload.
+- [ ] **The address bar is clean afterwards.** Immediately after the redirect back,
+      the URL must carry no `code=` and no `access_token`. `detectSessionInUrl` is
+      supposed to strip it; nothing in this repository verifies that it does, and an
+      auth code sitting in a bookmarked or shared URL is a real leak. Check the bar,
+      then check the history entry.
+- [ ] **A deep link still signs in.** Open the app with a fragment in the URL and
+      sign in from there: `redirectTo` strips both the query and the fragment, and a
+      URL that is not on the allowlist fails with a message that explains nothing.
+- [ ] **A second account on the same device does not inherit the first one's tank.**
+      Sign in as A, sign out, sign in as B on the same browser profile. B must see
+      an empty tank, and A's tasks must not appear in B's rows.

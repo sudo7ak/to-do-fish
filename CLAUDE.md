@@ -164,8 +164,10 @@ not take the koi back — the koi records what happened, it is not a recomputed 
 the bubble, and the app never prompts about them.
 
 **Bump `updatedAt` on every mutation**, and generate IDs as client-side ULIDs. Both
-exist for a sync feature that does not exist yet; they are cheap now and expensive to
-retrofit once real data lives on two devices.
+are now load-bearing: `updatedAt` is the input to last-write-wins in
+`persist/sync/merge.ts`, and ULIDs are why two devices creating tasks offline cannot
+collide. A mutation that forgets to stamp `updatedAt` does not lose a write locally —
+it loses it on the other device, silently, the next time the two merge.
 
 **One surface, one owner.** Three separate things have each been drawn against their
 own private idea of where the sand is: the planting, the pearls, and the chest.

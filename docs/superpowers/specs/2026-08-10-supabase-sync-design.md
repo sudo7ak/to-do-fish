@@ -124,10 +124,16 @@ delete that does not replicate is a task that comes back from the dead on the ot
 device, which is the same class of bug as forgetting the soft-delete filter on a
 derived read.
 
-**Koi have no id, and no delete path.** `(user_id, date)` is the natural key. The
-merge is a union and the schema offers no way to revoke one, which is the invariant
-"koi are awarded once and never revoked" expressed in the storage layer rather than
-trusted to callers.
+**Koi have no id, and no delete path.** `(user_id, date)` is the natural key, and the
+merge is a union, so nothing this client does can revoke one.
+
+An earlier draft of this section claimed the schema made revocation impossible —
+"the invariant expressed in the storage layer rather than trusted to callers". It
+does not. The RLS policy is `for all`, which grants `DELETE` along with everything
+else; the invariant is still trusted to callers, and the callers happen to honour it.
+Splitting koi into separate `for select` / `for insert` / `for update` policies would
+make the original claim true. Until that is done and executed against a real
+database, this is a client-side invariant like any other.
 
 **`condition` stays `jsonb`.** Flattening the union into columns would make invalid
 combinations representable — a row with both `at` and `taskId` set. The type has one
@@ -209,10 +215,28 @@ that needs cloud credentials is a sweep that stops being run.
 reads "Sign in to sync". Signed in it shows the account and offers sign-out. No new
 screen and no settings page.
 
-**First sign-in on a device that already has local data merges; it does not ask.**
-The local snapshot is pushed and the remote pulled through the same `merge()`. A
-week of offline use survives signing in, and because tasks are ULID-keyed there is
-nothing to collide.
+**First sign-in on a device that already has *unclaimed* local data merges; it does
+not ask.** The local snapshot is pushed and the remote pulled through the same
+`merge()`. A week of offline use survives signing in, and because tasks are
+ULID-keyed there is nothing to collide.
+
+**A different account does not merge.** A snapshot records the account that claimed
+it (`Snapshot.owner`, schema version 4). Signing in as someone else discards the
+local snapshot and starts that account from its own remote. This rule was missing
+from the first draft of this document, which was written about one person's own data
+across two devices and never considered two identities on one device — and the
+omission was a cross-account data leak, not a gap: every one of the first account's
+tasks was absent from the second account's remote, so all of them were pushed up
+stamped with the second account's `user_id`, permanently and with no undo.
+
+The cost is accepted rather than mitigated: unsynced work belonging to the previous
+account is destroyed when a different account signs in. The alternative — asking —
+puts a data-loss decision in front of someone who has just tapped "sign in", and the
+merge it would offer is the leak. The wipe is bounded to an identity *change*: not
+sign-out, and not a token refresh.
+
+Everything written before schema version 4 is unclaimed, which is what keeps the
+paragraph above true for the only install this app actually has.
 
 **Signing out leaves the local snapshot alone.** Sign-out is not a delete. A "sign
 out and wipe this device" affordance is out of scope.

@@ -58,6 +58,11 @@ create policy "own koi"      on public.koi      for all
 create policy "own settings" on public.settings for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- Note what `for all` does *not* do: it grants DELETE as well. "Koi are awarded once
+-- and never revoked" is therefore still a client-side invariant, honoured by the
+-- merge being a union, and not something this schema enforces. Splitting koi into
+-- separate for select / for insert / for update policies would make it enforced.
+
 -- Deliberately absent: any trigger, default, or generated column touching
 -- `updated_at`. The merge depends on the client's number arriving unmodified.
 
