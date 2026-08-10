@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Account } from '$lib/auth/session';
 	import type { SyncStatus } from '$lib/persist/sync/syncing';
-	import { ago } from './ago';
+	import { syncLine } from './sync-line';
 
 	/**
 	 * Everything sync offers the user, in one place behind the gear.
@@ -22,28 +22,7 @@
 
 	const { account, status, now, onSignIn, onSignOut, onSyncNow }: Props = $props();
 
-	/** Failures that will never fix themselves say so; `offline` will, and stays mild. */
-	const TROUBLE: Record<SyncStatus['state'], string> = {
-		idle: '',
-		syncing: '',
-		offline: 'Not syncing — offline',
-		denied: 'Not syncing — sign in again',
-		stale: 'Not syncing — this device is out of date',
-		rejected: 'Not syncing — the server refused this data',
-		skewed: "Syncing, but this device's clock looks wrong",
-		storage: 'Not syncing — local storage is unavailable'
-	};
-
-	const line = $derived.by(() => {
-		const trouble = TROUBLE[status.state];
-		const last = status.at === undefined ? undefined : ago(status.at, now);
-
-		// A failure still reports the last success: knowing sync is broken matters
-		// less than knowing how stale the tank is because of it.
-		if (trouble) return last ? `${trouble}. Last synced ${last}.` : trouble;
-		if (status.state === 'syncing') return 'Syncing…';
-		return last ? `Synced ${last}` : 'Not synced yet';
-	});
+	const line = $derived(syncLine(status, now));
 </script>
 
 <h2>Sync</h2>

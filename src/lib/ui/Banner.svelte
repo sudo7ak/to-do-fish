@@ -8,15 +8,24 @@
 	 * on reload. It is not dismissible for the same reason: the condition has not
 	 * gone away just because the message was acknowledged.
 	 */
-	type Props = { visible: boolean };
+	type Props = {
+		visible: boolean;
+		/** Defaults to the save failure this banner was built for. */
+		title?: string;
+		detail?: string;
+	};
 
-	const { visible }: Props = $props();
+	const {
+		visible,
+		title = 'Changes are not being saved on this device.',
+		detail = 'Your tasks are still here for now, but they will be lost if you reload.'
+	}: Props = $props();
 </script>
 
 {#if visible}
 	<div class="banner" role="status" aria-live="polite">
-		<strong>Changes are not being saved on this device.</strong>
-		<span>Your tasks are still here for now, but they will be lost if you reload.</span>
+		<strong>{title}</strong>
+		<span>{detail}</span>
 	</div>
 {/if}
 

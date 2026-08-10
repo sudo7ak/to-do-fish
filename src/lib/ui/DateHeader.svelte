@@ -48,7 +48,6 @@
 </script>
 
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import { moodPercent, moodWord, type Environment } from '../render/palette';
 
 	/**
@@ -71,19 +70,9 @@
 		 */
 		now: string;
 		onNavigate: (date: string) => void;
-		/**
-		 * The account control, rendered on its own row below the date/arrows.
-		 *
-		 * Laid out here rather than positioned on top from outside: the arrows sit
-		 * flush against this component's own padding, so anything absolutely
-		 * positioned over the header from the page risks overlapping one of them.
-		 * A second flex row that this component owns cannot collide with the first
-		 * no matter how long the control's content gets.
-		 */
-		account?: Snippet;
 	};
 
-	const { date, environment, clearedPct, now, onNavigate, account }: Props = $props();
+	const { date, environment, clearedPct, now, onNavigate }: Props = $props();
 
 	const label = $derived(formatDay(date, now));
 	const isToday = $derived(date === now);
@@ -130,12 +119,6 @@
 			›
 		</button>
 	</div>
-
-	{#if account}
-		<div class="account-row">
-			{@render account()}
-		</div>
-	{/if}
 </header>
 
 <style>
@@ -178,22 +161,6 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
-	}
-
-	/*
-	 * A second row rather than something layered on top of `.row`: the arrows sit
-	 * flush against the header's own padding, so anything overlaid from outside
-	 * risks landing on one of them regardless of how it is sized. Centred and
-	 * width-capped so the longest trouble copy wraps in place instead of spreading
-	 * toward the arrows on a narrow phone.
-	 */
-	.account-row {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		max-width: 70%;
-		margin: 0 auto;
-		text-align: center;
 	}
 
 	.day {

@@ -26,13 +26,13 @@
 	import Banner from '$lib/ui/Banner.svelte';
 	import Settings from '$lib/ui/Settings.svelte';
 	import Legend from '$lib/ui/Legend.svelte';
-	import AccountButton from '$lib/ui/AccountButton.svelte';
+	import SyncPanel from '$lib/ui/SyncPanel.svelte';
 	import { shouldAutoOpen } from '$lib/store/settings';
 
 	const auth = createAuth();
 
 	let account = $state<Account | null>(null);
-	let syncState = $state<SyncStatus['state']>('idle');
+	let syncStatus = $state<SyncStatus>({ state: 'idle' });
 
 	const local = new LocalTaskStore();
 
@@ -69,7 +69,7 @@
 			owner: id,
 			remote: new SupabaseRemote(auth.client, id),
 			onExternalChange: () => void store.hydrate(),
-			onStatus: (status) => (syncState = status.state)
+			onStatus: (status) => (syncStatus = status)
 		});
 		active = syncing;
 	}
@@ -89,6 +89,11 @@
 	 * offer the way back.
 	 */
 	let now = $state(today());
+
+	// Only so "3 minutes ago" ages while the sheet is open. The existing 20-second
+	// rollover interval is a fine cadence for a line measured in minutes.
+	let clock = $state(Date.now());
+
 	let selected = $state<Task | null>(null);
 	let editing = $state<Task | undefined>(undefined);
 	let sheetOpen = $state(false);
@@ -126,8 +131,11 @@
 			}
 		});
 
-		const rollover = () => (now = today());
-		const clock = setInterval(rollover, 20_000);
+		const rollover = () => {
+			now = today();
+			clock = Date.now();
+		};
+		const timer = setInterval(rollover, 20_000);
 
 		// Which account the store is currently holding data for. `onAuthStateChange` also
 		// fires on a token refresh, roughly hourly, with the same identity — rebuilding
@@ -168,7 +176,7 @@
 		// Both the interval and the wake listeners leak without this.
 		return () => {
 			ticker.stop();
-			clearInterval(clock);
+			clearInterval(timer);
 			unsubscribe();
 			for (const event of wakeEvents) {
 				document.removeEventListener(event, wake);
@@ -266,12 +274,14 @@
 		<Tank {draw} />
 	</div>
 
-	{#snippet accountControl()}
-		<AccountButton
+	{#snippet syncSection()}
+		<SyncPanel
 			{account}
-			status={syncState}
+			status={syncStatus}
+			now={clock}
 			onSignIn={() => void auth.signIn()}
 			onSignOut={() => void auth.signOut()}
+			onSyncNow={() => void syncing?.sync()}
 		/>
 	{/snippet}
 
@@ -282,7 +292,6 @@
 			{clearedPct}
 			{now}
 			onNavigate={(next) => (date = next)}
-			account={isSyncConfigured() ? accountControl : undefined}
 		/>
 	</div>
 
@@ -293,7 +302,33 @@
 		</p>
 	{/if}
 
-	<Banner visible={$saveFailed} />
+	<!--
+	  Local storage failing is strictly worse than the cloud failing, so it wins the one
+	  banner. Only sync failures that will never fix themselves get one at all: a phone
+	  loses signal constantly, and nagging about it teaches you to ignore the banner —
+	  which costs you the three below.
+	-->
+	{#if $saveFailed}
+		<Banner visible={true} />
+	{:else if syncStatus.state === 'denied'}
+		<Banner
+			visible={true}
+			title="Sync is signed out."
+			detail="Your tasks are safe on this device. Open Settings to sign in again."
+		/>
+	{:else if syncStatus.state === 'stale'}
+		<Banner
+			visible={true}
+			title="This device is out of date."
+			detail="It will not sync until the app is reloaded to pick up the newer version."
+		/>
+	{:else if syncStatus.state === 'rejected'}
+		<Banner
+			visible={true}
+			title="The server refused this data."
+			detail="Your tasks are safe on this device, but they are not reaching your other ones."
+		/>
+	{/if}
 
 	<Controls
 		{pearls}
@@ -342,6 +377,7 @@
 		onChange={(environment) => store.setEnvironment(environment)}
 		onOpenLegend={() => (legendOpen = true)}
 		onClose={() => (settingsOpen = false)}
+		sync={isSyncConfigured() ? syncSection : undefined}
 	/>
 
 	<Legend
