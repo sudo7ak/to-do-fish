@@ -170,26 +170,29 @@
 
 		// A sleeping machine runs no timers, so the wake is where the day usually turns.
 		// A phone gives back more than one kind of wake: a frozen tab thaws with
-		// `resume` and a back/forward-cache restore only fires `pageshow`.
+		// `resume` and a back/forward-cache restore only fires `pageshow`. Each event
+		// on the one target that fires it. `visibilitychange` is fired at the document
+		// and bubbles, so listening on both meant every tab switch woke the tank twice;
+		// `pageshow` and `focus` are window events and never reached the document
+		// listener at all.
 		const wake = () => {
 			rollover();
 			void syncing?.sync();
 		};
-		const wakeEvents = ['visibilitychange', 'pageshow', 'resume', 'focus'];
-		for (const event of wakeEvents) {
-			document.addEventListener(event, wake);
-			window.addEventListener(event, wake);
-		}
+		const wakeTargets: [EventTarget, string][] = [
+			[document, 'visibilitychange'],
+			[document, 'resume'],
+			[window, 'pageshow'],
+			[window, 'focus']
+		];
+		for (const [target, event] of wakeTargets) target.addEventListener(event, wake);
 
 		// Both the interval and the wake listeners leak without this.
 		return () => {
 			ticker.stop();
 			clearInterval(timer);
 			unsubscribe();
-			for (const event of wakeEvents) {
-				document.removeEventListener(event, wake);
-				window.removeEventListener(event, wake);
-			}
+			for (const [target, event] of wakeTargets) target.removeEventListener(event, wake);
 		};
 	});
 
