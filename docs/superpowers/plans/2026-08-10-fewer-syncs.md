@@ -344,11 +344,23 @@ describe('SyncingTaskStore — not syncing more than it needs to', () => {
 	});
 
 	it('does not let a failure start the cooldown', async () => {
-		// A failed sync synced nothing. Treating it as recent would leave the tank
-		// stale for the cooldown on top of the failure itself.
+		// A failed sync synced nothing, so it must not make the next wake look recent.
+		//
+		// `backoffMs: 0` isolates that from the failure backoff, which is a separate
+		// policy with its own test below. Without it this test would assert both at
+		// once, and the two disagree: zero elapsed time is the strictest case for the
+		// backoff, so it would block the very retry this test expects to go through.
 		const remote = fakeRemote();
 		remote.pullError = new SyncUnavailableError('network', 'offline');
-		const { store } = setup(fakeLocal(), remote);
+		const store = new SyncingTaskStore({
+			local: fakeLocal(),
+			remote,
+			owner: 'owner',
+			now: () => 1000,
+			backoffMs: 0,
+			setTimer: () => 1,
+			clearTimer: () => {}
+		});
 
 		await store.sync('wake');
 		remote.pullError = undefined;
@@ -466,6 +478,9 @@ join a running one:
 	#tooSoon(): boolean {
 		const now = this.#now();
 
+		// Strictly `<`, so a `backoffMs` of 0 disables the backoff entirely rather
+		// than blocking forever at zero elapsed time. The cooldown below reads the
+		// same way for the same reason.
 		if (this.#lastFailedAt !== undefined && now - this.#lastFailedAt < this.#backoffMs) {
 			return true;
 		}

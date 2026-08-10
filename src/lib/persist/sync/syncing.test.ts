@@ -648,3 +648,117 @@ describe('SyncingTaskStore — when this device last synced', () => {
 		expect(inFlight[0].at).toBe(1000);
 	});
 });
+
+describe('SyncingTaskStore — not syncing more than it needs to', () => {
+	it('skips a wake sync that follows a successful one too closely', async () => {
+		// Alt-tabbing repeatedly should not cost a round trip each time.
+		const { store, remote } = setup();
+
+		await store.sync('wake');
+		await store.sync('wake');
+
+		expect(remote.pulls).toBe(1);
+	});
+
+	it('never throttles a write, a manual sync, or an account change', async () => {
+		// A user's own edit must reach the server immediately. This is the constraint
+		// the whole feature is subordinate to.
+		const { store, remote } = setup();
+
+		await store.sync('wake');
+		await store.sync('write');
+		await store.sync('manual');
+		await store.sync('account');
+
+		expect(remote.pulls).toBe(4);
+	});
+
+	it('wakes again once the cooldown has passed', async () => {
+		let clock = 1000;
+		const remote = fakeRemote();
+		const store = new SyncingTaskStore({
+			local: fakeLocal(),
+			remote,
+			owner: 'owner',
+			now: () => clock,
+			setTimer: () => 1,
+			clearTimer: () => {}
+		});
+
+		await store.sync('wake');
+		clock += 30_001;
+		await store.sync('wake');
+
+		expect(remote.pulls).toBe(2);
+	});
+
+	it('does not let a failure start the cooldown', async () => {
+		// A failed sync synced nothing. Treating it as recent would leave the tank
+		// stale for the cooldown on top of the failure itself.
+		const remote = fakeRemote();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		const { store } = setup(fakeLocal(), remote);
+
+		await store.sync('wake');
+		remote.pullError = undefined;
+		await store.sync('wake');
+
+		expect(remote.pulls).toBe(2);
+	});
+
+	it('backs off repeated wake retries after a failure', async () => {
+		// Every wake retrying a dead sync is how a phone burns battery on a flight.
+		let clock = 1000;
+		const remote = fakeRemote();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		const store = new SyncingTaskStore({
+			local: fakeLocal(),
+			remote,
+			owner: 'owner',
+			now: () => clock,
+			setTimer: () => 1,
+			clearTimer: () => {}
+		});
+
+		await store.sync('wake');
+		clock += 1000;
+		await store.sync('wake');
+		clock += 1000;
+		await store.sync('wake');
+
+		expect(remote.pulls).toBe(1);
+	});
+
+	it('retries a failed sync once the backoff has passed', async () => {
+		let clock = 1000;
+		const remote = fakeRemote();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		const store = new SyncingTaskStore({
+			local: fakeLocal(),
+			remote,
+			owner: 'owner',
+			now: () => clock,
+			setTimer: () => 1,
+			clearTimer: () => {}
+		});
+
+		await store.sync('wake');
+		clock += 60_001;
+		await store.sync('wake');
+
+		expect(remote.pulls).toBe(2);
+	});
+
+	it('lets a manual sync escape the backoff', async () => {
+		// The button exists so the user can ask again. Refusing them because a wake
+		// failed a moment ago would make it look broken.
+		const remote = fakeRemote();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		const { store } = setup(fakeLocal(), remote);
+
+		await store.sync('wake');
+		await store.sync('manual');
+
+		expect(remote.pulls).toBe(2);
+	});
+});

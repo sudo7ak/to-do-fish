@@ -42,6 +42,10 @@ export type SyncingOptions = {
 	debounceMs?: number;
 	setTimer?: (fn: () => void, ms: number) => number;
 	clearTimer?: (handle: number) => void;
+	/** How recently a wake sync must have succeeded before the next one is skipped. */
+	cooldownMs?: number;
+	/** How long a wake sync waits after a failure before trying again. */
+	backoffMs?: number;
 };
 
 /**
@@ -91,6 +95,10 @@ export class SyncingTaskStore implements TaskStore {
 	#lastSyncedAt: number | undefined;
 	/** The sync currently running, shared by every caller that arrives while it does. */
 	#inFlight: Promise<void> | undefined;
+	#cooldownMs: number;
+	#backoffMs: number;
+	/** When the last sync failed, so wake syncs can back off rather than hammer. */
+	#lastFailedAt: number | undefined;
 
 	/**
 	 * A merge that must not be written down: the remote holds a shape this build does
@@ -110,6 +118,8 @@ export class SyncingTaskStore implements TaskStore {
 		this.#setTimer =
 			options.setTimer ?? ((fn, ms) => setTimeout(fn, ms) as unknown as number);
 		this.#clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
+		this.#cooldownMs = options.cooldownMs ?? 30_000;
+		this.#backoffMs = options.backoffMs ?? 60_000;
 	}
 
 	/**
@@ -154,12 +164,32 @@ export class SyncingTaskStore implements TaskStore {
 	 * when it finishes.
 	 */
 	sync(reason: SyncReason = 'manual'): Promise<void> {
+		if (reason === 'wake' && this.#tooSoon()) return Promise.resolve();
+
 		if (this.#inFlight) return this.#inFlight;
 
 		this.#inFlight = this.#runSync(reason).finally(() => {
 			this.#inFlight = undefined;
 		});
 		return this.#inFlight;
+	}
+
+	/**
+	 * Whether a wake sync is worth making. Only wakes are ever skipped: an edit, a
+	 * tap on Sync now, and an account change all run whatever this says.
+	 *
+	 * A failure does not start the cooldown — it synced nothing — but it does start
+	 * the backoff, so a dead connection is retried on a timer rather than on every
+	 * tab switch.
+	 */
+	#tooSoon(): boolean {
+		const now = this.#now();
+
+		if (this.#lastFailedAt !== undefined && now - this.#lastFailedAt < this.#backoffMs) {
+			return true;
+		}
+
+		return this.#lastSyncedAt !== undefined && now - this.#lastSyncedAt < this.#cooldownMs;
 	}
 
 	/**
@@ -206,11 +236,13 @@ export class SyncingTaskStore implements TaskStore {
 
 			if (push.tasks.length === 0 && push.koi.length === 0 && !push.settings) {
 				this.#lastSyncedAt = this.#now();
+				this.#lastFailedAt = undefined;
 				return this.#status(settled);
 			}
 
 			await this.#remote.push(push);
 			this.#lastSyncedAt = this.#now();
+			this.#lastFailedAt = undefined;
 			this.#status(settled);
 		} catch (error) {
 			this.#failed(error);
@@ -228,6 +260,8 @@ export class SyncingTaskStore implements TaskStore {
 	}
 
 	#failed(error: unknown): void {
+		this.#lastFailedAt = this.#now();
+
 		// A `StorageUnavailableError` from the local re-read or the local write is not
 		// a network problem — telling the user to check their signal would send them
 		// looking in the wrong place. It gets its own state.
