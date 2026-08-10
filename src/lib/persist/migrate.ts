@@ -35,6 +35,20 @@ const migrations: Record<number, Migration> = {
 				? (data.settings as Record<string, unknown>)
 				: {};
 		return { ...data, settings: { ...settings, seenLegend: true } };
+	},
+
+	// 2 -> 3: settings gained their own `updatedAt`, because the whole record is the
+	// unit of last-write-wins once a second device exists.
+	//
+	// ZERO, not the current time. Stored settings predate sync, so they must lose to
+	// anything a synced device has actually chosen. Stamping them "now" would let a
+	// device that has never been configured overwrite one that has.
+	2: (data) => {
+		const settings =
+			typeof data.settings === 'object' && data.settings !== null
+				? (data.settings as Record<string, unknown>)
+				: {};
+		return { ...data, settings: { ...settings, updatedAt: 0 } };
 	}
 };
 

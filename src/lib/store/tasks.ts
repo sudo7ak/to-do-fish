@@ -110,17 +110,17 @@ export function claimTreat(state: State, id: string, now: number): Outcome {
 	return { ok: true, state: mutate(state, id, (t) => ({ ...t, status: 'open' }), now) };
 }
 
-export function setEnvironment(state: State, environment: Environment): State {
-	return { ...state, settings: { ...state.settings, environment } };
+export function setEnvironment(state: State, environment: Environment, now: number): State {
+	return { ...state, settings: { ...state.settings, environment, updatedAt: now } };
 }
 
 /**
- * Records that the legend has been shown. Not a task mutation, so nothing here bumps
- * `updatedAt` — that field stamps edits to tasks, and stamping a settings change with
- * it would make a sync reconciler think a task moved.
+ * Records that the legend has been shown. Settings now carry their own `updatedAt`
+ * as the unit of sync, so this stamps it like any other settings change — unlike a
+ * task's `updatedAt`, it has no bearing on task reconciliation.
  */
-export function markLegendSeen(state: State): State {
-	return { ...state, settings: { ...state.settings, seenLegend: true } };
+export function markLegendSeen(state: State, now: number): State {
+	return { ...state, settings: { ...state.settings, seenLegend: true, updatedAt: now } };
 }
 
 /**
@@ -171,11 +171,11 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 	const state = writable<State>({
 		tasks: [],
 		koi: [],
-		settings: { environment: 'progress', seenLegend: false }
+		settings: { environment: 'progress', seenLegend: false, updatedAt: 0 }
 	});
 	const tasks = writable<Task[]>([]);
 	const koi = writable<KoiRecord[]>([]);
-	const settings = writable<Settings>({ environment: 'progress', seenLegend: false });
+	const settings = writable<Settings>({ environment: 'progress', seenLegend: false, updatedAt: 0 });
 	const saveFailed = writable(false);
 
 	function publish(next: State) {
@@ -222,8 +222,8 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 		completeTask: (id) => commit(completeTask(get(state), id, clock())),
 		softDelete: (id) => commit(softDelete(get(state), id, clock())),
 		releaseBubble: (id) => commit(releaseBubble(get(state), id, clock())),
-		setEnvironment: (environment) => commit(setEnvironment(get(state), environment)),
-		markLegendSeen: () => commit(markLegendSeen(get(state))),
+		setEnvironment: (environment) => commit(setEnvironment(get(state), environment, clock())),
+		markLegendSeen: () => commit(markLegendSeen(get(state), clock())),
 
 		/** Bulk release for the ticker: one commit for a whole batch of due triggers. */
 		release(ids) {

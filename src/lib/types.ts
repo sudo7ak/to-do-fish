@@ -32,10 +32,15 @@ export type KoiRecord = { date: string; earnedAt: number };
  * than a separate storage key because `store/` reaches persistence only through the
  * `TaskStore` port, and a second key would be a second thing to migrate.
  */
-export type Settings = { environment: 'progress' | 'calm'; seenLegend: boolean };
+export type Settings = {
+	environment: 'progress' | 'calm';
+	seenLegend: boolean;
+	/** Bumped whenever a setting changes. The whole record is the unit of sync. */
+	updatedAt: number;
+};
 
 /** Current storage schema version. Bumped when `Snapshot` changes shape. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type Snapshot = {
 	version: number;

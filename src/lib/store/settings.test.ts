@@ -5,6 +5,7 @@ import type { Settings } from '../types';
 const settings = (over: Partial<Settings> = {}): Settings => ({
 	environment: 'progress',
 	seenLegend: false,
+	updatedAt: 0,
 	...over
 });
 

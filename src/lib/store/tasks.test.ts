@@ -22,7 +22,12 @@ import { StorageUnavailableError } from '../persist/port';
 const DAY = '2026-08-08';
 
 function state(tasks: Task[] = [], over: Partial<State> = {}): State {
-	return { tasks, koi: [], settings: { environment: 'progress', seenLegend: false }, ...over };
+	return {
+		tasks,
+		koi: [],
+		settings: { environment: 'progress', seenLegend: false, updatedAt: 0 },
+		...over
+	};
 }
 
 function task(over: Partial<Task> = {}): Task {
@@ -218,7 +223,7 @@ describe('claimTreat', () => {
 
 describe('setEnvironment', () => {
 	it('switches the environment', () => {
-		expect(setEnvironment(state(), 'calm').settings.environment).toBe('calm');
+		expect(setEnvironment(state(), 'calm', 500).settings.environment).toBe('calm');
 	});
 });
 
@@ -319,29 +324,32 @@ describe('markLegendSeen', () => {
 		const state = {
 			tasks: [],
 			koi: [],
-			settings: { environment: 'progress' as const, seenLegend: false }
+			settings: { environment: 'progress' as const, seenLegend: false, updatedAt: 0 }
 		};
 
-		expect(markLegendSeen(state).settings.seenLegend).toBe(true);
+		expect(markLegendSeen(state, 500).settings.seenLegend).toBe(true);
 	});
 
 	it('is idempotent — showing the legend twice is not an error', () => {
 		const state = {
 			tasks: [],
 			koi: [],
-			settings: { environment: 'calm' as const, seenLegend: true }
+			settings: { environment: 'calm' as const, seenLegend: true, updatedAt: 100 }
 		};
 
-		expect(markLegendSeen(state)).toEqual(state);
+		expect(markLegendSeen(state, 500)).toEqual({
+			...state,
+			settings: { ...state.settings, updatedAt: 500 }
+		});
 	});
 
 	it('leaves the environment alone', () => {
 		const state = {
 			tasks: [],
 			koi: [],
-			settings: { environment: 'calm' as const, seenLegend: false }
+			settings: { environment: 'calm' as const, seenLegend: false, updatedAt: 0 }
 		};
 
-		expect(markLegendSeen(state).settings.environment).toBe('calm');
+		expect(markLegendSeen(state, 500).settings.environment).toBe('calm');
 	});
 });

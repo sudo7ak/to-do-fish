@@ -42,7 +42,7 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 	version: SCHEMA_VERSION,
 	tasks: [task()],
 	koi: [{ date: '2026-08-07', earnedAt: 5 }],
-	settings: { environment: 'calm', seenLegend: true },
+	settings: { environment: 'calm', seenLegend: true, updatedAt: 0 },
 	...over
 });
 
@@ -169,8 +169,8 @@ describe('LocalTaskStore — migration', () => {
 
 		const loaded = await store(storage).load();
 
-		expect(loaded.version).toBe(2);
-		expect(loaded.settings).toEqual({ environment: 'calm', seenLegend: true });
+		expect(loaded.version).toBe(SCHEMA_VERSION);
+		expect(loaded.settings).toEqual({ environment: 'calm', seenLegend: true, updatedAt: 0 });
 	});
 
 	it('treats a blob with no version field as version 0 and migrates it', async () => {

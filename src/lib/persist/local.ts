@@ -16,7 +16,7 @@ export function emptySnapshot(): Snapshot {
 		tasks: [],
 		koi: [],
 		// A tank with nothing in it has never been used, so its owner gets the legend.
-		settings: { environment: 'progress', seenLegend: false }
+		settings: { environment: 'progress', seenLegend: false, updatedAt: 0 }
 	};
 }
 
