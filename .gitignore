@@ -5,6 +5,9 @@ node_modules
 .env
 .env.*
 !.env.example
+# $env/static/public needs these declared even when empty, so an unconfigured build
+# (no .env.local) still has exports to resolve — see src/lib/auth/session.ts.
+!.env
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .DS_Store
