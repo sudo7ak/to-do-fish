@@ -225,6 +225,12 @@ describe('setEnvironment', () => {
 	it('switches the environment', () => {
 		expect(setEnvironment(state(), 'calm', 500).settings.environment).toBe('calm');
 	});
+
+	it('does not move updatedAt when set to the value already held', () => {
+		const withEnv = state([], { settings: { environment: 'calm', seenLegend: false, updatedAt: 100 } });
+
+		expect(setEnvironment(withEnv, 'calm', 500).settings.updatedAt).toBe(100);
+	});
 });
 
 describe('ulid', () => {
@@ -337,10 +343,17 @@ describe('markLegendSeen', () => {
 			settings: { environment: 'calm' as const, seenLegend: true, updatedAt: 100 }
 		};
 
-		expect(markLegendSeen(state, 500)).toEqual({
-			...state,
-			settings: { ...state.settings, updatedAt: 500 }
-		});
+		expect(markLegendSeen(state, 500)).toEqual(state);
+	});
+
+	it('does not move updatedAt when the legend was already seen', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'calm' as const, seenLegend: true, updatedAt: 100 }
+		};
+
+		expect(markLegendSeen(state, 500).settings.updatedAt).toBe(100);
 	});
 
 	it('leaves the environment alone', () => {

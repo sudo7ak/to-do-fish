@@ -77,7 +77,10 @@ function mergeKoi(local: KoiRecord[], remote: KoiRecord[]): KoiRecord[] {
 }
 
 function mergeSettings(local: Settings, remote: Settings): Settings {
-	const winner = remote.updatedAt > local.updatedAt ? remote : local;
+	// A tie must resolve the same way on both devices or the record never converges:
+	// if each side kept its own settings on equal timestamps, both would believe
+	// they were merged and neither would push. Remote wins, matching `winner()`.
+	const winner = remote.updatedAt >= local.updatedAt ? remote : local;
 
 	// `seenLegend` is a one-way latch, so it is the one field that does not follow the
 	// record. An older device syncing in must not make the first-run legend reappear.

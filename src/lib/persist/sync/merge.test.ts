@@ -149,6 +149,17 @@ describe('merge — settings', () => {
 
 		expect(result.merged.settings.seenLegend).toBe(true);
 	});
+
+	it('gives a tie on updatedAt to remote, matching how task ties resolve', () => {
+		// A tie must resolve the same way on both devices, or each keeps its own
+		// settings and the two never converge.
+		const result = merge(
+			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 10 } }),
+			snap({ settings: { environment: 'progress', seenLegend: true, updatedAt: 10 } })
+		);
+
+		expect(result.merged.settings.environment).toBe('progress');
+	});
 });
 
 describe('merge — the push', () => {

@@ -111,15 +111,22 @@ export function claimTreat(state: State, id: string, now: number): Outcome {
 }
 
 export function setEnvironment(state: State, environment: Environment, now: number): State {
+	// Only stamp on an actual change. `updatedAt` is the input to last-write-wins
+	// across devices, so a no-op call would make the record look newer than it is
+	// and cause a settings push next sync for a change that never happened.
+	if (state.settings.environment === environment) return state;
 	return { ...state, settings: { ...state.settings, environment, updatedAt: now } };
 }
 
 /**
  * Records that the legend has been shown. Settings now carry their own `updatedAt`
  * as the unit of sync, so this stamps it like any other settings change — unlike a
- * task's `updatedAt`, it has no bearing on task reconciliation.
+ * task's `updatedAt`, it has no bearing on task reconciliation. Guarded the same way
+ * as `setEnvironment`: calling it again once the flag is already set must not move
+ * the timestamp.
  */
 export function markLegendSeen(state: State, now: number): State {
+	if (state.settings.seenLegend) return state;
 	return { ...state, settings: { ...state.settings, seenLegend: true, updatedAt: now } };
 }
 
