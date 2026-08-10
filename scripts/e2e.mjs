@@ -457,13 +457,26 @@ if (treatSheet) {
 const expectSync = process.env.E2E_EXPECT_SYNC === '1';
 console.log(`\n== Sync (${expectSync ? 'configured' : 'unconfigured'}) ==`);
 
-const signIn = await page.locator('button:has-text("Sign in to sync")').count();
+// The account controls live behind the gear now, so the tank itself must carry no
+// trace of them either way.
 check(
-	expectSync
-		? 'the sign-in control is offered in a configured build'
-		: 'no sign-in control in an unconfigured build',
-	expectSync ? signIn === 1 : signIn === 0
+	'the header has no account row',
+	(await page.locator('.account-row').count()) === 0
 );
+
+await page.getByLabel('Settings').click();
+const syncSection = await page.getByRole('heading', { name: 'Sync' }).count();
+check(
+	expectSync ? 'Settings offers sync when configured' : 'Settings has no sync section when unconfigured',
+	expectSync ? syncSection === 1 : syncSection === 0
+);
+if (expectSync) {
+	check(
+		'the sign-in control is offered in a configured build',
+		(await page.getByRole('button', { name: 'Sign in to sync' }).count()) === 1
+	);
+}
+await page.getByRole('button', { name: 'Done' }).click();
 
 // True either way: the app talks to nobody until someone actually signs in. A
 // configured build that phoned home on load would be a real defect, so this check

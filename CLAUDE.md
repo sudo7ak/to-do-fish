@@ -169,6 +169,13 @@ are now load-bearing: `updatedAt` is the input to last-write-wins in
 collide. A mutation that forgets to stamp `updatedAt` does not lose a write locally —
 it loses it on the other device, silently, the next time the two merge.
 
+**The last-synced time is device-local and must never be persisted.** It lives in
+`SyncingTaskStore` and rides on `SyncStatus`. The only thing this app persists is
+`Snapshot`, which is exactly what syncs — so a timestamp stored there would replicate,
+and the laptop would display the phone's sync time as its own. The cost is that it
+blanks on reload, which is honest: the line reads "Not synced yet" until the launch
+sync lands.
+
 **One surface, one owner.** Three separate things have each been drawn against their
 own private idea of where the sand is: the planting, the pearls, and the chest.
 `bedTopAt(x)` is the sand, and `chestBounds(size)` is the floor the chest occupies —
