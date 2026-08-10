@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { SyncingTaskStore, type SyncStatus } from './syncing';
 import { SyncUnavailableError, type Remote } from './remote';
 import { StorageUnavailableError, type TaskStore } from '../port';
+import { fromTaskRow, toTaskRow } from './rows';
 import { SCHEMA_VERSION, type Snapshot, type Task } from '../../types';
 
 const task = (over: Partial<Task> = {}): Task => ({
@@ -275,5 +276,56 @@ describe('SyncingTaskStore — sync', () => {
 		await store.sync();
 
 		expect(local.held.tasks[0].title).toBe('newest');
+	});
+
+	it('does not reject when the local re-read throws — a banner, not an exception', async () => {
+		const local = fakeLocal();
+		local.load = async () => {
+			throw new StorageUnavailableError('full');
+		};
+		const { store, statuses } = setup(local);
+
+		await expect(store.sync()).resolves.toBeUndefined();
+		expect(statuses.map((s) => s.state)).toContain('offline');
+	});
+
+	it('does not reject when the local save of the merged snapshot throws', async () => {
+		const local = fakeLocal();
+		local.save = async () => {
+			throw new StorageUnavailableError('full');
+		};
+		const remote = fakeRemote(snapshot({ tasks: [task({ id: 'theirs' })] }));
+		const { store, statuses } = setup(local, remote);
+
+		await expect(store.sync()).resolves.toBeUndefined();
+		expect(statuses.map((s) => s.state)).toContain('offline');
+	});
+
+	it('does not fire onExternalChange when the pull matches local under a different key order', async () => {
+		// A remote task built by `fromTaskRow` spreads its optional keys (condition,
+		// treatCost, completedAt, deletedAt) last; a locally authored task can have
+		// `condition` set at creation, ahead of the later fields. Same values,
+		// different key order — `JSON.stringify` would see these as different
+		// snapshots and re-hydrate the page on every wake for no real change.
+		const withCondition = task({ condition: { kind: 'time', at: '18:00' } });
+		const authoredOrder: Task = {
+			id: withCondition.id,
+			condition: withCondition.condition,
+			title: withCondition.title,
+			date: withCondition.date,
+			status: withCondition.status,
+			createdAt: withCondition.createdAt,
+			updatedAt: withCondition.updatedAt
+		};
+		const local = fakeLocal(snapshot({ tasks: [authoredOrder] }));
+		const remote = fakeRemote(
+			snapshot({ tasks: [fromTaskRow(toTaskRow(withCondition, 'user'))] })
+		);
+		const { store, local: localStore, external } = setup(local, remote);
+
+		await store.sync();
+
+		expect(external).not.toHaveBeenCalled();
+		expect(localStore.saves).toHaveLength(0);
 	});
 });

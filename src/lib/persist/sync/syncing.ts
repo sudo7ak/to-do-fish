@@ -35,6 +35,31 @@ export type SyncingOptions = {
  */
 const SKEW_TOLERANCE_MS = 24 * 3600_000;
 
+/**
+ * Structural equality, not `JSON.stringify` — a remote task built by `fromTaskRow`
+ * spreads its optional keys last, a local one is built in declaration order, and two
+ * objects that differ only in key order must still compare equal or a wake with no
+ * real change re-hydrates the page every time.
+ */
+function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
+	return deepEqual(a, b);
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+	if (a === b) return true;
+	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+
+	if (Array.isArray(a) || Array.isArray(b)) {
+		if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+		return a.every((item, i) => deepEqual(item, b[i]));
+	}
+
+	const aKeys = Object.keys(a);
+	const bKeys = Object.keys(b);
+	if (aKeys.length !== bKeys.length) return false;
+	return aKeys.every((key) => deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+}
+
 export class SyncingTaskStore implements TaskStore {
 	#local: TaskStore;
 	#remote: Remote;
@@ -72,35 +97,35 @@ export class SyncingTaskStore implements TaskStore {
 		this.#pending = this.#setTimer(() => void this.sync(), this.#debounceMs);
 	}
 
-	/** Pull, merge, push. Never rejects: a sync failure is a banner, not an exception. */
+	/**
+	 * Pull, merge, push. Never rejects: a sync failure is a banner, not an exception.
+	 * Everything between pull and push can throw in normal use — the local re-read
+	 * and the local write both go through `LocalTaskStore`, which documents
+	 * `StorageUnavailableError` as a real failure mode — so the whole body shares one
+	 * catch rather than guarding pull and push alone.
+	 */
 	async sync(): Promise<void> {
 		this.#status('syncing');
 
-		let remote: Snapshot;
 		try {
-			remote = await this.#remote.pull();
-		} catch (error) {
-			return this.#failed(error);
-		}
+			const remote = await this.#remote.pull();
 
-		// Re-read local rather than reusing anything captured before the pull: a write
-		// may have landed while the request was in flight, and it is newer than this.
-		const local = await this.#local.load();
-		const { merged, push } = merge(local, remote);
+			// Re-read local rather than reusing anything captured before the pull: a
+			// write may have landed while the request was in flight, and it is newer.
+			const local = await this.#local.load();
+			const { merged, push } = merge(local, remote);
 
-		if (this.#skewed(remote)) this.#status('skewed');
+			if (this.#skewed(remote)) this.#status('skewed');
 
-		const changed = JSON.stringify(merged) !== JSON.stringify(local);
-		if (changed) {
-			await this.#local.save(merged);
-			this.#onExternalChange?.();
-		}
+			if (!sameSnapshot(merged, local)) {
+				await this.#local.save(merged);
+				this.#onExternalChange?.();
+			}
 
-		if (push.tasks.length === 0 && push.koi.length === 0 && !push.settings) {
-			return this.#status('idle');
-		}
+			if (push.tasks.length === 0 && push.koi.length === 0 && !push.settings) {
+				return this.#status('idle');
+			}
 
-		try {
 			await this.#remote.push(push);
 			this.#status('idle');
 		} catch (error) {
