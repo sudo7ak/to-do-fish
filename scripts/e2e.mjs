@@ -8,6 +8,7 @@
  *   node scripts/e2e.mjs
  */
 import { chromium } from 'playwright';
+import { URL as NodeURL } from 'node:url';
 
 const URL = process.env.URL ?? 'http://localhost:5199/';
 const KEY = 'fish-tank-todo/snapshot';
@@ -24,6 +25,8 @@ const page = await browser.newPage({ viewport: { width: 460, height: 900 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+const requests = [];
+page.on('request', (request) => requests.push(request.url()));
 
 const today = () => {
 	const d = new Date();
@@ -440,6 +443,20 @@ if (treatSheet) {
 	check('one tap returns to today', (await heading()) === 'Today');
 	check('the way-back control goes away again', (await backHome.count()) === 0);
 }
+
+// ---------------------------------------------------------------- sync (unconfigured)
+// Sync is configured out of this build, and the promise is that its absence changes
+// nothing. The 68 checks above are the real assertion; these two say why they held.
+console.log('\n== Sync (unconfigured) ==');
+check(
+	'no sign-in control in an unconfigured build',
+	(await page.locator('button:has-text("Sign in to sync")').count()) === 0
+);
+check(
+	'no network calls left the page',
+	requests.every((url) => new NodeURL(url).host === new NodeURL(page.url()).host),
+	requests.join(', ')
+);
 
 console.log('\n== Console errors ==');
 check('no page errors during the run', errors.length === 0, errors.slice(0, 3).join(' | '));

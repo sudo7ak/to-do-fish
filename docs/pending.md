@@ -303,6 +303,19 @@ mistaken for an oversight.
 
 ---
 
+## 6b. Sync's scope is deliberately narrow
+
+**Structural.** Multi-device sync (`persist/sync/`) does last-write-wins per task on
+whatever cadence the app happens to run its sync pass — there is no Supabase Realtime
+subscription, so a second device does not learn about a change until it next runs.
+There is no per-field merge: two devices editing different fields of the same task
+still resolve as one whole record winning, not a combination of both edits. There is
+no conflict UI — the loser of a last-write-wins race is silently discarded, not
+surfaced for a person to choose between. Clock skew between devices is mitigated by
+a banner (`SyncStatus['state'] === 'skewed'`) rather than repaired — the app does not
+attempt to correct for or estimate the skew, only to say the sync it did may be
+unreliable.
+
 ## 7. Out of scope for v1 (from the spec, unchanged)
 
 Accounts, sync between devices, push notifications, recurring tasks, sound, native

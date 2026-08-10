@@ -64,7 +64,11 @@ creature. There is no list on the main screen. Two mechanics beyond ordinary to-
 - **Guilty pleasures** are treats priced in pearls — exotic fish cruising below the
   waterline, dim until you can afford them. Finishing a task drops a pearl.
 
-Local-first: no backend, no accounts, no network calls in v1.
+Local-first: the tank works with no account and no network, and that is the primary
+path, not a fallback. Signing in with Google adds multi-device sync — a
+`SyncingTaskStore` behind the same `TaskStore` port — and nothing above `persist/`
+can tell the difference. With `PUBLIC_SUPABASE_URL` unset the app is exactly the
+v1 app, which is how the E2E sweep and the screenshot scripts run.
 
 ## Architecture
 
@@ -175,6 +179,18 @@ the tank carries a 30% water-colour wash plus a vignette, which is correct for s
 fish in depth and fatal for anything meant to look bright down there. The chest's gold
 and the gem twinkles draw with `globalCompositeOperation: 'lighter'` for that reason;
 tinted fills came out olive no matter how the palette was tuned.
+
+**Sync merges are last-write-wins per task, and ties go to the tombstone.** The rules
+live in `persist/sync/merge.ts`, which imports only `../../types` so they can be
+tested as data in and data out. A tie means two clocks disagree; a resurrected task
+is worse than an early deletion. `settings.seenLegend` is the one field that does not
+follow the record — it is a one-way latch, and an older device syncing in must not
+make the first-run legend reappear.
+
+**Row nulls are not domain absences.** `isLive()` tests whether `deletedAt` is
+present, so a `null` arriving from Postgres would make a deleted task swim again.
+`persist/sync/rows.ts` maps null to genuinely-absent keys, and a test asserts `'in'`
+rather than truthiness — because `deletedAt: 0` is a valid deletion.
 
 **Every creature kind needs an upper bound.** Pearls (a running balance across all
 dates) and koi (one per cleared day, visible forever) each grew without limit: measured
