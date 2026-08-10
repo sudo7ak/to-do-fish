@@ -66,6 +66,7 @@
 
 		syncing = new SyncingTaskStore({
 			local,
+			owner: id,
 			remote: new SupabaseRemote(auth.client, id),
 			onExternalChange: () => void store.hydrate(),
 			onStatus: (status) => (syncState = status.state)

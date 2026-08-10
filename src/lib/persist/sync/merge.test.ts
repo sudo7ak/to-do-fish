@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { merge } from './merge';
+import { merge, claimFor } from './merge';
 import { SCHEMA_VERSION, type Snapshot, type Task } from '../../types';
 
 const task = (over: Partial<Task> = {}): Task => ({
@@ -208,5 +208,93 @@ describe('merge — the push', () => {
 
 		expect(localNewer.push.settings).toBeDefined();
 		expect(remoteNewer.push.settings).toBeUndefined();
+	});
+});
+
+describe('merge — an absent remote settings record (C2)', () => {
+	it('keeps local settings when the account has no settings row yet', () => {
+		// The inevitable first-sign-in state: migration 2 -> 3 stamped local settings
+		// `updatedAt: 0`, and an account with no row has nothing at all. A synthesised
+		// zero-stamped record would tie and the tie goes to remote, silently replacing
+		// a choice the user actually made with the default.
+		const result = merge(
+			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 0 } }),
+			{ version: SCHEMA_VERSION, tasks: [], koi: [] }
+		);
+
+		expect(result.merged.settings.environment).toBe('calm');
+	});
+
+	it('pushes local settings up when the remote has none', () => {
+		// Also the fix for the inert schema tripwire: an account whose owner never
+		// changes a setting still gets a settings row, which is where `version` lives.
+		const result = merge(snap(), { version: SCHEMA_VERSION, tasks: [], koi: [] });
+
+		expect(result.push.settings).toBeDefined();
+	});
+
+	it('still gives a tie between two real records to remote', () => {
+		const result = merge(
+			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 10 } }),
+			snap({ settings: { environment: 'progress', seenLegend: true, updatedAt: 10 } })
+		);
+
+		expect(result.merged.settings.environment).toBe('progress');
+	});
+});
+
+describe('claimFor — which account the local snapshot belongs to (C1)', () => {
+	const A = 'account-a';
+	const B = 'account-b';
+
+	it('stamps an unclaimed snapshot without touching its contents', () => {
+		const local = snap({ tasks: [task({ id: 'offline-week' })] });
+
+		const claimed = claimFor(local, A);
+
+		expect(claimed.owner).toBe(A);
+		expect(claimed.tasks.map((t) => t.id)).toEqual(['offline-week']);
+	});
+
+	it('leaves the same account own snapshot alone', () => {
+		const local = { ...snap({ tasks: [task()] }), owner: A };
+
+		expect(claimFor(local, A).tasks).toHaveLength(1);
+	});
+
+	it('discards everything when a different account signs in', () => {
+		// The alternative is uploading one person tank into another person account,
+		// under their user_id, with no undo. Losing unsynced local work is the
+		// accepted cost.
+		const local = {
+			...snap({
+				tasks: [task()],
+				koi: [{ date: '2026-08-09', earnedAt: 1 }],
+				settings: { environment: 'calm' as const, seenLegend: true, updatedAt: 5 }
+			}),
+			owner: A
+		};
+
+		const claimed = claimFor(local, B);
+
+		expect(claimed.owner).toBe(B);
+		expect(claimed.tasks).toEqual([]);
+		expect(claimed.koi).toEqual([]);
+		expect(claimed.settings.environment).toBe('progress');
+	});
+
+	it('never carries a task across identities into the push', () => {
+		const local = { ...snap({ tasks: [task({ id: 'a-secret' })] }), owner: A };
+
+		const result = merge(claimFor(local, B), snap());
+
+		expect(result.push.tasks).toEqual([]);
+		expect(result.merged.tasks).toEqual([]);
+	});
+
+	it('carries the owner into the merged snapshot, so the claim is what gets stored', () => {
+		const result = merge(claimFor(snap(), A), snap());
+
+		expect(result.merged.owner).toBe(A);
 	});
 });

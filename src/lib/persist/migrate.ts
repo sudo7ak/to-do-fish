@@ -49,7 +49,18 @@ const migrations: Record<number, Migration> = {
 				? (data.settings as Record<string, unknown>)
 				: {};
 		return { ...data, settings: { ...settings, updatedAt: 0 } };
-	}
+	},
+
+	// 3 -> 4: a snapshot records which account it belongs to, so that signing in as a
+	// second identity on one device can be told apart from signing in again as the
+	// first — the difference between merging and leaking.
+	//
+	// Nothing is added here, deliberately. Everything written before this version
+	// predates any account and belongs to none, and absent is exactly how that is
+	// spelled: the first sign-in still merges it, which is the spec's promise that a
+	// week of offline use survives. Inventing an owner would break that; inventing a
+	// *wrong* one would wipe the data it was invented to protect.
+	3: (data) => data
 };
 
 export type MigrationResult =

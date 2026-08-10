@@ -1,6 +1,6 @@
-import type { Snapshot } from '../../types';
+import { SCHEMA_VERSION, type Snapshot } from '../../types';
 import { StorageUnavailableError, type TaskStore } from '../port';
-import { merge } from './merge';
+import { claimFor, merge } from './merge';
 import { SyncUnavailableError, type Remote } from './remote';
 
 /**
@@ -19,6 +19,8 @@ export type SyncStatus = {
 export type SyncingOptions = {
 	local: TaskStore;
 	remote: Remote;
+	/** The account id this store syncs. The local snapshot is claimed for it. */
+	owner: string;
 	/** Called when a pull brought in something the page is not showing yet. */
 	onExternalChange?: () => void;
 	onStatus?: (status: SyncStatus) => void;
@@ -63,6 +65,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
 export class SyncingTaskStore implements TaskStore {
 	#local: TaskStore;
 	#remote: Remote;
+	#owner: string;
 	#onExternalChange?: () => void;
 	#onStatus?: (status: SyncStatus) => void;
 	#now: () => number;
@@ -71,9 +74,17 @@ export class SyncingTaskStore implements TaskStore {
 	#clearTimer: (handle: number) => void;
 	#pending: number | undefined;
 
+	/**
+	 * A merge that must not be written down: the remote holds a shape this build does
+	 * not know, so its rows can be read but not stored under this build's version
+	 * number. `load()` serves this instead of localStorage while it is set.
+	 */
+	#memory: Snapshot | undefined;
+
 	constructor(options: SyncingOptions) {
 		this.#local = options.local;
 		this.#remote = options.remote;
+		this.#owner = options.owner;
 		this.#onExternalChange = options.onExternalChange;
 		this.#onStatus = options.onStatus;
 		this.#now = options.now ?? Date.now;
@@ -83,15 +94,29 @@ export class SyncingTaskStore implements TaskStore {
 		this.#clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
 	}
 
-	/** Local, immediately. The tank never waits on a network to paint. */
-	load(): Promise<Snapshot> {
-		return this.#local.load();
+	/**
+	 * Local, immediately. The tank never waits on a network to paint.
+	 *
+	 * Claimed on the way out, so that another account's tank is never shown even for
+	 * the moment between hydrating and the first sync landing.
+	 */
+	async load(): Promise<Snapshot> {
+		return this.#memory ?? claimFor(await this.#local.load(), this.#owner);
 	}
 
 	async save(snapshot: Snapshot): Promise<void> {
+		// The user's own write is their own data, and it supersedes the read-only view
+		// of a newer remote. Local writes are never blocked: offline-first means the
+		// tank keeps taking edits whatever the server is doing.
+		this.#memory = undefined;
+
 		// Awaited, and allowed to reject: a failed local write is the one the user
 		// must hear about, and the existing banner is already wired for it.
-		await this.#local.save(snapshot);
+		//
+		// Stamped with the owner because the app's save path rebuilds the snapshot from
+		// `{ version, tasks, koi, settings }` and would otherwise drop the claim — after
+		// which a second account signing in would look like a first one, and merge.
+		await this.#local.save({ ...snapshot, owner: this.#owner });
 
 		if (this.#pending !== undefined) this.#clearTimer(this.#pending);
 		this.#pending = this.#setTimer(() => void this.sync(), this.#debounceMs);
@@ -112,22 +137,39 @@ export class SyncingTaskStore implements TaskStore {
 
 			// Re-read local rather than reusing anything captured before the pull: a
 			// write may have landed while the request was in flight, and it is newer.
-			const local = await this.#local.load();
-			const { merged, push } = merge(local, remote);
+			// Compare against what is *stored*, not against the claimed form: a claim
+			// the storage does not carry yet is itself a change worth writing down.
+			const stored = await this.#local.load();
+			const { merged, push } = merge(claimFor(stored, this.#owner), remote);
 
-			if (this.#skewed(remote)) this.#status('skewed');
+			// Skew is terminal, not a status passed through on the way to 'idle'. Every
+			// exit below used to overwrite it, and on the quiet path there was not even
+			// an await in between — so the banner never rendered for a single frame.
+			const settled: SyncStatus['state'] = this.#skewed(remote) ? 'skewed' : 'idle';
 
-			if (!sameSnapshot(merged, local)) {
+			// Newer than this build understands. Read it into memory so the tank still
+			// shows the account's data, but do not persist it: `migrate.ts` keys on the
+			// stored version, so writing these rows as version SCHEMA_VERSION would
+			// mislabel them permanently and no future migration would ever touch them.
+			if (remote.version > SCHEMA_VERSION) {
+				const changed = this.#memory === undefined || !sameSnapshot(merged, this.#memory);
+				this.#memory = merged;
+				if (changed) this.#onExternalChange?.();
+				return this.#status('stale');
+			}
+			this.#memory = undefined;
+
+			if (!sameSnapshot(merged, stored)) {
 				await this.#local.save(merged);
 				this.#onExternalChange?.();
 			}
 
 			if (push.tasks.length === 0 && push.koi.length === 0 && !push.settings) {
-				return this.#status('idle');
+				return this.#status(settled);
 			}
 
 			await this.#remote.push(push);
-			this.#status('idle');
+			this.#status(settled);
 		} catch (error) {
 			this.#failed(error);
 		}
@@ -138,7 +180,7 @@ export class SyncingTaskStore implements TaskStore {
 	 * always win or always lose. This cannot be repaired here — but saying so beats
 	 * merging silently and letting the user discover it as missing tasks.
 	 */
-	#skewed(remote: Snapshot): boolean {
+	#skewed(remote: { tasks: { updatedAt: number }[] }): boolean {
 		const latest = Math.max(0, ...remote.tasks.map((task) => task.updatedAt));
 		return latest - this.#now() > SKEW_TOLERANCE_MS;
 	}

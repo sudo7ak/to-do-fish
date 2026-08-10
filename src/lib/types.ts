@@ -40,13 +40,23 @@ export type Settings = {
 };
 
 /** Current storage schema version. Bumped when `Snapshot` changes shape. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export type Snapshot = {
 	version: number;
 	tasks: Task[];
 	koi: KoiRecord[];
 	settings: Settings;
+	/**
+	 * The account this snapshot belongs to, once one has claimed it. Absent means
+	 * unclaimed — either a fresh install or data written before sync existed.
+	 *
+	 * It is here rather than in a second storage key because the sign-in check has to
+	 * be atomic with the data it guards: a snapshot and an owner that could be written
+	 * separately could disagree, and the disagreement would read as "unclaimed" and
+	 * merge one person's tank into another's account.
+	 */
+	owner?: string;
 };
 
 /**

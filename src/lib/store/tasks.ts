@@ -1,5 +1,12 @@
 import { writable, get, type Readable } from 'svelte/store';
-import { SCHEMA_VERSION, type Condition, type KoiRecord, type Settings, type Task } from '../types';
+import {
+	SCHEMA_VERSION,
+	type Condition,
+	type KoiRecord,
+	type Settings,
+	type Snapshot,
+	type Task
+} from '../types';
 import type { TaskStore } from '../persist/port';
 import { validateCondition } from '../triggers/validate';
 import { canAfford } from './pearls';
@@ -185,6 +192,14 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 	const settings = writable<Settings>({ environment: 'progress', seenLegend: false, updatedAt: 0 });
 	const saveFailed = writable(false);
 
+	/**
+	 * Fields of the stored snapshot this layer does not model but must not destroy.
+	 * `commit` rebuilds the snapshot from `{ version, tasks, koi, settings }`, so
+	 * anything else — the owning account — would be dropped on the next write, and a
+	 * snapshot that lost its owner reads as unclaimed to the next account to sign in.
+	 */
+	let carried: Pick<Snapshot, 'owner'> = {};
+
 	function publish(next: State) {
 		state.set(next);
 		tasks.set(next.tasks);
@@ -197,7 +212,7 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 		// keeps running and the banner says changes are not being saved.
 		publish(next);
 		try {
-			await port.save({ version: SCHEMA_VERSION, ...next });
+			await port.save({ version: SCHEMA_VERSION, ...carried, ...next });
 			saveFailed.set(false);
 		} catch {
 			saveFailed.set(true);
@@ -217,7 +232,9 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 		snapshot: () => get(state),
 
 		async hydrate() {
-			const { tasks, koi, settings } = await port.load();
+			const loaded = await port.load();
+			const { tasks, koi, settings } = loaded;
+			carried = loaded.owner === undefined ? {} : { owner: loaded.owner };
 			publish({ tasks, koi, settings });
 		},
 

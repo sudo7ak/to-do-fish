@@ -183,6 +183,28 @@ describe('LocalTaskStore — migration', () => {
 		expect(loaded.tasks).toEqual([task()]);
 	});
 
+	it('leaves a version 3 snapshot unclaimed — it belongs to no account yet', async () => {
+		// Everything stored before sync existed predates any notion of an owner. It
+		// must stay unclaimed so that the first account to sign in still merges it,
+		// rather than being treated as a stranger's data and wiped.
+		const storage = new FakeStorage();
+		storage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({
+				version: 3,
+				tasks: [task()],
+				koi: [],
+				settings: { environment: 'calm', seenLegend: true, updatedAt: 0 }
+			})
+		);
+
+		const loaded = await store(storage).load();
+
+		expect(loaded.version).toBe(SCHEMA_VERSION);
+		expect(loaded.tasks).toEqual([task()]);
+		expect('owner' in loaded).toBe(false);
+	});
+
 	it('leaves a current-version snapshot alone', async () => {
 		const storage = new FakeStorage();
 		storage.setItem(STORAGE_KEY, JSON.stringify(snapshot()));

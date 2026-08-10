@@ -311,6 +311,30 @@ describe('createTaskStore', () => {
 		expect(get(store.tasks)).toHaveLength(1);
 	});
 
+	it('carries the owning account through a mutation', async () => {
+		// This layer models `{ tasks, koi, settings }` and rebuilds the whole snapshot
+		// on every write. If `owner` did not survive that, one edit while signed out
+		// would leave the snapshot looking unclaimed, and the next account to sign in
+		// would merge someone else's tank into its own.
+		const port = new FakeStore({ ...emptySnapshot(), owner: 'account-a' });
+		const store = createTaskStore(port);
+		await store.hydrate();
+
+		await store.addTask({ title: 'x', date: DAY });
+
+		expect(port.saved.at(-1)!.owner).toBe('account-a');
+	});
+
+	it('leaves an unclaimed snapshot unclaimed', async () => {
+		const port = new FakeStore();
+		const store = createTaskStore(port);
+		await store.hydrate();
+
+		await store.addTask({ title: 'x', date: DAY });
+
+		expect('owner' in port.saved.at(-1)!).toBe(false);
+	});
+
 	it('reports a refused claim without persisting', async () => {
 		const port = new FakeStore();
 		const store = createTaskStore(port);
