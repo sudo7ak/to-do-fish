@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 
 	import { LocalTaskStore } from '$lib/persist/local';
+	import type { TaskStore } from '$lib/persist/port';
 	import { createTaskStore, type TaskDraft } from '$lib/store/tasks';
 	import { createTicker } from '$lib/store/ticker';
 	import { pearlBalance, canAfford } from '$lib/store/pearls';
@@ -12,6 +13,9 @@
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
 	import type { Task } from '$lib/types';
+	import { createAuth, isSyncConfigured, type Account } from '$lib/auth/session';
+	import { SyncingTaskStore, type SyncStatus } from '$lib/persist/sync/syncing';
+	import { SupabaseRemote } from '$lib/persist/sync/remote';
 
 	import Tank from '$lib/ui/Tank.svelte';
 	import DateHeader, { today, formatDay } from '$lib/ui/DateHeader.svelte';
@@ -22,10 +26,52 @@
 	import Banner from '$lib/ui/Banner.svelte';
 	import Settings from '$lib/ui/Settings.svelte';
 	import Legend from '$lib/ui/Legend.svelte';
+	import AccountButton from '$lib/ui/AccountButton.svelte';
 	import { shouldAutoOpen } from '$lib/store/settings';
 
-	const store = createTaskStore(new LocalTaskStore());
+	const auth = createAuth();
+
+	let account = $state<Account | null>(null);
+	let syncState = $state<SyncStatus['state']>('idle');
+
+	const local = new LocalTaskStore();
+
+	/**
+	 * The store is built once, at module scope, and cannot be rebuilt when someone
+	 * signs in half an hour later — so what it holds is a port that forwards to
+	 * whichever store is current. Signed out that is `local`, and every call is the
+	 * one the app has always made.
+	 *
+	 * Handing `createTaskStore(local)` directly would look right and quietly break
+	 * sync: writes would reach localStorage and never reach the debounced push.
+	 */
+	let active: TaskStore = local;
+	let syncing: SyncingTaskStore | undefined;
+
+	const port: TaskStore = {
+		load: () => active.load(),
+		save: (snapshot) => active.save(snapshot)
+	};
+
+	const store = createTaskStore(port);
 	const { tasks, koi, settings, saveFailed } = store;
+
+	/** Points `active` at a syncing store for this account, or back at plain local. */
+	function useAccount(id: string | undefined) {
+		if (!id || !auth.client) {
+			syncing = undefined;
+			active = local;
+			return;
+		}
+
+		syncing = new SyncingTaskStore({
+			local,
+			remote: new SupabaseRemote(auth.client, id),
+			onExternalChange: () => void store.hydrate(),
+			onStatus: (status) => (syncState = status.state)
+		});
+		active = syncing;
+	}
 
 	let date = $state(today());
 
@@ -81,22 +127,36 @@
 
 		const rollover = () => (now = today());
 		const clock = setInterval(rollover, 20_000);
+
+		const unsubscribe = auth.account.subscribe((next) => {
+			account = next;
+			// A sign-in on a device with a week of offline tasks merges rather than asks:
+			// the local snapshot is pushed and the remote pulled through the same rules.
+			useAccount(next?.id);
+			void syncing?.sync();
+		});
+
 		// A sleeping machine runs no timers, so the wake is where the day usually turns.
 		// A phone gives back more than one kind of wake: a frozen tab thaws with
 		// `resume` and a back/forward-cache restore only fires `pageshow`.
+		const wake = () => {
+			rollover();
+			void syncing?.sync();
+		};
 		const wakeEvents = ['visibilitychange', 'pageshow', 'resume', 'focus'];
 		for (const event of wakeEvents) {
-			document.addEventListener(event, rollover);
-			window.addEventListener(event, rollover);
+			document.addEventListener(event, wake);
+			window.addEventListener(event, wake);
 		}
 
 		// Both the interval and the wake listeners leak without this.
 		return () => {
 			ticker.stop();
 			clearInterval(clock);
+			unsubscribe();
 			for (const event of wakeEvents) {
-				document.removeEventListener(event, rollover);
-				window.removeEventListener(event, rollover);
+				document.removeEventListener(event, wake);
+				window.removeEventListener(event, wake);
 			}
 		};
 	});
@@ -198,6 +258,17 @@
 			{now}
 			onNavigate={(next) => (date = next)}
 		/>
+
+		{#if isSyncConfigured()}
+			<div class="account">
+				<AccountButton
+					{account}
+					status={syncState}
+					onSignIn={() => void auth.signIn()}
+					onSignOut={() => void auth.signOut()}
+				/>
+			</div>
+		{/if}
 	</div>
 
 	{#if emptyDay}
@@ -295,6 +366,15 @@
 
 	.chrome :global(button) {
 		pointer-events: auto;
+	}
+
+	.account {
+		position: absolute;
+		top: max(0.75rem, env(safe-area-inset-top));
+		right: 4.25rem;
+		text-align: right;
+		color: #fff;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 	}
 
 	.empty {
