@@ -58,6 +58,14 @@
 
 	/** Points `active` at a syncing store for this account, or back at plain local. */
 	function useAccount(id: string | undefined) {
+		// The status line is a description of whatever store `active` currently
+		// points at. Swapping the store without this leaves the previous account's
+		// state — including its `at` — on screen under the new account's email, or
+		// under no account at all after a sign-out. `at` is deliberately never
+		// persisted so one device cannot show another's sync time; carrying it
+		// across an account swap on the same device is the same lie in miniature.
+		syncStatus = { state: 'idle' };
+
 		if (!id || !auth.client) {
 			syncing = undefined;
 			active = local;
