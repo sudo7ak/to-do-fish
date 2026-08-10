@@ -43,6 +43,14 @@ alter table public.settings enable row level security;
 
 -- One policy per table covering every verb. There is no sharing in this app: a row
 -- belongs to exactly one account and is invisible to every other.
+--
+-- `CREATE POLICY` has no `IF NOT EXISTS` form, so re-running this file against a
+-- database where it already succeeded would otherwise abort here with "policy
+-- already exists" and never reach the statements below. The drop makes a re-run
+-- safe; it is a no-op on a clean database, where the policy does not exist yet.
+drop policy if exists "own tasks"    on public.tasks;
+drop policy if exists "own koi"      on public.koi;
+drop policy if exists "own settings" on public.settings;
 create policy "own tasks"    on public.tasks    for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own koi"      on public.koi      for all
