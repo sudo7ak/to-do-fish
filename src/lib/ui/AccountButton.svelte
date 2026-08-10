@@ -30,6 +30,8 @@
 		idle: '',
 		syncing: '',
 		offline: 'Not syncing — offline',
+		// Waiting will not fix this one, so the copy must not imply it might.
+		rejected: 'Not syncing — the server refused this data',
 		denied: 'Not syncing — sign in again',
 		stale: 'Not syncing — this device is out of date',
 		skewed: "Not syncing reliably — this device's clock looks wrong",

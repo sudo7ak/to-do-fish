@@ -13,7 +13,7 @@ import { SyncUnavailableError, type Remote } from './remote';
  */
 
 export type SyncStatus = {
-	state: 'idle' | 'syncing' | 'offline' | 'denied' | 'stale' | 'skewed' | 'storage';
+	state: 'idle' | 'syncing' | 'offline' | 'denied' | 'stale' | 'skewed' | 'storage' | 'rejected';
 };
 
 export type SyncingOptions = {
@@ -198,8 +198,20 @@ export class SyncingTaskStore implements TaskStore {
 		// looking in the wrong place. It gets its own state.
 		if (error instanceof StorageUnavailableError) return this.#status('storage');
 
-		const reason = error instanceof SyncUnavailableError ? error.reason : 'network';
-		this.#status(reason === 'denied' ? 'denied' : reason === 'schema' ? 'stale' : 'offline');
+		if (!(error instanceof SyncUnavailableError)) return this.#status('offline');
+
+		// `rejected` is the one failure that will never come right on its own: the
+		// server understood the write and refused the data, so the same rows will be
+		// refused again on every retry. It has to say so rather than claim a network
+		// problem the user could wait out.
+		const BY_REASON = {
+			network: 'offline',
+			denied: 'denied',
+			schema: 'stale',
+			rejected: 'rejected'
+		} as const satisfies Record<SyncUnavailableError['reason'], SyncStatus['state']>;
+
+		this.#status(BY_REASON[error.reason]);
 	}
 
 	#status(state: SyncStatus['state']): void {

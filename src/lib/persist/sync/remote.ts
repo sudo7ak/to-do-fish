@@ -40,7 +40,7 @@ export interface Remote {
  * account", schema is "this device is out of date".
  */
 export class SyncUnavailableError extends Error {
-	readonly reason: 'network' | 'denied' | 'schema';
+	readonly reason: 'network' | 'denied' | 'schema' | 'rejected';
 
 	constructor(reason: SyncUnavailableError['reason'], message: string, options?: { cause?: unknown }) {
 		super(message, options);
@@ -149,9 +149,21 @@ export class SupabaseRemote implements Remote {
  * Postgres `42501` is insufficient_privilege, which here means RLS refused — a
  * broken account or a missing policy, not a flaky connection, so it must not be
  * retried in a loop.
+ *
+ * The integrity codes matter for the same reason and fail differently: the server
+ * understood the write and refused the data. Retrying sends the identical rows to
+ * the identical rejection forever, and calling that "offline" points the user at
+ * their signal when the truth is that this build and the database disagree about
+ * what a task looks like. `23514` is a violated check constraint — the shape rules
+ * in `supabase/constraints.sql` — and `23505` / `23503` are a broken key.
  */
+const REJECTED = new Set(['23514', '23505', '23503', '22P02']);
+
 function classify(error: unknown, message: string): SyncUnavailableError {
 	const code = (error as { code?: string })?.code;
-	const reason = code === '42501' ? 'denied' : 'network';
-	return new SyncUnavailableError(reason, message, { cause: error });
+	if (code === '42501') return new SyncUnavailableError('denied', message, { cause: error });
+	if (code && REJECTED.has(code)) {
+		return new SyncUnavailableError('rejected', message, { cause: error });
+	}
+	return new SyncUnavailableError('network', message, { cause: error });
 }

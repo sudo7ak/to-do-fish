@@ -445,13 +445,29 @@ if (treatSheet) {
 }
 
 // ---------------------------------------------------------------- sync (unconfigured)
-// Sync is configured out of this build, and the promise is that its absence changes
-// nothing. The 68 checks above are the real assertion; these two say why they held.
-console.log('\n== Sync (unconfigured) ==');
+// Sync is meant to be configured out of this build, and the promise is that its
+// absence changes nothing. The 68 checks above are the real assertion; these say why
+// they held.
+//
+// A developer with a real `.env.local` serves a CONFIGURED build, where the control
+// correctly appears and no cross-origin call has happened yet either. Rather than
+// let that read as a failure — and get the sweep quietly abandoned — say which build
+// is being tested. CI has no `.env.local`, so the strict form is what guards the
+// promise, and `E2E_EXPECT_SYNC=1` is the local escape hatch, never the CI default.
+const expectSync = process.env.E2E_EXPECT_SYNC === '1';
+console.log(`\n== Sync (${expectSync ? 'configured' : 'unconfigured'}) ==`);
+
+const signIn = await page.locator('button:has-text("Sign in to sync")').count();
 check(
-	'no sign-in control in an unconfigured build',
-	(await page.locator('button:has-text("Sign in to sync")').count()) === 0
+	expectSync
+		? 'the sign-in control is offered in a configured build'
+		: 'no sign-in control in an unconfigured build',
+	expectSync ? signIn === 1 : signIn === 0
 );
+
+// True either way: the app talks to nobody until someone actually signs in. A
+// configured build that phoned home on load would be a real defect, so this check
+// is not relaxed for it.
 check(
 	'no network calls left the page',
 	requests.every((url) => new NodeURL(url).host === new NodeURL(page.url()).host),

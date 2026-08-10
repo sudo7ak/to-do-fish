@@ -234,11 +234,14 @@ describe('SyncingTaskStore — sync', () => {
 		await expect(store.sync()).resolves.toBeUndefined();
 	});
 
-	it('reports offline, denied and stale as distinct states', async () => {
+	it('reports every remote failure reason as its own state', async () => {
+		// Four reasons, four sentences. Collapsing any of them into 'offline' tells the
+		// user to wait out something waiting will not fix.
 		for (const [reason, expected] of [
 			['network', 'offline'],
 			['denied', 'denied'],
-			['schema', 'stale']
+			['schema', 'stale'],
+			['rejected', 'rejected']
 		] as const) {
 			const remote = fakeRemote();
 			remote.pullError = new SyncUnavailableError(reason, reason);

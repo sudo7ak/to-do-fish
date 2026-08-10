@@ -105,6 +105,17 @@ describe('SupabaseRemote — pull', () => {
 
 		await expect(remote.pull()).rejects.toMatchObject({ reason: 'network' });
 	});
+
+	it('classifies a refused write as rejected, not as a network failure', async () => {
+		// A violated check constraint means the server understood the rows and would
+		// refuse them again identically. Calling it 'network' would retry the same
+		// data forever and tell the user to check a connection that is fine.
+		for (const code of ['23514', '23505', '23503', '22P02']) {
+			const remote = new SupabaseRemote(fakeClient({}, { code }), USER);
+
+			await expect(remote.pull()).rejects.toMatchObject({ reason: 'rejected' });
+		}
+	});
 });
 
 describe('SupabaseRemote — push', () => {
