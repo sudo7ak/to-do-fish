@@ -28,6 +28,16 @@ Verify RLS refuses an anonymous read before going further:
     select count(*) from public.tasks;  -- must be 0
     reset role;
 
+## 2b. The freshness function (optional)
+
+Run `supabase/freshness.sql` in the SQL Editor. It adds one function that reports the
+newest timestamp your account holds, so a device waking up can discover that nothing
+changed in a single query instead of reading all three tables.
+
+Entirely optional: without it the app syncs exactly as before, just with three reads
+per wake instead of one. The client treats a missing function as "cannot answer" and
+falls back to the full pull.
+
 ## 3. Google sign-in
 
 In Google Cloud, create an OAuth 2.0 Client ID of type "Web application":

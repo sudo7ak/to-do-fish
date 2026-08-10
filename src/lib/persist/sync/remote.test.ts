@@ -28,7 +28,8 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
  */
 function fakeClient(
 	seed: Record<string, unknown[]> = {},
-	fail?: { code?: string; message?: string }
+	fail?: { code?: string; message?: string },
+	rpcResult: { data: unknown; error: unknown } = { data: 0, error: null }
 ): SupabaseLike & { upserts: Record<string, unknown[]> } {
 	const upserts: Record<string, unknown[]> = {};
 
@@ -46,6 +47,9 @@ function fakeClient(
 					return { error: null };
 				}
 			};
+		},
+		async rpc() {
+			return rpcResult;
 		}
 	};
 }
@@ -172,7 +176,8 @@ describe('SupabaseRemote — push', () => {
 			from: (table: string) => ({
 				select: client.from(table).select,
 				upsert: async () => ({ error: { code: '42501' } })
-			})
+			}),
+			rpc: client.rpc
 		};
 		const remote = new SupabaseRemote(failingUpsert, USER);
 		await remote.pull();
@@ -266,7 +271,8 @@ describe('SupabaseRemote — reads are scoped to the account (I4)', () => {
 					}
 				}),
 				upsert: async () => ({ error: null })
-			})
+			}),
+			rpc: async () => ({ data: 0, error: null })
 		};
 
 		await new SupabaseRemote(client, USER).pull();
@@ -286,5 +292,35 @@ describe('SupabaseRemote — an account with no settings row', () => {
 		const pulled = await new SupabaseRemote(fakeClient(), USER).pull();
 
 		expect(pulled.settings).toBeUndefined();
+	});
+});
+
+describe('SupabaseRemote — freshness', () => {
+	it('reports the newest timestamp the account holds', async () => {
+		const client = fakeClient({}, undefined, { data: 1786377942054, error: null });
+
+		expect(await new SupabaseRemote(client, USER).freshness()).toBe(1786377942054);
+	});
+
+	it('reports undefined when the function is not deployed, so the caller pulls', async () => {
+		// The SQL is applied by hand. A client running against a project without it
+		// must still sync — the probe is an optimisation, never a gate.
+		const client = fakeClient({}, undefined, { data: null, error: { code: '42883' } });
+
+		expect(await new SupabaseRemote(client, USER).freshness()).toBeUndefined();
+	});
+
+	it('reports undefined rather than throwing when the call fails', async () => {
+		const client = fakeClient({}, undefined, { data: null, error: { message: 'offline' } });
+
+		await expect(new SupabaseRemote(client, USER).freshness()).resolves.toBeUndefined();
+	});
+
+	it('treats an empty account as zero rather than unknown', async () => {
+		// Zero is a real answer: the account holds nothing. Returning undefined would
+		// force a pointless full pull on every wake for a brand-new account.
+		const client = fakeClient({}, undefined, { data: 0, error: null });
+
+		expect(await new SupabaseRemote(client, USER).freshness()).toBe(0);
 	});
 });

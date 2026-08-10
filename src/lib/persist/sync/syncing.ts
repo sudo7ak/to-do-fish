@@ -1,6 +1,6 @@
 import { SCHEMA_VERSION, type Snapshot } from '../../types';
 import { StorageUnavailableError, type TaskStore } from '../port';
-import { claimFor, merge } from './merge';
+import { claimFor, merge, type RemoteSnapshot } from './merge';
 import { SyncUnavailableError, type Remote } from './remote';
 
 /**
@@ -65,6 +65,20 @@ function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
 	return deepEqual(a, b);
 }
 
+/**
+ * The newest timestamp in a pulled snapshot, matching what `sync_freshness()`
+ * computes server-side. They must agree, or the probe would report a change on
+ * every sync and cost a round trip instead of saving three.
+ */
+function newestOf(remote: RemoteSnapshot): number {
+	return Math.max(
+		0,
+		...remote.tasks.map((task) => task.updatedAt),
+		...remote.koi.map((record) => record.earnedAt),
+		...(remote.settings ? [remote.settings.updatedAt] : [])
+	);
+}
+
 function deepEqual(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
@@ -99,6 +113,10 @@ export class SyncingTaskStore implements TaskStore {
 	#backoffMs: number;
 	/** When the last sync failed, so wake syncs can back off rather than hammer. */
 	#lastFailedAt: number | undefined;
+	/** The server's newest timestamp as of the last completed sync, if it was asked. */
+	#seenFreshness: number | undefined;
+	/** Whether this device has written since its last successful push. */
+	#dirty = false;
 
 	/**
 	 * A merge that must not be written down: the remote holds a shape this build does
@@ -152,6 +170,7 @@ export class SyncingTaskStore implements TaskStore {
 		// otherwise drop it — after which a second account would look like a first, and
 		// merge.
 		await this.#local.save(claimFor(snapshot, this.#owner));
+		this.#dirty = true;
 
 		if (this.#pending !== undefined) this.#clearTimer(this.#pending);
 		this.#pending = this.#setTimer(() => void this.sync('write'), this.#debounceMs);
@@ -203,7 +222,20 @@ export class SyncingTaskStore implements TaskStore {
 		this.#status('syncing');
 
 		try {
+			// The probe answers "has the server moved?" in one round trip. It cannot
+			// answer "do I have anything to send", so a device with unpushed work pulls
+			// regardless — and `push()` refuses without a preceding pull anyway.
+			if (!this.#dirty && this.#seenFreshness !== undefined) {
+				const freshness = await this.#remote.freshness();
+				if (freshness !== undefined && freshness === this.#seenFreshness) {
+					this.#lastSyncedAt = this.#now();
+					this.#lastFailedAt = undefined;
+					return this.#status('idle');
+				}
+			}
+
 			const remote = await this.#remote.pull();
+			this.#seenFreshness = newestOf(remote);
 
 			// Re-read local rather than reusing anything captured before the pull: a
 			// write may have landed while the request was in flight, and it is newer.
@@ -237,12 +269,14 @@ export class SyncingTaskStore implements TaskStore {
 			if (push.tasks.length === 0 && push.koi.length === 0 && !push.settings) {
 				this.#lastSyncedAt = this.#now();
 				this.#lastFailedAt = undefined;
+				this.#dirty = false;
 				return this.#status(settled);
 			}
 
 			await this.#remote.push(push);
 			this.#lastSyncedAt = this.#now();
 			this.#lastFailedAt = undefined;
+			this.#dirty = false;
 			this.#status(settled);
 		} catch (error) {
 			this.#failed(error);

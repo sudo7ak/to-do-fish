@@ -55,6 +55,8 @@ function fakeRemote(initial: Snapshot = snapshot()) {
 		pullResult: initial,
 		pullError: undefined as unknown,
 		pushError: undefined as unknown,
+		freshnessResult: 0 as number | undefined,
+		freshnessCalls: 0,
 		async pull() {
 			this.pulls++;
 			if (this.pullError) throw this.pullError;
@@ -63,6 +65,10 @@ function fakeRemote(initial: Snapshot = snapshot()) {
 		async push(next: Snapshot) {
 			if (this.pushError) throw this.pushError;
 			this.pushes.push(next);
+		},
+		async freshness() {
+			this.freshnessCalls++;
+			return this.freshnessResult;
 		}
 	} satisfies Remote & {
 		pushes: Snapshot[];
@@ -70,6 +76,8 @@ function fakeRemote(initial: Snapshot = snapshot()) {
 		pullResult: Snapshot;
 		pullError: unknown;
 		pushError: unknown;
+		freshnessResult: number | undefined;
+		freshnessCalls: number;
 	};
 }
 
@@ -394,6 +402,9 @@ describe('SyncingTaskStore — one sync at a time', () => {
 		const { store, remote } = setup();
 
 		await store.sync();
+		// The server has moved, so the freshness probe does not skip this one and
+		// mask what the test is actually checking — that the lock released.
+		remote.freshnessResult = 1;
 		await store.sync();
 
 		expect(remote.pulls).toBe(2);
@@ -627,6 +638,9 @@ describe('SyncingTaskStore — when this device last synced', () => {
 
 		await store.sync();
 		remote.pullError = new SyncUnavailableError('network', 'offline');
+		// A server that has moved since the last sync, so the probe does not skip
+		// straight to 'idle' before the failing pull ever runs.
+		remote.freshnessResult = 1;
 		await store.sync();
 
 		expect(statuses.at(-1)?.state).toBe('offline');
@@ -666,8 +680,13 @@ describe('SyncingTaskStore — not syncing more than it needs to', () => {
 		const { store, remote } = setup();
 
 		await store.sync('wake');
+		// Each call reports the server moving again, so the freshness probe never
+		// gets a chance to mask what this test is actually checking — the cooldown.
+		remote.freshnessResult = 1;
 		await store.sync('write');
+		remote.freshnessResult = 2;
 		await store.sync('manual');
+		remote.freshnessResult = 3;
 		await store.sync('account');
 
 		expect(remote.pulls).toBe(4);
@@ -687,6 +706,9 @@ describe('SyncingTaskStore — not syncing more than it needs to', () => {
 
 		await store.sync('wake');
 		clock += 30_001;
+		// The server has moved, so this second wake is a real pull rather than one
+		// the freshness probe skips — the cooldown is what this test is checking.
+		remote.freshnessResult = 1;
 		await store.sync('wake');
 
 		expect(remote.pulls).toBe(2);
@@ -770,5 +792,66 @@ describe('SyncingTaskStore — not syncing more than it needs to', () => {
 		await store.sync('manual');
 
 		expect(remote.pulls).toBe(2);
+	});
+});
+
+describe('SyncingTaskStore — skipping a pull that would learn nothing', () => {
+	it('skips the pull when the server has not moved since the last sync', async () => {
+		// The probe's answer must equal what `newestOf` computes from the pulled
+		// snapshot, or "unchanged" never matches and the probe costs a round trip
+		// instead of saving three. `snapshot()` has no tasks and settings stamped 0,
+		// so the newest timestamp it holds is 0 — the fake's default.
+		const { store, remote } = setup();
+
+		await store.sync('manual');
+		const after = remote.pulls;
+		await store.sync('manual');
+
+		expect(remote.pulls).toBe(after);
+	});
+
+	it('pulls when the server has moved', async () => {
+		const { store, remote } = setup();
+
+		await store.sync('manual');
+		remote.freshnessResult = 900;
+		await store.sync('manual');
+
+		expect(remote.pulls).toBe(2);
+	});
+
+	it('pulls when the probe cannot answer', async () => {
+		// An undeployed SQL function must not stop the app syncing.
+		const { store, remote } = setup();
+		remote.freshnessResult = undefined;
+
+		await store.sync('manual');
+		await store.sync('manual');
+
+		expect(remote.pulls).toBe(2);
+	});
+
+	it('pulls anyway when this device has something to push', async () => {
+		// The probe only says whether the SERVER changed. A local edit still has to
+		// go up, and push refuses without a preceding pull.
+		const { store, remote, timer } = setup();
+
+		await store.sync('manual');
+		await store.save(snapshot({ tasks: [task({ id: 'mine' })] }));
+		await timer.fire();
+
+		expect(remote.pulls).toBe(2);
+		expect(remote.pushes.at(-1)?.tasks.map((t) => t.id)).toEqual(['mine']);
+	});
+
+	it('counts a skipped sync as a successful one', async () => {
+		// It verified the tank is current, which is exactly what the timestamp claims.
+		const { store, statuses } = setup();
+
+		await store.sync('manual');
+		await store.sync('manual');
+
+		expect(statuses.at(-1)?.state).toBe('idle');
+		expect(statuses.at(-1)?.at).toBe(1000);
 	});
 });

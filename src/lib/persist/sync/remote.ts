@@ -27,11 +27,14 @@ export type SupabaseLike = {
 		};
 		upsert(rows: unknown[], options?: { onConflict: string }): Promise<{ error: unknown }>;
 	};
+	rpc(fn: string): Promise<{ data: unknown; error: unknown }>;
 };
 
 export interface Remote {
 	pull(): Promise<RemoteSnapshot>;
 	push(push: Push): Promise<void>;
+	/** The newest timestamp the account holds, or `undefined` if it cannot be asked. */
+	freshness(): Promise<number | undefined>;
 }
 
 /**
@@ -120,6 +123,24 @@ export class SupabaseRemote implements Remote {
 				[toSettingsRow(snapshot.settings, this.#userId, SCHEMA_VERSION)],
 				'user_id'
 			);
+		}
+	}
+
+	/**
+	 * One aggregate instead of three table reads, so a wake sync can discover that
+	 * nothing changed without pulling everything.
+	 *
+	 * Never throws, and never classifies a failure: the SQL function is applied by
+	 * hand and may simply not exist, which is not an error the user should hear
+	 * about. Any failure returns `undefined`, and `undefined` means "pull properly".
+	 */
+	async freshness(): Promise<number | undefined> {
+		try {
+			const { data, error } = await this.#client.rpc('sync_freshness');
+			if (error || typeof data !== 'number') return undefined;
+			return data;
+		} catch {
+			return undefined;
 		}
 	}
 
