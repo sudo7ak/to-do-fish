@@ -371,17 +371,19 @@ describe('SyncingTaskStore — one sync at a time', () => {
 		// Three triggers in the same tick is the ordinary case: a tab switch fires
 		// visibilitychange and focus, and a debounced write can land on top.
 		const remote = fakeRemote();
-		let release: () => void = () => {};
+		const releases: (() => void)[] = [];
 		remote.pull = () => {
 			remote.pulls++;
 			return new Promise((resolve) => {
-				release = () => resolve(remote.pullResult);
+				releases.push(() => resolve(remote.pullResult));
 			});
 		};
 		const { store } = setup(fakeLocal(), remote);
 
 		const all = Promise.all([store.sync(), store.sync(), store.sync()]);
-		release();
+		// Release every pending pull, so a missing guard settles and fails on the
+		// count rather than hanging until the test times out.
+		for (const release of releases) release();
 		await all;
 
 		expect(remote.pulls).toBe(1);
