@@ -82,7 +82,11 @@ export function createAuth(client: (AuthClient & Partial<SupabaseLike>) | null =
 			if (!client) return;
 			await client.auth.signInWithOAuth({
 				provider: 'google',
-				options: { redirectTo: window.location.href.split('?')[0] }
+				// Query *and* fragment stripped. Supabase matches `redirectTo` against an
+				// exact allowlist, so a deep link like `#legend` arriving here produces a
+				// URL that is not on it, and the failure is the opaque one this feature's
+				// setup notes warn about twice.
+				options: { redirectTo: window.location.href.split(/[?#]/)[0] }
 			});
 		},
 

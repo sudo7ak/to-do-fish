@@ -112,3 +112,21 @@ describe('settings rows', () => {
 		expect(row.version).toBe(SCHEMA_VERSION);
 	});
 });
+
+describe('task rows — the conditions with no test until now', () => {
+	it('round-trips a free-text condition', () => {
+		// `condition` is the one column whose mapping is not provably total: it is a
+		// jsonb blob of a union, so a kind with no round-trip test is a kind that has
+		// never been proved to survive the database.
+		const original = task({ condition: { kind: 'text', text: 'when it stops raining' }, status: 'waiting' });
+		expect(fromTaskRow(toTaskRow(original, USER))).toEqual(original);
+	});
+
+	it('round-trips a dependency condition with no cutoff, leaving `before` absent', () => {
+		const original = task({ condition: { kind: 'task', taskId: 'other' }, status: 'waiting' });
+		const restored = fromTaskRow(toTaskRow(original, USER));
+
+		expect(restored).toEqual(original);
+		expect('before' in (restored.condition as object)).toBe(false);
+	});
+});

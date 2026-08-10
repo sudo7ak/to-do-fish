@@ -112,6 +112,23 @@ describe('createAuth', () => {
 
 		vi.unstubAllGlobals();
 	});
+
+	it('strips a fragment as well as a query string', async () => {
+		// `redirectTo` is matched against an exact allowlist. A deep link leaves a
+		// fragment on the address bar, and a fragment the allowlist has never seen
+		// fails the match with a message that says nothing useful.
+		vi.stubGlobal('window', { location: { href: 'https://example.com/app#legend' } });
+
+		const client = fakeClient(null);
+		const auth = createAuth(client);
+		await auth.ready;
+
+		await auth.signIn();
+
+		expect(client.signInCalls[0].options?.redirectTo).toBe('https://example.com/app');
+
+		vi.unstubAllGlobals();
+	});
 });
 
 describe('createAuth — unconfigured', () => {
