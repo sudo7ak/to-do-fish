@@ -110,8 +110,10 @@ describe('SupabaseRemote — push', () => {
 		// An empty push is the common case on a quiet sync, and an upsert of zero rows
 		// is a request worth not making.
 		const client = fakeClient();
+		const remote = new SupabaseRemote(client, USER);
+		await remote.pull();
 
-		await new SupabaseRemote(client, USER).push({ tasks: [], koi: [] });
+		await remote.push({ tasks: [], koi: [] });
 
 		expect(client.upserts.tasks).toBeUndefined();
 		expect(client.upserts.koi).toBeUndefined();
@@ -120,8 +122,10 @@ describe('SupabaseRemote — push', () => {
 
 	it('upserts tasks with the user stamped on every row', async () => {
 		const client = fakeClient();
+		const remote = new SupabaseRemote(client, USER);
+		await remote.pull();
 
-		await new SupabaseRemote(client, USER).push(snapshot({ tasks: [task(), task({ id: 'b' })] }));
+		await remote.push(snapshot({ tasks: [task(), task({ id: 'b' })] }));
 
 		expect(client.upserts.tasks).toHaveLength(2);
 		expect(client.upserts.tasks.every((row: any) => row.user_id === USER)).toBe(true);
@@ -129,24 +133,62 @@ describe('SupabaseRemote — push', () => {
 
 	it('upserts tombstones like any other row', async () => {
 		const client = fakeClient();
+		const remote = new SupabaseRemote(client, USER);
+		await remote.pull();
 
-		await new SupabaseRemote(client, USER).push(snapshot({ tasks: [task({ deletedAt: 5 })] }));
+		await remote.push(snapshot({ tasks: [task({ deletedAt: 5 })] }));
 
 		expect((client.upserts.tasks[0] as any).deleted_at).toBe(5);
 	});
 
 	it('upserts the settings row with this build schema version', async () => {
 		const client = fakeClient();
+		const remote = new SupabaseRemote(client, USER);
+		await remote.pull();
 
-		await new SupabaseRemote(client, USER).push(snapshot());
+		await remote.push(snapshot());
 
 		expect((client.upserts.settings[0] as any).version).toBe(SCHEMA_VERSION);
 	});
 
 	it('rejects when the write is refused', async () => {
-		const remote = new SupabaseRemote(fakeClient({}, { code: '42501' }), USER);
+		// select succeeds (so the version guard is satisfied) but upsert is refused —
+		// the two must be independent to isolate the write-time failure being tested.
+		const client = fakeClient();
+		const failingUpsert: SupabaseLike = {
+			from: (table: string) => ({
+				select: client.from(table).select,
+				upsert: async () => ({ error: { code: '42501' } })
+			})
+		};
+		const remote = new SupabaseRemote(failingUpsert, USER);
+		await remote.pull();
 
 		await expect(remote.push(snapshot({ tasks: [task()] }))).rejects.toThrow(SyncUnavailableError);
+	});
+});
+
+describe('SupabaseRemote — push before any pull', () => {
+	it('refuses when the remote version has never been read, and writes nothing', async () => {
+		const client = fakeClient();
+		const remote = new SupabaseRemote(client, USER);
+
+		await expect(remote.push(snapshot({ tasks: [task()] }))).rejects.toMatchObject({
+			reason: 'schema'
+		});
+		expect(client.upserts.tasks).toBeUndefined();
+		expect(client.upserts.koi).toBeUndefined();
+		expect(client.upserts.settings).toBeUndefined();
+	});
+
+	it('allows push after pulling an account with no settings row yet', async () => {
+		const client = fakeClient();
+		const remote = new SupabaseRemote(client, USER);
+
+		await remote.pull();
+		await remote.push(snapshot({ tasks: [task()] }));
+
+		expect(client.upserts.tasks).toHaveLength(1);
 	});
 });
 

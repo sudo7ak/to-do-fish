@@ -52,10 +52,11 @@ export class SupabaseRemote implements Remote {
 	#userId: string;
 
 	/**
-	 * The schema version last seen on the server. Remembered from the pull so a push
-	 * can refuse rather than overwrite rows a newer client wrote.
+	 * The schema version last seen on the server. `undefined` means "never pulled",
+	 * which must refuse a push exactly like an out-of-date server does — a push
+	 * before any pull has no idea what it would be overwriting.
 	 */
-	#remoteVersion = SCHEMA_VERSION;
+	#remoteVersion: number | undefined;
 
 	constructor(client: SupabaseLike, userId: string) {
 		this.#client = client;
@@ -84,6 +85,12 @@ export class SupabaseRemote implements Remote {
 	}
 
 	async push(snapshot: Push): Promise<void> {
+		if (this.#remoteVersion === undefined) {
+			throw new SyncUnavailableError(
+				'schema',
+				'The remote schema version has not been read yet; pull before pushing'
+			);
+		}
 		if (this.#remoteVersion > SCHEMA_VERSION) {
 			throw new SyncUnavailableError(
 				'schema',
