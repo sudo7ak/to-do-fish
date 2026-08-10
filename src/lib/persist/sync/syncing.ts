@@ -1,5 +1,5 @@
 import type { Snapshot } from '../../types';
-import type { TaskStore } from '../port';
+import { StorageUnavailableError, type TaskStore } from '../port';
 import { merge } from './merge';
 import { SyncUnavailableError, type Remote } from './remote';
 
@@ -13,7 +13,7 @@ import { SyncUnavailableError, type Remote } from './remote';
  */
 
 export type SyncStatus = {
-	state: 'idle' | 'syncing' | 'offline' | 'denied' | 'stale' | 'skewed';
+	state: 'idle' | 'syncing' | 'offline' | 'denied' | 'stale' | 'skewed' | 'storage';
 };
 
 export type SyncingOptions = {
@@ -144,6 +144,11 @@ export class SyncingTaskStore implements TaskStore {
 	}
 
 	#failed(error: unknown): void {
+		// A `StorageUnavailableError` from the local re-read or the local write is not
+		// a network problem — telling the user to check their signal would send them
+		// looking in the wrong place. It gets its own state.
+		if (error instanceof StorageUnavailableError) return this.#status('storage');
+
 		const reason = error instanceof SyncUnavailableError ? error.reason : 'network';
 		this.#status(reason === 'denied' ? 'denied' : reason === 'schema' ? 'stale' : 'offline');
 	}

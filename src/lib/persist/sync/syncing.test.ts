@@ -286,7 +286,9 @@ describe('SyncingTaskStore — sync', () => {
 		const { store, statuses } = setup(local);
 
 		await expect(store.sync()).resolves.toBeUndefined();
-		expect(statuses.map((s) => s.state)).toContain('offline');
+		// Storage, not the network — the two clocks disagree on nothing here, quota
+		// or private mode is a different failure than "check your signal".
+		expect(statuses.map((s) => s.state)).toContain('storage');
 	});
 
 	it('does not reject when the local save of the merged snapshot throws', async () => {
@@ -296,6 +298,26 @@ describe('SyncingTaskStore — sync', () => {
 		};
 		const remote = fakeRemote(snapshot({ tasks: [task({ id: 'theirs' })] }));
 		const { store, statuses } = setup(local, remote);
+
+		await expect(store.sync()).resolves.toBeUndefined();
+		expect(statuses.map((s) => s.state)).toContain('storage');
+	});
+
+	it('reports a remote failure as offline, not storage', async () => {
+		const remote = fakeRemote();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		const { store, statuses } = setup(fakeLocal(), remote);
+
+		await store.sync();
+
+		expect(statuses.map((s) => s.state)).toContain('offline');
+		expect(statuses.map((s) => s.state)).not.toContain('storage');
+	});
+
+	it('does not reject on an error that is neither StorageUnavailableError nor SyncUnavailableError', async () => {
+		const remote = fakeRemote();
+		remote.pullError = new Error('something unrelated broke');
+		const { store, statuses } = setup(fakeLocal(), remote);
 
 		await expect(store.sync()).resolves.toBeUndefined();
 		expect(statuses.map((s) => s.state)).toContain('offline');
