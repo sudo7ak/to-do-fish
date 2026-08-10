@@ -25,15 +25,22 @@
 </script>
 
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	type Props = {
 		open: boolean;
 		environment: Environment;
 		onChange: (environment: Environment) => void;
 		onOpenLegend: () => void;
 		onClose: () => void;
+		/**
+		 * The sync section. Absent when Supabase is not configured, in which case no
+		 * heading renders either — an empty "Sync" section would be worse than none.
+		 */
+		sync?: Snippet;
 	};
 
-	const { open, environment, onChange, onOpenLegend, onClose }: Props = $props();
+	const { open, environment, onChange, onOpenLegend, onClose, sync }: Props = $props();
 </script>
 
 {#if open}
@@ -72,6 +79,10 @@
 			<span>What am I looking at?</span>
 			<span class="chevron" aria-hidden="true">›</span>
 		</button>
+
+		{#if sync}
+			{@render sync()}
+		{/if}
 
 		<div class="actions">
 			<button type="button" onclick={onClose}>Done</button>
