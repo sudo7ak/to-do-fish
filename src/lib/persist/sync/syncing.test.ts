@@ -435,6 +435,37 @@ describe('SyncingTaskStore — whose data this is (C1)', () => {
 		expect((await store.load()).tasks).toEqual([]);
 	});
 
+	it('refuses to write the previous account data under the new account name', async () => {
+		// The residue of C1 (N1). After a sign-in the page still holds the previous
+		// account's tasks in memory, and `hydrate()` is what drops them. If that first
+		// sync fails — offline, or Supabase unreachable in the seconds after the OAuth
+		// redirect — the next edit arrives here carrying A's tasks and A's claim. Merely
+		// stamping the new owner onto it would relabel A's tank as B's, permanently
+		// disarm the claim check, and push A's tasks under B's user_id when the network
+		// returned. The write is discarded instead: it is not B's data to keep.
+		const { store, local, remote, timer } = forOwner(B);
+
+		await store.save({ ...snapshot({ tasks: [task({ id: 'a-secret' })] }), owner: A });
+		await timer.fire();
+
+		expect(local.held.tasks).toEqual([]);
+		expect(local.held.owner).toBe(B);
+		expect(remote.pushes.flatMap((p) => p.tasks)).toEqual([]);
+	});
+
+	it('keeps a write that is genuinely the signed-in account own', async () => {
+		// The guard above must not eat ordinary edits: same owner, and unclaimed data
+		// being written for the first time, both survive untouched.
+		const { store, local } = forOwner(A);
+
+		await store.save({ ...snapshot({ tasks: [task({ id: 'mine' })] }), owner: A });
+		expect(local.held.tasks.map((t) => t.id)).toEqual(['mine']);
+
+		await store.save(snapshot({ tasks: [task({ id: 'unclaimed' })] }));
+		expect(local.held.tasks.map((t) => t.id)).toEqual(['unclaimed']);
+		expect(local.held.owner).toBe(A);
+	});
+
 	it('stamps the owner on every write, so signing out cannot un-claim the snapshot', async () => {
 		// Sign-out is not a delete, and the app's own save path rebuilds the snapshot
 		// from `{ version, tasks, koi, settings }`. If the claim did not survive a

@@ -113,10 +113,17 @@ export class SyncingTaskStore implements TaskStore {
 		// Awaited, and allowed to reject: a failed local write is the one the user
 		// must hear about, and the existing banner is already wired for it.
 		//
-		// Stamped with the owner because the app's save path rebuilds the snapshot from
-		// `{ version, tasks, koi, settings }` and would otherwise drop the claim — after
-		// which a second account signing in would look like a first one, and merge.
-		await this.#local.save({ ...snapshot, owner: this.#owner });
+		// Claimed rather than stamped. Stamping would take a snapshot still belonging to
+		// the previous account and relabel it as this one's — which is exactly what a
+		// write does when the first sync after an account switch failed and the page is
+		// still holding the old account's tasks in memory. `claimFor` discards those
+		// instead, so a failed sync cannot turn into a cross-account leak on the next tap.
+		//
+		// The claim also carries forward on the ordinary path, because the app's save
+		// rebuilds the snapshot from `{ version, tasks, koi, settings }` and would
+		// otherwise drop it — after which a second account would look like a first, and
+		// merge.
+		await this.#local.save(claimFor(snapshot, this.#owner));
 
 		if (this.#pending !== undefined) this.#clearTimer(this.#pending);
 		this.#pending = this.#setTimer(() => void this.sync(), this.#debounceMs);

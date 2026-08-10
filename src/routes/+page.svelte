@@ -129,12 +129,27 @@
 		const rollover = () => (now = today());
 		const clock = setInterval(rollover, 20_000);
 
+		// Which account the store is currently holding data for. `onAuthStateChange` also
+		// fires on a token refresh, roughly hourly, with the same identity — rebuilding
+		// the sync stack for that would throw away an in-flight debounce and cost a full
+		// round trip for nothing.
+		let heldAccount: string | undefined;
+
 		const unsubscribe = auth.account.subscribe((next) => {
 			account = next;
-			// A sign-in on a device with a week of offline tasks merges rather than asks:
+			if (next?.id === heldAccount) return;
+			heldAccount = next?.id;
+
+			// A sign-in on a device with unclaimed local data merges rather than asks:
 			// the local snapshot is pushed and the remote pulled through the same rules.
+			// A sign-in as a *different* account discards that data instead.
 			useAccount(next?.id);
-			void syncing?.sync();
+
+			// Re-hydrate before syncing, not as a consequence of it. `load()` applies the
+			// account claim, so this is what drops the previous account's tank out of
+			// memory — and it has to happen even when the first sync fails, or an edit
+			// made while offline would be written back under the new account's name.
+			void store.hydrate().then(() => syncing?.sync());
 		});
 
 		// A sleeping machine runs no timers, so the wake is where the day usually turns.
