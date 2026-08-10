@@ -854,4 +854,33 @@ describe('SyncingTaskStore — skipping a pull that would learn nothing', () => 
 		expect(statuses.at(-1)?.state).toBe('idle');
 		expect(statuses.at(-1)?.at).toBe(1000);
 	});
+
+	it('computes the same newest timestamp the server reports', async () => {
+		// The probe only saves a round trip if both sides agree on what "newest" is.
+		// Distinct non-zero values per field, and the koi one the largest: a helper
+		// that read `updatedAt` off a koi record — the field koi does not have — or
+		// dropped koi entirely would compute 700 here, disagree with the server's 900,
+		// and pull on every sync while every other test still passed.
+		const remote = fakeRemote(
+			snapshot({
+				tasks: [task({ updatedAt: 700 })],
+				koi: [{ date: '2026-08-09', earnedAt: 900 }],
+				settings: { environment: 'progress', seenLegend: false, updatedAt: 500 }
+			})
+		);
+		const { store } = setup(fakeLocal(), remote);
+
+		await store.sync('manual');
+
+		// The server would answer 900 — greatest of 700, 900, 500. Agreeing means skip.
+		remote.freshnessResult = 900;
+		const afterAgreement = remote.pulls;
+		await store.sync('manual');
+		expect(remote.pulls).toBe(afterAgreement);
+
+		// One millisecond later on the server means pull.
+		remote.freshnessResult = 901;
+		await store.sync('manual');
+		expect(remote.pulls).toBe(afterAgreement + 1);
+	});
 });
