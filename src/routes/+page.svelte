@@ -250,6 +250,15 @@
 		<Tank {draw} />
 	</div>
 
+	{#snippet accountControl()}
+		<AccountButton
+			{account}
+			status={syncState}
+			onSignIn={() => void auth.signIn()}
+			onSignOut={() => void auth.signOut()}
+		/>
+	{/snippet}
+
 	<div class="chrome">
 		<DateHeader
 			{date}
@@ -257,18 +266,8 @@
 			{clearedPct}
 			{now}
 			onNavigate={(next) => (date = next)}
+			account={isSyncConfigured() ? accountControl : undefined}
 		/>
-
-		{#if isSyncConfigured()}
-			<div class="account">
-				<AccountButton
-					{account}
-					status={syncState}
-					onSignIn={() => void auth.signIn()}
-					onSignOut={() => void auth.signOut()}
-				/>
-			</div>
-		{/if}
 	</div>
 
 	{#if emptyDay}
@@ -366,15 +365,6 @@
 
 	.chrome :global(button) {
 		pointer-events: auto;
-	}
-
-	.account {
-		position: absolute;
-		top: max(0.75rem, env(safe-area-inset-top));
-		right: 4.25rem;
-		text-align: right;
-		color: #fff;
-		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 	}
 
 	.empty {

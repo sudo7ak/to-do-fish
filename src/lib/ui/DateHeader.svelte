@@ -48,6 +48,7 @@
 </script>
 
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { moodPercent, moodWord, type Environment } from '../render/palette';
 
 	/**
@@ -70,9 +71,19 @@
 		 */
 		now: string;
 		onNavigate: (date: string) => void;
+		/**
+		 * The account control, rendered on its own row below the date/arrows.
+		 *
+		 * Laid out here rather than positioned on top from outside: the arrows sit
+		 * flush against this component's own padding, so anything absolutely
+		 * positioned over the header from the page risks overlapping one of them.
+		 * A second flex row that this component owns cannot collide with the first
+		 * no matter how long the control's content gets.
+		 */
+		account?: Snippet;
 	};
 
-	const { date, environment, clearedPct, now, onNavigate }: Props = $props();
+	const { date, environment, clearedPct, now, onNavigate, account }: Props = $props();
 
 	const label = $derived(formatDay(date, now));
 	const isToday = $derived(date === now);
@@ -81,42 +92,50 @@
 </script>
 
 <header>
-	<button
-		type="button"
-		class="arrow"
-		aria-label="Previous day"
-		onclick={() => onNavigate(shiftDate(date, -1))}
-	>
-		‹
-	</button>
-
-	{#if isToday}
-		<div class="day">
-			<h1>{label}</h1>
-			{#if showsMood}
-				<p class="mood">{moodPercent(clearedPct)}% · {moodWord(clearedPct)}</p>
-			{/if}
-		</div>
-	{:else}
-		<!--
-			Away from today, the label itself is the way back. Returning was the only
-			O(n) interaction left in the app — three weeks back was twenty-one taps on
-			an arrow, and nothing else here makes you repeat a gesture to undo it.
-		-->
-		<button type="button" class="day back" aria-label="Back to today" onclick={() => onNavigate(now)}>
-			<h1>{label}</h1>
-			<p class="hint">Back to today</p>
+	<div class="row">
+		<button
+			type="button"
+			class="arrow"
+			aria-label="Previous day"
+			onclick={() => onNavigate(shiftDate(date, -1))}
+		>
+			‹
 		</button>
-	{/if}
 
-	<button
-		type="button"
-		class="arrow"
-		aria-label="Next day"
-		onclick={() => onNavigate(shiftDate(date, 1))}
-	>
-		›
-	</button>
+		{#if isToday}
+			<div class="day">
+				<h1>{label}</h1>
+				{#if showsMood}
+					<p class="mood">{moodPercent(clearedPct)}% · {moodWord(clearedPct)}</p>
+				{/if}
+			</div>
+		{:else}
+			<!--
+				Away from today, the label itself is the way back. Returning was the only
+				O(n) interaction left in the app — three weeks back was twenty-one taps on
+				an arrow, and nothing else here makes you repeat a gesture to undo it.
+			-->
+			<button type="button" class="day back" aria-label="Back to today" onclick={() => onNavigate(now)}>
+				<h1>{label}</h1>
+				<p class="hint">Back to today</p>
+			</button>
+		{/if}
+
+		<button
+			type="button"
+			class="arrow"
+			aria-label="Next day"
+			onclick={() => onNavigate(shiftDate(date, 1))}
+		>
+			›
+		</button>
+	</div>
+
+	{#if account}
+		<div class="account-row">
+			{@render account()}
+		</div>
+	{/if}
 </header>
 
 <style>
@@ -144,9 +163,7 @@
 
 	header {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
+		flex-direction: column;
 		/* Inset past the corner glass buttons (menu and settings), which are fixed at
 		   1rem and 2.6rem wide. Without this they sit on top of the day arrows and
 		   swallow the clicks, so the date cannot be changed at all. */
@@ -154,6 +171,29 @@
 		padding-top: max(0.75rem, env(safe-area-inset-top));
 		color: #fff;
 		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+	}
+
+	.row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	/*
+	 * A second row rather than something layered on top of `.row`: the arrows sit
+	 * flush against the header's own padding, so anything overlaid from outside
+	 * risks landing on one of them regardless of how it is sized. Centred and
+	 * width-capped so the longest trouble copy wraps in place instead of spreading
+	 * toward the arrows on a narrow phone.
+	 */
+	.account-row {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		max-width: 70%;
+		margin: 0 auto;
+		text-align: center;
 	}
 
 	.day {
