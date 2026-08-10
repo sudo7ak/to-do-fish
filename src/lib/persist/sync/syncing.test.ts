@@ -550,3 +550,53 @@ describe('SyncingTaskStore — the skew banner reaches the user (I3)', () => {
 		expect(statuses.at(-1)?.state).toBe('idle');
 	});
 });
+
+describe('SyncingTaskStore — when this device last synced', () => {
+	it('stamps the time on a successful sync', async () => {
+		const { store, statuses } = setup();
+
+		await store.sync();
+
+		expect(statuses.at(-1)?.at).toBe(1000);
+	});
+
+	it('has no time before the first successful sync', async () => {
+		const remote = fakeRemote();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		const { store, statuses } = setup(fakeLocal(), remote);
+
+		await store.sync();
+
+		expect(statuses.at(-1)?.at).toBeUndefined();
+	});
+
+	it('keeps the last successful time through a later failure', async () => {
+		// This is the line that matters most in the UI: "Not syncing — offline. Last
+		// synced 20 minutes ago." Clearing `at` on failure would blank the timestamp
+		// at exactly the moment the user needs it.
+		const remote = fakeRemote();
+		const { store, statuses } = setup(fakeLocal(), remote);
+
+		await store.sync();
+		remote.pullError = new SyncUnavailableError('network', 'offline');
+		await store.sync();
+
+		expect(statuses.at(-1)?.state).toBe('offline');
+		expect(statuses.at(-1)?.at).toBe(1000);
+	});
+
+	it('reports the time on the in-flight status too, so the UI never blanks', async () => {
+		// The second sync emits 'syncing' before it emits anything else. If that
+		// status dropped `at`, the line would flick to "Not synced yet" every time
+		// the user pressed Sync now — the exact moment they are watching it.
+		const { store, statuses } = setup();
+
+		await store.sync();
+		statuses.length = 0;
+		await store.sync();
+
+		const inFlight = statuses.filter((s) => s.state === 'syncing');
+		expect(inFlight).toHaveLength(1);
+		expect(inFlight[0].at).toBe(1000);
+	});
+});

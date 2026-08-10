@@ -14,6 +14,14 @@ import { SyncUnavailableError, type Remote } from './remote';
 
 export type SyncStatus = {
 	state: 'idle' | 'syncing' | 'offline' | 'denied' | 'stale' | 'skewed' | 'storage' | 'rejected';
+	/**
+	 * When this device last synced successfully. Absent until one has.
+	 *
+	 * Deliberately in memory and never persisted: it describes THIS device, and the
+	 * only thing this app persists is the snapshot — which is exactly what syncs. In
+	 * settings it would replicate, and the laptop would display the phone's sync time.
+	 */
+	at?: number;
 };
 
 export type SyncingOptions = {
@@ -73,6 +81,8 @@ export class SyncingTaskStore implements TaskStore {
 	#setTimer: (fn: () => void, ms: number) => number;
 	#clearTimer: (handle: number) => void;
 	#pending: number | undefined;
+	/** Set on every successful sync, and never cleared — see `#status`. */
+	#lastSyncedAt: number | undefined;
 
 	/**
 	 * A merge that must not be written down: the remote holds a shape this build does
@@ -172,10 +182,12 @@ export class SyncingTaskStore implements TaskStore {
 			}
 
 			if (push.tasks.length === 0 && push.koi.length === 0 && !push.settings) {
+				this.#lastSyncedAt = this.#now();
 				return this.#status(settled);
 			}
 
 			await this.#remote.push(push);
+			this.#lastSyncedAt = this.#now();
 			this.#status(settled);
 		} catch (error) {
 			this.#failed(error);
@@ -215,6 +227,8 @@ export class SyncingTaskStore implements TaskStore {
 	}
 
 	#status(state: SyncStatus['state']): void {
-		this.#onStatus?.({ state });
+		// `at` rides on every status, failures included. A failure that blanked it
+		// would lose "last synced 20 minutes ago" at the moment it is most useful.
+		this.#onStatus?.({ state, ...(this.#lastSyncedAt === undefined ? {} : { at: this.#lastSyncedAt }) });
 	}
 }
