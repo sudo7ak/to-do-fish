@@ -1,5 +1,5 @@
 import type { Creature } from '../scene/types';
-import { place } from './creatures';
+import { place, creatureScale } from './creatures';
 import type { Size } from './water';
 
 /**
@@ -36,12 +36,13 @@ export function pick(
 ): Creature | null {
 	let best: Creature | null = null;
 	let bestDistance = Infinity;
+	const scale = creatureScale(size);
 
 	for (const creature of creatures) {
 		const at = place(creature, size, time, animate);
 		const distance = Math.hypot(point.x - at.x, point.y - at.y);
 
-		if (distance > creature.tapRadius) continue;
+		if (distance > creature.tapRadius * scale) continue;
 
 		if (distance < bestDistance) {
 			best = creature;

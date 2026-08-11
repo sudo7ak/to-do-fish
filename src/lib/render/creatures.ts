@@ -477,6 +477,27 @@ function spreadX(seed: number, size: Size): number {
 	return size.w * (0.14 + position * 0.72);
 }
 
+/**
+ * Every species was tuned by eye at a phone-width tank. `Tank.svelte` sizes the
+ * canvas to its actual container with no cap, so a wide desktop window hands
+ * `drawCreatures` a canvas several times that width — and every creature, drawn at
+ * the same fixed pixel size regardless, reads as tiny against all the open water.
+ *
+ * One multiplier, applied wherever a creature is drawn or picked, rather than
+ * touching every species' `length`: the tuned proportions between species stay
+ * intact, and `place()`'s lanes already read fractions of `size.w`, so widening the
+ * canvas already spread fish out — they just also need to grow.
+ *
+ * Capped rather than growing without bound: an ultradwide monitor should get a
+ * roomier tank, not a fish-eye lens.
+ */
+const CREATURE_SCALE_BASELINE_W = 420;
+const CREATURE_SCALE_MAX = 1.6;
+
+export function creatureScale(size: Size): number {
+	return Math.min(CREATURE_SCALE_MAX, Math.max(1, size.w / CREATURE_SCALE_BASELINE_W));
+}
+
 // ------------------------------------------------------------------ drawing
 
 /**
@@ -518,9 +539,13 @@ export function drawCreature(
 	creature: Creature,
 	at: Placement,
 	colors: Palette,
-	time: number
+	time: number,
+	size?: Size
 ): void {
 	const body = bodyOf(creature);
+	// Legend draws its fixed-size tiles through this same function with no `size` —
+	// those are tuned at their own tile scale and must not inherit the tank's.
+	const scale = (body?.scale ?? 1) * (size ? creatureScale(size) : 1);
 
 	ctx.save();
 	ctx.translate(at.x, at.y);
@@ -528,7 +553,7 @@ export function drawCreature(
 	// drawing, and mirroring reverses the sense of a rotation set before it — so a
 	// left-swimming fish takes the opposite sign to reach the same climb on screen.
 	if (at.pitch) ctx.rotate(at.flip ? -at.pitch : at.pitch);
-	if (body && body.scale !== 1) ctx.scale(body.scale, body.scale);
+	if (scale !== 1) ctx.scale(scale, scale);
 
 	// `bodyOf` returns a spec for every kind that has one, so the assertions below hold
 	// by construction — the compiler just cannot see across the switch.
@@ -650,7 +675,7 @@ function insetForFins(at: Placement, creature: Creature, size: Size): Placement 
 	const body = bodyOf(creature);
 	if (!body) return at;
 
-	const margin = Math.min(size.w * 0.5, speciesReach(body.spec) * body.scale);
+	const margin = Math.min(size.w * 0.5, speciesReach(body.spec) * body.scale * creatureScale(size));
 	const x = Math.min(size.w - margin, Math.max(margin, at.x));
 
 	return x === at.x ? at : { ...at, x };
@@ -699,7 +724,7 @@ export function drawCreatures(
 		// carries — a ghost is already faint and must not be reset to full.
 		const outer = ctx.globalAlpha;
 		ctx.globalAlpha = outer * hazeAt(creature, at, size);
-		drawCreature(ctx, creature, at, colors, time);
+		drawCreature(ctx, creature, at, colors, time, size);
 		ctx.globalAlpha = outer;
 	}
 }
