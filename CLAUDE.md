@@ -189,6 +189,26 @@ fish in depth and fatal for anything meant to look bright down there. The chest'
 and the gem twinkles draw with `globalCompositeOperation: 'lighter'` for that reason;
 tinted fills came out olive no matter how the palette was tuned.
 
+**Only a wake sync may ever be skipped.** `sync(reason)` takes `'wake' | 'write' |
+'manual' | 'account'`, and the cooldown and the failure backoff apply to `'wake'`
+alone. Throttling any of the others means an edit that silently never leaves the
+device, which is worse than every round trip the throttling saves. The default is
+`'manual'`, so a call that forgets to say why is never the throttled kind.
+
+**The freshness probe runs for every sync, and that is safe for a different reason.**
+It skips the pull only when the server has not moved *and* this device has nothing to
+push, so a manual sync that skips has still genuinely asked and been told "nothing
+new" — the timestamp it stamps is honest. If it cannot get an answer, `undefined`
+always means pull properly: `sync_freshness()` is applied by hand and may not exist on
+a given project, and a missing function must never stop data syncing.
+
+**`newestOf` must compute exactly what `sync_freshness()` computes.** Koi contribute
+`earnedAt` — the column is `earned_at`, not `updated_at` — so a helper that reads the
+wrong field, or drops koi entirely, makes the two sides permanently disagree. Nothing
+breaks visibly: the probe simply never matches, and the optimisation costs a round trip
+on every sync instead of saving three. A test pins the two against each other with
+distinct non-zero values, and it is the only test that catches it.
+
 **Sync merges are last-write-wins per task, and ties go to the tombstone.** The rules
 live in `persist/sync/merge.ts`, which imports only `../../types` so they can be
 tested as data in and data out. A tie means two clocks disagree; a resurrected task
