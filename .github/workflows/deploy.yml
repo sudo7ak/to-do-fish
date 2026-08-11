@@ -62,8 +62,12 @@ jobs:
       - name: Build
         env:
           BASE_PATH: /${{ github.event.repository.name }}
-          PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
-          PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          # Stored as secrets, not variables. Both are publishable client-side values
+          # (they ship in the bundle), so secrecy is not the point -- it is just where
+          # they happen to live. Reading `vars.` here left them empty and the deploy
+          # silently built the no-account v1 app: no Google sign-in, no sync.
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run build
 
       - name: Guard against Jekyll eating the app
