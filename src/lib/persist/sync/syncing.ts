@@ -115,8 +115,16 @@ export class SyncingTaskStore implements TaskStore {
 	#lastFailedAt: number | undefined;
 	/** The server's newest timestamp as of the last completed sync, if it was asked. */
 	#seenFreshness: number | undefined;
-	/** Whether this device has written since its last successful push. */
-	#dirty = false;
+	/**
+	 * Counts every local write. A boolean can't tell "written before this sync
+	 * started" apart from "written while this sync was in flight" — and the second
+	 * one is the case that matters, because a write landing mid-pull is not in the
+	 * `push` that sync already computed. `#syncedWrites` records the count as of the
+	 * last sync that is known to have accounted for everything up to it; the two
+	 * disagreeing is what "dirty" means.
+	 */
+	#writes = 0;
+	#syncedWrites = 0;
 
 	/**
 	 * A merge that must not be written down: the remote holds a shape this build does
@@ -170,7 +178,7 @@ export class SyncingTaskStore implements TaskStore {
 		// otherwise drop it — after which a second account would look like a first, and
 		// merge.
 		await this.#local.save(claimFor(snapshot, this.#owner));
-		this.#dirty = true;
+		this.#writes++;
 
 		if (this.#pending !== undefined) this.#clearTimer(this.#pending);
 		this.#pending = this.#setTimer(() => void this.sync('write'), this.#debounceMs);
@@ -185,7 +193,13 @@ export class SyncingTaskStore implements TaskStore {
 	sync(reason: SyncReason = 'manual'): Promise<void> {
 		if (reason === 'wake' && this.#tooSoon()) return Promise.resolve();
 
-		if (this.#inFlight) return this.#inFlight;
+		if (this.#inFlight) {
+			// A wake is happy with whatever is already running. A write, a manual tap,
+			// or an account change is not: it may carry data this sync has already read
+			// past, so it waits and then runs for itself.
+			if (reason === 'wake') return this.#inFlight;
+			return this.#inFlight.then(() => this.sync(reason));
+		}
 
 		this.#inFlight = this.#runSync(reason).finally(() => {
 			this.#inFlight = undefined;
@@ -221,11 +235,16 @@ export class SyncingTaskStore implements TaskStore {
 	async #runSync(_reason: SyncReason): Promise<void> {
 		this.#status('syncing');
 
+		// Captured before the probe, not after the pull: a write landing during the
+		// probe's own round trip is just as unaccounted-for as one landing during the
+		// pull, and both must leave this device dirty afterwards.
+		const writesAtStart = this.#writes;
+
 		try {
 			// The probe answers "has the server moved?" in one round trip. It cannot
 			// answer "do I have anything to send", so a device with unpushed work pulls
 			// regardless — and `push()` refuses without a preceding pull anyway.
-			if (!this.#dirty && this.#seenFreshness !== undefined) {
+			if (this.#syncedWrites === writesAtStart && this.#seenFreshness !== undefined) {
 				const freshness = await this.#remote.freshness();
 				if (freshness !== undefined && freshness === this.#seenFreshness) {
 					this.#lastSyncedAt = this.#now();
@@ -269,14 +288,17 @@ export class SyncingTaskStore implements TaskStore {
 			if (push.tasks.length === 0 && push.koi.length === 0 && !push.settings) {
 				this.#lastSyncedAt = this.#now();
 				this.#lastFailedAt = undefined;
-				this.#dirty = false;
+				// Only if nothing landed while this sync was running — a write that
+				// arrived mid-flight is not in the `push` this sync computed, so it must
+				// stay unaccounted for and force a real sync next time.
+				if (this.#writes === writesAtStart) this.#syncedWrites = writesAtStart;
 				return this.#status(settled);
 			}
 
 			await this.#remote.push(push);
 			this.#lastSyncedAt = this.#now();
 			this.#lastFailedAt = undefined;
-			this.#dirty = false;
+			if (this.#writes === writesAtStart) this.#syncedWrites = writesAtStart;
 			this.#status(settled);
 		} catch (error) {
 			this.#failed(error);

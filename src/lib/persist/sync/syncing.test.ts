@@ -420,6 +420,55 @@ describe('SyncingTaskStore — one sync at a time', () => {
 			undefined
 		]);
 	});
+
+	it('shares an in-flight sync with a second wake', async () => {
+		const remote = fakeRemote();
+		const releases: (() => void)[] = [];
+		remote.pull = () => {
+			remote.pulls++;
+			return new Promise((resolve) => {
+				releases.push(() => resolve(remote.pullResult));
+			});
+		};
+		const { store } = setup(fakeLocal(), remote);
+
+		const all = Promise.all([store.sync('wake'), store.sync('wake')]);
+		for (const release of releases) release();
+		await all;
+
+		expect(remote.pulls).toBe(1);
+	});
+
+	it("runs a manual sync for itself rather than inheriting a wake's in-flight result", async () => {
+		// sync(reason) hands the in-flight promise to any caller, including one that
+		// arrives after that sync has already read past data this caller needs sent.
+		// Only a wake is happy sharing; anything else waits and then runs its own.
+		const remote = fakeRemote();
+		let releaseFirst: (() => void) | undefined;
+		let calls = 0;
+		remote.pull = () => {
+			calls++;
+			remote.pulls++;
+			if (calls === 1) {
+				return new Promise((resolve) => {
+					releaseFirst = () => resolve(remote.pullResult);
+				});
+			}
+			return Promise.resolve(remote.pullResult);
+		};
+		// The server has moved between the two, so the second sync's own freshness
+		// probe does not skip it and mask what this test is actually checking — that
+		// it ran a real pull for itself rather than sharing the wake's.
+		remote.freshnessResult = 1;
+		const { store } = setup(fakeLocal(), remote);
+
+		const wake = store.sync('wake');
+		const manual = store.sync('manual');
+		releaseFirst?.();
+		await Promise.all([wake, manual]);
+
+		expect(remote.pulls).toBe(2);
+	});
 });
 
 describe('SyncingTaskStore — whose data this is (C1)', () => {
@@ -882,5 +931,48 @@ describe('SyncingTaskStore — skipping a pull that would learn nothing', () => 
 		remote.freshnessResult = 901;
 		await store.sync('manual');
 		expect(remote.pulls).toBe(afterAgreement + 1);
+	});
+
+	it('does not lose a write that lands after this sync has already read local', async () => {
+		// The write arrives after `stored` has been read and `push` computed from it —
+		// the exact window where the write is genuinely not in what this sync is about
+		// to send. If the completing sync clears its dirty state anyway, the next
+		// sync's probe sees the server as unchanged (it is — this sync pushed nothing
+		// of the stranded write) and skips entirely, so the edit never leaves the
+		// device.
+		const local = fakeLocal(snapshot({ tasks: [task({ id: 'existing' })] }));
+		const remote = fakeRemote(snapshot());
+		let releasePush: (() => void) | undefined;
+		let pushStarted: (() => void) | undefined;
+		// Synchronised on push actually starting, not just on `sync()` having been
+		// called — a race against microtask ordering alone let the write land before
+		// `local.load()` ran and get captured in `stored` for free, which tested
+		// nothing: the point is a write arriving after `push` was already computed.
+		const started = new Promise<void>((resolve) => {
+			pushStarted = resolve;
+		});
+		remote.push = async (next) => {
+			remote.pushes.push(next);
+			pushStarted?.();
+			await new Promise<void>((resolve) => {
+				releasePush = resolve;
+			});
+		};
+		const { store } = setup(local, remote);
+
+		const syncing = store.sync('wake');
+		await started;
+		await store.save(snapshot({ tasks: [task({ id: 'existing' }), task({ id: 'mid-flight' })] }));
+		releasePush?.();
+		await syncing;
+
+		// The next sync must still pull and push the stranded write, even though the
+		// server has not moved and the probe would otherwise skip it.
+		remote.push = async (next) => {
+			remote.pushes.push(next);
+		};
+		await store.sync('manual');
+
+		expect(remote.pushes.at(-1)?.tasks.map((t) => t.id).sort()).toEqual(['existing', 'mid-flight']);
 	});
 });
