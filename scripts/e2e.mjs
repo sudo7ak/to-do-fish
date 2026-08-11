@@ -114,7 +114,7 @@ await reset(null);
 
 const legend = page.locator('section[aria-label="What am I looking at?"]');
 check('a first visit opens the legend unasked', await legend.isVisible());
-check('the legend names every creature', (await legend.locator('li').count()) === 7);
+check('the legend names every creature', (await legend.locator('li').count()) === 8);
 
 await legend.getByRole('button', { name: 'Got it' }).click();
 await page.waitForTimeout(250);

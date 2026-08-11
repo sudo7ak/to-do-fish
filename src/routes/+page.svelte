@@ -129,7 +129,9 @@
 	// Only after hydrating: before the store loads, every day looks empty, and a
 	// message that flashes on every launch is worse than none.
 	let hydrated = $state(false);
-	const emptyDay = $derived(hydrated && scene.creatures.length === 0);
+	// The sync fish is not task data — it swims on an empty day too, so it must not
+	// count toward whether the day looks empty.
+	const emptyDay = $derived(hydrated && scene.creatures.every((c) => c.kind === 'sync'));
 
 	onMount(() => {
 		browserOnline = navigator.onLine;
