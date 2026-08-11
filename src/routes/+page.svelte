@@ -13,6 +13,7 @@
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
 	import type { Task } from '$lib/types';
+	import type { SyncMood } from '$lib/scene/types';
 	import { createAuth, isSyncConfigured, type Account } from '$lib/auth/session';
 	import { SyncingTaskStore, type SyncStatus } from '$lib/persist/sync/syncing';
 	import { SupabaseRemote } from '$lib/persist/sync/remote';
@@ -115,8 +116,14 @@
 	 */
 	let lastFrame = { time: 0, size: { w: 0, h: 0 }, animate: true };
 
+	// Prototype: the corner fish. Not wired into anything but its own tint.
+	let browserOnline = $state(true);
+	const syncMood = $derived<SyncMood>(
+		!isSyncConfigured() || !account ? 'signed-out' : !browserOnline || syncStatus.state === 'offline' ? 'offline' : 'online'
+	);
+
 	const pearls = $derived(pearlBalance($tasks));
-	const scene = $derived(buildScene($tasks, $koi, date, Date.now()));
+	const scene = $derived(buildScene($tasks, $koi, date, Date.now(), syncMood));
 	const clearedPct = $derived(scene.clearedPct);
 
 	// Only after hydrating: before the store loads, every day looks empty, and a
@@ -125,6 +132,12 @@
 	const emptyDay = $derived(hydrated && scene.creatures.length === 0);
 
 	onMount(() => {
+		browserOnline = navigator.onLine;
+		const goOnline = () => (browserOnline = true);
+		const goOffline = () => (browserOnline = false);
+		window.addEventListener('online', goOnline);
+		window.addEventListener('offline', goOffline);
+
 		const ticker = createTicker(store);
 		store.hydrate().then(() => {
 			hydrated = true;
@@ -193,6 +206,8 @@
 			clearInterval(timer);
 			unsubscribe();
 			for (const [target, event] of wakeTargets) target.removeEventListener(event, wake);
+			window.removeEventListener('online', goOnline);
+			window.removeEventListener('offline', goOffline);
 		};
 	});
 
@@ -205,7 +220,7 @@
 	 */
 	function draw(ctx: CanvasRenderingContext2D, frame: Frame, size: { w: number; h: number }) {
 		const state = store.snapshot();
-		const scene = buildScene(state.tasks, state.koi, date, Date.now());
+		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
 		const colors = palette(state.settings.environment, scene.clearedPct);
 
 		// Under reduced motion the clock is pinned, so ambient drift holds still
@@ -226,13 +241,20 @@
 		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
 		const state = store.snapshot();
-		const scene = buildScene(state.tasks, state.koi, date, Date.now());
+		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
 		const hit = pick(scene.creatures, point, lastFrame.size, lastFrame.time, lastFrame.animate);
 
 		// The overflow treat stands for several tasks at once, so it cannot open a
 		// sheet — it opens the list, which is the view that can show them all.
 		if (hit && !hit.taskId && hit.kind === 'treat') {
 			listOpen = true;
+			return;
+		}
+
+		// The sync fish stands for connection state, not a task — tapping opens the
+		// same sync status the settings sheet already shows, rather than a new sheet.
+		if (hit && hit.kind === 'sync') {
+			settingsOpen = true;
 			return;
 		}
 

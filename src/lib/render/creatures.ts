@@ -199,6 +199,25 @@ const LOCKED_TREATS: Record<string, SpeciesSpec> = Object.fromEntries(
 	])
 );
 
+/**
+ * Prototype: the sync-status fish reuses `neon`'s body and just swaps the palette per
+ * mood, same trick as `LOCKED_TREATS` — cached once so the per-species draw caches
+ * (keyed on the spec object) don't grow one entry per frame.
+ */
+function syncTint(back: string, belly: string, fin: string): SpeciesSpec {
+	return {
+		...SPECIES.betta,
+		pattern: 'none',
+		palette: { back, belly, fin, marking: back, iris: '#111' }
+	};
+}
+
+const SYNC_SPECIES: Record<import('../scene/types').SyncMood, SpeciesSpec> = {
+	'signed-out': syncTint('#8a8f98', '#6b6f76', '#a7abb3'),
+	offline: syncTint('#b5482f', '#7a2f1f', '#d4674a'),
+	online: syncTint('#2fb583', '#1f7a5a', '#4ad4a3')
+};
+
 // ---------------------------------------------------------------- placement
 
 export function place(creature: Creature, size: Size, time: number, animate = true): Placement {
@@ -479,6 +498,8 @@ function bodyOf(creature: Creature): { spec: SpeciesSpec; scale: number } | null
 			return { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
 		case 'koi':
 			return { spec: SPECIES.koi, scale: 1 };
+		case 'sync':
+			return { spec: SYNC_SPECIES[creature.mood ?? 'signed-out'], scale: 1.1 };
 		case 'treat':
 			return {
 				spec: creature.locked
@@ -520,6 +541,9 @@ export function drawCreature(
 			break;
 		case 'koi':
 			drawKoi(ctx, at, time, hash(creature.id));
+			break;
+		case 'sync':
+			drawFish(ctx, at, body!.spec, time, hash(creature.id));
 			break;
 		case 'bubble':
 			drawBubble(ctx, creature, time);
@@ -643,7 +667,8 @@ const DRAW_ORDER: Record<Creature['kind'], number> = {
 	ghost: 2,
 	fish: 3,
 	koi: 4,
-	treat: 5
+	treat: 5,
+	sync: 6
 };
 
 /** Paints every creature in one pass, back to front: bubbles and pearls behind, koi in front. */

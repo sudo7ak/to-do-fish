@@ -9,7 +9,10 @@
  * data and never a source of it.
  */
 
-export type CreatureKind = 'fish' | 'bubble' | 'ghost' | 'koi' | 'treat' | 'pearl';
+export type CreatureKind = 'fish' | 'bubble' | 'ghost' | 'koi' | 'treat' | 'pearl' | 'sync';
+
+/** Prototype: online/offline/signed-out shown as a fish tint, not a task-derived state. */
+export type SyncMood = 'signed-out' | 'offline' | 'online';
 
 export type Creature = {
 	/** Task id, or a synthetic id for pearls and koi, which have no task of their own. */
@@ -49,6 +52,8 @@ export type Creature = {
 	cost?: number;
 	/** Pointer picking radius — canvas offers no hit-testing, so each creature carries its own. */
 	tapRadius: number;
+	/** Present only on the `sync` prototype creature. */
+	mood?: SyncMood;
 };
 
 export type Scene = {

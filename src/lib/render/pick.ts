@@ -23,7 +23,8 @@ const STACKING: Record<Creature['kind'], number> = {
 	ghost: 2,
 	fish: 3,
 	koi: 4,
-	treat: 5
+	treat: 5,
+	sync: 6
 };
 
 export function pick(

@@ -101,6 +101,20 @@
 			blurb: 'Dropped on the sand each time you finish an ordinary task. Treats are priced in these.',
 			zoom: 1.4,
 			creature: { id: 'legend-pearl', kind: 'pearl', label: 'Pearl', depth: 1, tapRadius: 16 }
+		},
+		{
+			id: 'sync',
+			title: 'Sync status',
+			blurb: 'Prototype: tinted green when synced, red offline, grey signed out.',
+			zoom: 0.9,
+			creature: {
+				id: 'legend-sync',
+				kind: 'sync',
+				label: 'Sync status',
+				depth: 0.1,
+				mood: 'online',
+				tapRadius: 22
+			}
 		}
 	];
 </script>

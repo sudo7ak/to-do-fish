@@ -1,7 +1,7 @@
 import { isLive, type KoiRecord, type Task } from '../types';
 import { isOrphaned } from '../triggers/validate';
 import { pearlBalance } from '../store/pearls';
-import type { Creature, CreatureKind, Scene } from './types';
+import type { Creature, CreatureKind, Scene, SyncMood } from './types';
 
 /**
  * Builds the tank for one date: tasks in, creature descriptors out.
@@ -72,10 +72,17 @@ const TAP_RADIUS: Record<CreatureKind, number> = {
 	ghost: 26,
 	koi: 38,
 	treat: 36,
-	pearl: 16
+	pearl: 16,
+	sync: 22
 };
 
-export function buildScene(tasks: Task[], koi: KoiRecord[], date: string, now: number): Scene {
+export function buildScene(
+	tasks: Task[],
+	koi: KoiRecord[],
+	date: string,
+	now: number,
+	syncMood?: SyncMood
+): Scene {
 	const live = tasks.filter(isLive);
 	const today = live.filter((t) => t.date === date);
 
@@ -104,7 +111,8 @@ export function buildScene(tasks: Task[], koi: KoiRecord[], date: string, now: n
 			.filter((record) => record.date <= date)
 			.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
 			.slice(0, MAX_VISIBLE_KOI)
-			.map(toKoi)
+			.map(toKoi),
+		...(syncMood ? [syncCreature(syncMood)] : [])
 	];
 
 	return {
@@ -236,6 +244,18 @@ function feeding(live: Task[], now: number): number {
 
 	const age = now - freshest;
 	return age >= FEED_WINDOW_MS ? 0 : 1 - age / FEED_WINDOW_MS;
+}
+
+/** Prototype: a fixed, tinted creature standing in for online/offline/signed-out. */
+function syncCreature(mood: SyncMood): Creature {
+	return {
+		id: 'sync-status',
+		kind: 'sync',
+		label: `Sync: ${mood}`,
+		depth: 0.1,
+		mood,
+		tapRadius: TAP_RADIUS.sync
+	};
 }
 
 function toKoi(record: KoiRecord): Creature {
