@@ -49,6 +49,13 @@ export const FEED_WINDOW_MS = 4000;
 /** Depth of a bubble about to fire, and of one still a week away. 0 = waterline, 1 = floor. */
 const DEPTH_IMMINENT = 0.2;
 const DEPTH_DISTANT = 0.8;
+/**
+ * A bubble nothing schedules. It has no moment to approach, so it has no imminence to
+ * report and no business claiming a depth that means one — it swims mid-water like an
+ * open task instead. It used to be parked on the floor, which read as a fault: every
+ * free-text task in one motionless row on the sand, sliding sideways.
+ */
+const DEPTH_UNTIMED = 0.5;
 const IMMINENT_MS = 60 * 60 * 1000; // within the hour: eye level
 const DISTANT_MS = 7 * 24 * 60 * 60 * 1000; // a week out: down in the plants
 
@@ -115,12 +122,17 @@ function toCreature(task: Task, live: Task[], now: number): Creature {
 	}
 
 	if (task.status === 'waiting') {
-		// A free-text condition, or one that has lost its target, is released by hand.
-		// Both get the dashed treatment and rest on the floor: neither has a moment
-		// coming that would float it upward.
+		// A free-text condition, or one that has lost its target, is released by hand,
+		// and gets the dashed treatment to say so.
 		const manual = task.condition?.kind === 'text' || isOrphaned(live, task);
+		// Depth is a reading only when something schedules the task. A manual bubble has
+		// no moment, and neither does a dependency with no cutoff — in both cases the
+		// height reports nothing, and the renderer is told so rather than having to
+		// infer it from the value.
+		const moment = manual ? undefined : triggerMoment(task);
 		return {
-			...base(task, 'bubble', manual ? 1 : bubbleDepth(task, now)),
+			...base(task, 'bubble', moment === undefined ? DEPTH_UNTIMED : bubbleDepth(task, now, moment)),
+			...(moment === undefined ? { untimed: true } : {}),
 			...(manual ? { dashed: true } : {})
 		};
 	}
@@ -131,14 +143,13 @@ function toCreature(task: Task, live: Task[], now: number): Creature {
 }
 
 /**
- * Depth encodes imminence, so that twenty waiting tasks stay readable — nineteen of
- * them stacked out of the swim area. A task with no clock attached has no moment to
- * approach, and sits on the floor.
+ * Depth encodes imminence, so that twenty waiting tasks stay readable — the ones with
+ * hours to run sit below the ones about to fire.
+ *
+ * Only ever called for a bubble that has a moment; a clockless one takes
+ * `DEPTH_UNTIMED` at the call site, because there is no imminence to encode.
  */
-function bubbleDepth(task: Task, now: number): number {
-	const moment = triggerMoment(task);
-	if (moment === undefined) return 1;
-
+function bubbleDepth(task: Task, now: number, moment: number): number {
 	const remaining = moment - now;
 	if (remaining <= IMMINENT_MS) return DEPTH_IMMINENT; // includes overdue
 	if (remaining >= DISTANT_MS) return DEPTH_DISTANT;

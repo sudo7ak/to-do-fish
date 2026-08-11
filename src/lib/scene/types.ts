@@ -27,6 +27,14 @@ export type Creature = {
 	 * stacked out of the swim area.
 	 */
 	depth: number;
+	/**
+	 * The bubble's depth is a parking spot, not a reading: nothing schedules this task,
+	 * so its height reports no moment and `place()` is free to drift it.
+	 *
+	 * Without this the renderer would have to infer "no clock" from `depth === 1`, which
+	 * couples a drawing decision to a sentinel it cannot see the meaning of.
+	 */
+	untimed?: boolean;
 	/** Free-text condition, or one whose trigger target is gone. Drawn as a dashed outline. */
 	dashed?: boolean;
 	/** Treat the current pearl balance cannot afford. Drawn dim. */

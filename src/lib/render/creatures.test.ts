@@ -602,6 +602,52 @@ describe('place — where creatures sit', () => {
 		expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(10);
 	});
 
+	it('swims an untimed bubble up and down — its depth is not information', () => {
+		// A bubble with no clock reports no moment, so pinning its height said nothing
+		// and put every free-text task in one motionless row along the floor.
+		const bubble = creature('bubble', { id: 'untimed-one', depth: 0.5, untimed: true });
+		const ys = [0, 2000, 4000, 6000, 9000, 13_000].map((ms) => place(bubble, SIZE, ms).y);
+
+		expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
+	});
+
+	it('gives an untimed bubble the whole water column, not a strip near the bed', () => {
+		// The first attempt at this only lifted them off the sand and kept them below
+		// the depth a week-out task uses. They still read as stuck at the bottom.
+		const ys: number[] = [];
+		for (const id of ['u-one', 'u-two', 'u-three', 'u-four', 'u-five']) {
+			const bubble = creature('bubble', { id, depth: 0.5, untimed: true });
+			for (let i = 0; i < 300; i++) ys.push(place(bubble, SIZE, i * 617).y);
+		}
+
+		// Reaches the upper half of the swim area and still visits the lower half.
+		expect(Math.min(...ys)).toBeLessThan(SIZE.h * 0.4);
+		expect(Math.max(...ys)).toBeGreaterThan(SIZE.h * 0.6);
+	});
+
+	it('gives untimed bubbles different resting depths, not just different phases', () => {
+		// Sampled as a mean over a full cycle rather than at one instant: at a single
+		// time the wander phases alone pull them apart, so an instant-in-time assertion
+		// passes even with every bubble sharing one centre line.
+		const centre = (id: string) => {
+			const bubble = creature('bubble', { id, depth: 0.5, untimed: true });
+			const ys = Array.from({ length: 300 }, (_, i) => place(bubble, SIZE, i * 617).y);
+			return ys.reduce((a, b) => a + b, 0) / ys.length;
+		};
+
+		const centres = ['u-one', 'u-two', 'u-three', 'u-four'].map(centre);
+
+		expect(Math.max(...centres) - Math.min(...centres)).toBeGreaterThan(8);
+	});
+
+	it('still pins a bubble that is on a clock', () => {
+		// The imminence reading survives: only clockless bubbles roam.
+		const bubble = creature('bubble', { id: 'waiting-2', depth: 0.6 });
+		const ys = Array.from({ length: 200 }, (_, i) => place(bubble, SIZE, i * 617).y);
+
+		expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(10);
+	});
+
 	it('faces the way it is travelling', () => {
 		const fish = creature('fish', { id: 'swimmer' });
 

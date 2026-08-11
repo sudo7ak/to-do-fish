@@ -399,22 +399,33 @@ function swimPosition(
 
 	const usable = Math.max(0, size.h - TOP_MARGIN - BOTTOM_MARGIN);
 
+	/**
+	 * A bubble on a clock is pinned: its depth is time until trigger, and moving it
+	 * would misreport when the task fires. An `untimed` bubble is the opposite case —
+	 * nothing schedules it, so depth 1 is where it was parked rather than something it
+	 * is saying. Holding those there put every clockless task in one motionless row
+	 * along the floor, sliding sideways.
+	 */
+	const isBubble = creature.kind === 'bubble';
+	const untimed = isBubble && creature.untimed === true;
+	const pinned = isBubble && !untimed;
+
 	// Swimmers all share one resting depth from the scene, which lined them up in a
 	// single row like a conveyor. Scatter them within a band around it — depth still
-	// means what the scene said, it just is not a hairline.
+	// means what the scene said, it just is not a hairline. An untimed bubble is not a
+	// swimmer but is treated as one here: nothing about its height is a reading, so it
+	// gets the same run of the tank rather than a reserved strip.
 	// `seed >> 7` would drop exactly the low bits that differ between sibling ids, so
 	// every fish landed on the same line. Mix the seed properly first.
-	const isBubble = creature.kind === 'bubble';
-	const scatter = isBubble ? 0 : (mix32(seed) - 0.5) * 0.5;
+	const scatter = pinned ? 0 : (mix32(seed) - 0.5) * 0.5;
 
 	/**
 	 * Vertical wander on a different frequency from the horizontal sweep, which turns
-	 * a flat rail into a lazy Lissajous loop — the fish climbs and dives as it
-	 * crosses. Bubbles are exempt: their depth is information (time until trigger),
-	 * so wandering it would be lying.
+	 * a flat rail into a lazy Lissajous loop — the creature climbs and dives as it
+	 * crosses.
 	 */
 	const wanderRate = 0.55 + mix32(seed ^ 0x3c) * 0.6;
-	const ampY = isBubble ? 0 : 0.09 + mix32(seed ^ 0x4d) * 0.11;
+	const ampY = pinned ? 0 : 0.09 + mix32(seed ^ 0x4d) * 0.11;
 	const wander = Math.sin(swim * wanderRate + phase * 2.3) * ampY;
 
 	const depth = Math.min(0.97, Math.max(0.03, creature.depth + scatter + wander));

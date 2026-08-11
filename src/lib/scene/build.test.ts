@@ -139,15 +139,23 @@ describe('buildScene — resting depth encodes imminence', () => {
 		expect(find([waiting('09:00')], 'a')!.depth).toBeCloseTo(0.2, 1);
 	});
 
-	it('sits a free-text bubble on the floor', () => {
+	// A clockless bubble used to be parked at depth 1. Nothing schedules it, so that
+	// height reported nothing -- it just piled every free-text task on the sand.
+	it('gives a free-text bubble the open water rather than the floor', () => {
 		const t = task({ id: 'a', status: 'waiting', condition: { kind: 'text', text: 'if rested' } });
-		expect(find([t], 'a')!.depth).toBe(1);
+		const depth = find([t], 'a')!.depth;
+
+		expect(depth).toBeGreaterThan(0.2);
+		expect(depth).toBeLessThan(0.8);
 	});
 
-	it('sits an undated task-dependency bubble on the floor', () => {
+	it('gives an undated task-dependency bubble the open water too', () => {
 		const dep = task({ id: 'dep' });
 		const t = task({ id: 'a', status: 'waiting', condition: { kind: 'task', taskId: 'dep' } });
-		expect(find([dep, t], 'a')!.depth).toBe(1);
+		const depth = find([dep, t], 'a')!.depth;
+
+		expect(depth).toBeGreaterThan(0.2);
+		expect(depth).toBeLessThan(0.8);
 	});
 
 	it('uses the cutoff as the moment when a dependency carries one', () => {
@@ -158,6 +166,51 @@ describe('buildScene — resting depth encodes imminence', () => {
 			condition: { kind: 'task', taskId: 'dep', before: '12:30' }
 		});
 		expect(find([dep, t], 'a')!.depth).toBeCloseTo(0.2, 1);
+	});
+});
+
+/**
+ * `untimed` is what lets `place()` know the depth is a parking spot rather than a
+ * reading. A bubble on a clock must stay pinned, because moving it would misreport
+ * when the task fires; a bubble with no clock is telling you nothing by its height,
+ * so it is free to drift.
+ */
+describe('buildScene — a bubble says whether its depth means anything', () => {
+	const waiting = (atTime: string) =>
+		task({ id: 'a', status: 'waiting', condition: { kind: 'time', at: atTime } });
+
+	it('marks a free-text bubble untimed', () => {
+		const t = task({ id: 'a', status: 'waiting', condition: { kind: 'text', text: 'if rested' } });
+		expect(find([t], 'a')!.untimed).toBe(true);
+	});
+
+	it('marks an undated task-dependency bubble untimed', () => {
+		const dep = task({ id: 'dep' });
+		const t = task({ id: 'a', status: 'waiting', condition: { kind: 'task', taskId: 'dep' } });
+		expect(find([dep, t], 'a')!.untimed).toBe(true);
+	});
+
+	it('marks a bubble whose trigger target is gone untimed', () => {
+		const t = task({ id: 'a', status: 'waiting', condition: { kind: 'task', taskId: 'missing' } });
+		expect(find([t], 'a')!.untimed).toBe(true);
+	});
+
+	it('leaves a bubble on a clock timed', () => {
+		expect(find([waiting('20:00')], 'a')!.untimed).toBeFalsy();
+	});
+
+	it('leaves a dependency with a cutoff timed — the cutoff is a clock', () => {
+		const dep = task({ id: 'dep' });
+		const t = task({
+			id: 'a',
+			status: 'waiting',
+			condition: { kind: 'task', taskId: 'dep', before: '12:30' }
+		});
+		expect(find([dep, t], 'a')!.untimed).toBeFalsy();
+	});
+
+	it('never marks a swimming fish untimed', () => {
+		expect(find([task({ id: 'a' })], 'a')!.untimed).toBeFalsy();
 	});
 });
 
