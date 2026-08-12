@@ -248,18 +248,32 @@
 		drawForeground(ctx, size, colors);
 	}
 
-	// Tap detection for mobile: record where the touch landed, then only fire the
-	// hit-test on pointerup if the finger did not move (scroll gestures move the
-	// pointer and must not open a sheet). 8px threshold absorbs natural finger wobble.
-	let tapOrigin: { x: number; y: number } | null = null;
-	const TAP_SLOP = 8;
+	// Tap detection for mobile.
+	//
+	// Problems solved:
+	// 1. Android Chrome fires pointercancel instead of pointerup when it decides a
+	//    gesture is a scroll — even with touch-action:none on a child canvas.
+	//    setPointerCapture forces all subsequent pointer events (including pointerup)
+	//    to the element that captured, preventing the cancel.
+	// 2. Android's touch slop is ~16 device px (~8 CSS px at 2x DPR). Taps that
+	//    drift within that range must still register. TAP_SLOP is set to 20px to
+	//    give comfortable margin on all Android densities.
+	// 3. pointerId tracks the specific touch so multi-touch does not corrupt state.
+	let tapOrigin: { x: number; y: number; id: number } | null = null;
+	const TAP_SLOP = 20;
 
 	function tankPointerDown(event: PointerEvent) {
-		tapOrigin = { x: event.clientX, y: event.clientY };
+		// Capture so pointerup/pointercancel always come back to this element.
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		tapOrigin = { x: event.clientX, y: event.clientY, id: event.pointerId };
+	}
+
+	function tankPointerCancel(event: PointerEvent) {
+		if (tapOrigin?.id === event.pointerId) tapOrigin = null;
 	}
 
 	function tapTank(event: PointerEvent) {
-		if (!tapOrigin) return;
+		if (!tapOrigin || tapOrigin.id !== event.pointerId) return;
 		const moved = Math.hypot(event.clientX - tapOrigin.x, event.clientY - tapOrigin.y);
 		tapOrigin = null;
 		if (moved > TAP_SLOP) return; // scroll, not a tap
@@ -330,7 +344,7 @@
 	     genuine keyboard-reachable route to every one of these actions, backed by the
 	     same store. That is why it is a first-class second view rather than a fallback. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="tank" onpointerdown={tankPointerDown} onpointerup={tapTank}>
+	<div class="tank" onpointerdown={tankPointerDown} onpointerup={tapTank} onpointercancel={tankPointerCancel}>
 		<Tank {draw} />
 	</div>
 
