@@ -78,6 +78,29 @@
 		<meta name="twitter:description" content="A to-do app where every task is a fish. Watch your aquarium grow as you get things done." />
 		<meta name="twitter:image" content="https://sudo7ak.github.io/to-do-fish/og-image.png" />
 
+		<!-- ── Structured data (JSON-LD) ───────────────────────────── -->
+		<script type="application/ld+json">
+		{
+			"@context": "https://schema.org",
+			"@type": "WebApplication",
+			"name": "Fish Tank To-Do",
+			"url": "https://sudo7ak.github.io/to-do-fish/",
+			"description": "A to-do app where every task is a fish. Watch your aquarium grow as you get things done.",
+			"applicationCategory": "ProductivityApplication",
+			"operatingSystem": "Any",
+			"browserRequirements": "Requires a modern browser with JavaScript enabled.",
+			"offers": {
+				"@type": "Offer",
+				"price": "0",
+				"priceCurrency": "GBP"
+			},
+			"author": {
+				"@type": "Person",
+				"url": "https://github.com/sudo7ak"
+			}
+		}
+		</script>
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

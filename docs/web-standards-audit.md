@@ -21,6 +21,7 @@ from a standard production web app. Read alongside `docs/pending.md` before acti
 | Privacy policy             | `src/routes/privacy/+page.svelte` — linked from Settings footer                  |
 | Cookie consent             | `src/lib/ui/CookieConsent.svelte` + `src/lib/persist/consent.ts` — shown on first list open, gates Carbon script |
 | Content Security Policy    | `<meta http-equiv="Content-Security-Policy">` in `src/app.html`                  |
+| Structured data (JSON-LD)  | `<script type="application/ld+json">` in `src/app.html` — WebApplication schema  |
 
 ---
 
@@ -48,23 +49,11 @@ can sign up, the app is monetised, or user-generated data is stored server-side.
 
 ## 2. Discoverability & SEO 🟡
 
-### 2.1 Structured data (JSON-LD)
+### ~~2.1 Structured data (JSON-LD)~~ ✅ Done
 
-A `WebApplication` schema block in `app.html` helps Google surface the app name,
-description, and category in rich results. One `<script type="application/ld+json">`
-block, ~15 lines.
-
-```json
-{
-  "@context": "https://schema.org",
-  "@type": "WebApplication",
-  "name": "Fish Tank To-Do",
-  "url": "https://sudo7ak.github.io/to-do-fish/",
-  "description": "A to-do app where every task is a fish.",
-  "applicationCategory": "ProductivityApplication",
-  "operatingSystem": "Any"
-}
-```
+`<script type="application/ld+json">` added to `src/app.html`. Schema includes
+`WebApplication` type, name, description, URL, category, `offers` (free), and author.
+Not subject to `script-src` CSP — JSON-LD blocks are data, not executable JS.
 
 ### 2.2 App store presence
 
@@ -219,7 +208,6 @@ The Supabase option fits the app's existing stack and keeps all data first-party
 | 🟠 Growth      | 4.1 App landing / marketing page                       | Medium     |
 | 🟠 Performance | 3.1 Service worker (cache-first)                       | Medium     |
 | 🟡 Growth      | 4.2 `navigator.share()` in Settings                    | Very low   |
-| 🟡 SEO         | 2.1 JSON-LD structured data                            | Very low   |
 | 🟡 Monitoring  | 7.1 Client-side error tracking                         | Low        |
 | 🟡 Legal       | 1.3 Terms of use                                       | Low        |
 | 🟡 SEO         | 2.2 App store presence (MS Store via PWABuilder first) | Low–Medium |
