@@ -248,16 +248,27 @@
 		drawForeground(ctx, size, colors);
 	}
 
+	// Tap detection for mobile: record where the touch landed, then only fire the
+	// hit-test on pointerup if the finger did not move (scroll gestures move the
+	// pointer and must not open a sheet). 8px threshold absorbs natural finger wobble.
+	let tapOrigin: { x: number; y: number } | null = null;
+	const TAP_SLOP = 8;
+
+	function tankPointerDown(event: PointerEvent) {
+		tapOrigin = { x: event.clientX, y: event.clientY };
+	}
+
 	function tapTank(event: PointerEvent) {
+		if (!tapOrigin) return;
+		const moved = Math.hypot(event.clientX - tapOrigin.x, event.clientY - tapOrigin.y);
+		tapOrigin = null;
+		if (moved > TAP_SLOP) return; // scroll, not a tap
+
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
 		const state = store.snapshot();
 		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
-		// Use Date.now() for pick, not lastFrame.time. Fish move continuously —
-		// lastFrame.time is already stale by the time pointerdown fires on mobile,
-		// causing the hit-test to run against where the fish was, not where it is.
-		// place() is pure math so Date.now() gives the current position exactly.
 		const hit = pick(scene.creatures, point, lastFrame.size, Date.now(), lastFrame.animate);
 
 		// The overflow treat stands for several tasks at once, so it cannot open a
@@ -319,7 +330,7 @@
 	     genuine keyboard-reachable route to every one of these actions, backed by the
 	     same store. That is why it is a first-class second view rather than a fallback. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="tank" onpointerdown={tapTank}>
+	<div class="tank" onpointerdown={tankPointerDown} onpointerup={tapTank}>
 		<Tank {draw} />
 	</div>
 
