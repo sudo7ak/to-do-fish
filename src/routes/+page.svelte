@@ -254,7 +254,11 @@
 
 		const state = store.snapshot();
 		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
-		const hit = pick(scene.creatures, point, lastFrame.size, lastFrame.time, lastFrame.animate);
+		// Use Date.now() for pick, not lastFrame.time. Fish move continuously —
+		// lastFrame.time is already stale by the time pointerdown fires on mobile,
+		// causing the hit-test to run against where the fish was, not where it is.
+		// place() is pure math so Date.now() gives the current position exactly.
+		const hit = pick(scene.creatures, point, lastFrame.size, Date.now(), lastFrame.animate);
 
 		// The overflow treat stands for several tasks at once, so it cannot open a
 		// sheet — it opens the list, which is the view that can show them all.
