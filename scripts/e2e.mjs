@@ -46,12 +46,9 @@ const reset = async (state) => {
 			if (s) {
 				localStorage.setItem(k, JSON.stringify(s));
 			} else {
-				// Full wipe: remove every key this app owns so the legend test and
-				// any other fresh-visit check start from a genuinely clean slate.
-				const prefix = 'fish-tank-todo/';
-				Object.keys(localStorage)
-					.filter((key) => key.startsWith(prefix))
-					.forEach((key) => localStorage.removeItem(key));
+				// Full wipe: clear everything so CI browser contexts that persist
+				// between workflow runs cannot carry seenLegend into the next run.
+				localStorage.clear();
 			}
 		},
 		[KEY, state ?? null]
