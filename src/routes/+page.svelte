@@ -266,17 +266,23 @@
 		// Capture so pointerup/pointercancel always come back to this element.
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		tapOrigin = { x: event.clientX, y: event.clientY, id: event.pointerId };
+		debugEvent('DOWN', event);
 	}
 
 	function tankPointerCancel(event: PointerEvent) {
+		debugEvent('CANCEL', event);
 		if (tapOrigin?.id === event.pointerId) tapOrigin = null;
 	}
 
 	function tapTank(event: PointerEvent) {
+		debugEvent('UP', event);
 		if (!tapOrigin || tapOrigin.id !== event.pointerId) return;
 		const moved = Math.hypot(event.clientX - tapOrigin.x, event.clientY - tapOrigin.y);
 		tapOrigin = null;
-		if (moved > TAP_SLOP) return; // scroll, not a tap
+		if (moved > TAP_SLOP) {
+			debugEvent('SLOP-FAIL', event);
+			return; // scroll, not a tap
+		}
 
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -331,6 +337,20 @@
 		return editing
 			? store.editTask(editing.id, draft)
 			: store.addTask(draft);
+	}
+
+	// ── Tap debug overlay (remove before final release) ───────────────────────
+	// Load with ?debug in the URL to see exactly what pointer events fire.
+	const debugMode = typeof window !== 'undefined' && location.search.includes('debug');
+	let debugLog = $state<string[]>([]);
+
+	function debugEvent(label: string, e: PointerEvent) {
+		if (!debugMode) return;
+		const moved = tapOrigin
+			? Math.hypot(e.clientX - tapOrigin.x, e.clientY - tapOrigin.y).toFixed(1)
+			: '—';
+		const line = `${label} id=${e.pointerId} type=${e.pointerType} (${e.clientX.toFixed(0)},${e.clientY.toFixed(0)}) moved=${moved}px`;
+		debugLog = [line, ...debugLog].slice(0, 12);
 	}
 </script>
 
@@ -468,6 +488,15 @@
 		environment={$settings.environment}
 		onClose={() => (legendOpen = false)}
 	/>
+
+	{#if debugMode}
+		<div class="debug-overlay">
+			<div class="debug-meta">DPR={typeof window !== 'undefined' ? window.devicePixelRatio : '?'} slop={TAP_SLOP}px</div>
+			{#each debugLog as line}
+				<div class="debug-line">{line}</div>
+			{/each}
+		</div>
+	{/if}
 </main>
 
 <style>
@@ -526,5 +555,30 @@
 	.empty small {
 		font-size: 0.85rem;
 		opacity: 0.8;
+	}
+
+	.debug-overlay {
+		position: fixed;
+		bottom: 5rem;
+		left: 0.5rem;
+		right: 0.5rem;
+		z-index: 999;
+		background: rgba(0, 0, 0, 0.75);
+		color: #0f0;
+		font-family: monospace;
+		font-size: 0.65rem;
+		padding: 0.5rem;
+		border-radius: 0.5rem;
+		pointer-events: none;
+	}
+
+	.debug-meta {
+		color: #ff0;
+		margin-bottom: 0.25rem;
+	}
+
+	.debug-line {
+		white-space: pre;
+		line-height: 1.4;
 	}
 </style>
