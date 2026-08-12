@@ -341,7 +341,8 @@
 
 	// ── Tap debug overlay (remove before final release) ───────────────────────
 	// Load with ?debug in the URL to see exactly what pointer events fire.
-	const debugMode = typeof window !== 'undefined' && location.search.includes('debug');
+	// TEMP: always show debug overlay — remove once tap issue is diagnosed.
+	const debugMode = true;
 	let debugLog = $state<string[]>([]);
 
 	function debugEvent(label: string, e: PointerEvent) {
