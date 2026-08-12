@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Fish Tank To-Do</title>
+    <!-- GitHub Pages SPA redirect: bounce any deep URL back to the app.
+         The app is a single-page app — there are no real sub-paths to serve.
+         This script encodes the path into the query string so the main page
+         can restore it after load, following the standard gh-pages SPA trick. -->
+    <script>
+      const path = window.location.pathname;
+      const base = '/to-do-fish';
+      // Strip the base prefix before encoding, so the app doesn't double-apply it.
+      const stripped = path.startsWith(base) ? path.slice(base.length) : path;
+      if (stripped && stripped !== '/') {
+        const search = '?p=' + encodeURIComponent(stripped) + window.location.search.slice(1);
+        window.location.replace(base + '/' + search + window.location.hash);
+      } else {
+        window.location.replace(base + '/');
+      }
+    </script>
+    <style>
+      body {
+        margin: 0;
+        background: #4fc3d9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100dvh;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #fff;
+      }
+      p { opacity: 0.8; font-size: 1rem; }
+    </style>
+  </head>
+  <body>
+    <p>Redirecting to the tank…</p>
+  </body>
+</html>

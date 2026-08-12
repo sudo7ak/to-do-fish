@@ -1,0 +1,26 @@
+{
+  "name": "Fish Tank To-Do",
+  "short_name": "Fish Tank",
+  "description": "A to-do app where every task is a fish. Watch your aquarium grow as you get things done.",
+  "start_url": "/to-do-fish/",
+  "scope": "/to-do-fish/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#4FC3D9",
+  "background_color": "#4FC3D9",
+  "categories": ["productivity", "lifestyle"],
+  "icons": [
+    {
+      "src": "/to-do-fish/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/to-do-fish/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -2,9 +2,45 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
+
+		<!-- ── Viewport & theme ─────────────────────────────────────── -->
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="theme-color" content="#4FC3D9" />
+
+		<!-- ── Identity ─────────────────────────────────────────────── -->
+		<title>Fish Tank To-Do</title>
+		<meta name="description" content="A to-do app where every task is a fish. Watch your aquarium grow as you get things done." />
+		<link rel="canonical" href="https://sudo7ak.github.io/to-do-fish/" />
+
+		<!-- ── Icons ────────────────────────────────────────────────── -->
+		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+
+		<!-- ── PWA manifest ─────────────────────────────────────────── -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.json" />
+
+		<!-- ── Apple PWA meta ───────────────────────────────────────── -->
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="Fish Tank" />
+
+		<!-- ── Open Graph (Facebook, Slack, iMessage, LinkedIn) ─────── -->
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://sudo7ak.github.io/to-do-fish/" />
+		<meta property="og:title" content="Fish Tank To-Do" />
+		<meta property="og:description" content="A to-do app where every task is a fish. Watch your aquarium grow as you get things done." />
+		<meta property="og:image" content="https://sudo7ak.github.io/to-do-fish/og-image.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:site_name" content="Fish Tank To-Do" />
+		<meta property="og:locale" content="en_GB" />
+
+		<!-- ── Twitter / X Card ─────────────────────────────────────── -->
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="Fish Tank To-Do" />
+		<meta name="twitter:description" content="A to-do app where every task is a fish. Watch your aquarium grow as you get things done." />
+		<meta name="twitter:image" content="https://sudo7ak.github.io/to-do-fish/og-image.png" />
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

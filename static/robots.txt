@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sudo7ak.github.io/to-do-fish/sitemap.xml
