@@ -68,6 +68,9 @@ jobs:
           # silently built the no-account v1 app: no Google sign-in, no sync.
           PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
           PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          # Used by the Sentry Vite plugin to upload source maps after each build.
+          # Without this the plugin is disabled silently and stack traces are minified.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: npm run build
 
       - name: Guard against Jekyll eating the app
