@@ -42,7 +42,18 @@ const pearls = async () =>
 
 const reset = async (state) => {
 	await page.evaluate(
-		([k, s]) => (s ? localStorage.setItem(k, JSON.stringify(s)) : localStorage.removeItem(k)),
+		([k, s]) => {
+			if (s) {
+				localStorage.setItem(k, JSON.stringify(s));
+			} else {
+				// Full wipe: remove every key this app owns so the legend test and
+				// any other fresh-visit check start from a genuinely clean slate.
+				const prefix = 'fish-tank-todo/';
+				Object.keys(localStorage)
+					.filter((key) => key.startsWith(prefix))
+					.forEach((key) => localStorage.removeItem(key));
+			}
+		},
 		[KEY, state ?? null]
 	);
 	await page.reload();
