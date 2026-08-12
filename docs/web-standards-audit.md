@@ -20,6 +20,7 @@ from a standard production web app. Read alongside `docs/pending.md` before acti
 | Offline-first              | localStorage; static hosting means initial load works offline                     |
 | Privacy policy             | `src/routes/privacy/+page.svelte` — linked from Settings footer                  |
 | Cookie consent             | `src/lib/ui/CookieConsent.svelte` + `src/lib/persist/consent.ts` — shown on first list open, gates Carbon script |
+| Content Security Policy    | `<meta http-equiv="Content-Security-Policy">` in `src/app.html`                  |
 
 ---
 
@@ -94,21 +95,14 @@ Note: the SW cache must be versioned to match the build hash, or stale assets wi
 be served after a deploy. The existing `5.0 — Rolling the deploy back` note in
 `pending.md` applies here too.
 
-### 3.2 Content Security Policy (CSP)
+### ~~3.2 Content Security Policy (CSP)~~ ✅ Done
 
-GitHub Pages serves no custom headers, so a `<meta http-equiv="Content-Security-Policy">`
-tag in `app.html` is the only option. A minimal policy:
-
-```
-default-src 'self';
-script-src 'self' https://cloud.umami.is https://cdn.carbonads.com;
-img-src 'self' https://cdn.carbonads.com data:;
-connect-src 'self' https://*.supabase.co;
-style-src 'self' 'unsafe-inline';
-```
-
-`'unsafe-inline'` for styles is required by SvelteKit's scoped CSS injection unless
-nonces are added (complex with a static adapter).
+`<meta http-equiv="Content-Security-Policy">` added to `src/app.html`. Covers all
+known third-party origins (Umami, Carbon Ads, Supabase REST + WebSocket, Carbon image
+CDN). `'unsafe-inline'` required for both `script-src` and `style-src` — SvelteKit's
+hydration bootstrap and scoped CSS both inject inline content; adapter-static has no
+nonce support. XSS escalation paths still blocked via `object-src 'none'` and
+`base-uri 'self'`.
 
 ### 3.3 Subresource integrity (SRI)
 
@@ -232,5 +226,4 @@ The Supabase option fits the app's existing stack and keeps all data first-party
 | 🟢 A11y        | 5.1 Skip-to-content link                               | Very low   |
 | 🟢 A11y        | 5.2 Contrast audit                                     | Low        |
 | 🟢 Growth      | 4.3 Changelog                                          | Low        |
-| 🟢 Performance | 3.2 CSP meta tag                                       | Low        |
 | 🟢 Performance | 3.3 Subresource integrity                              | Low        |
