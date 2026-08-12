@@ -127,6 +127,10 @@ console.log('\n== Legend ==');
 await reset(null);
 
 const legend = page.locator('section[aria-label="What am I looking at?"]');
+// Wait for the legend to appear after hydration — a fixed 700ms timeout is not
+// reliable in CI (slower VMs, no GPU). The store.hydrate().then(...) chain sets
+// legendOpen=true asynchronously, and on a cold CI runner this easily exceeds 700ms.
+await page.waitForSelector('section[aria-label="What am I looking at?"]', { timeout: 5000 });
 check('a first visit opens the legend unasked', await legend.isVisible());
 check('the legend names every creature', (await legend.locator('li').count()) === 8);
 
@@ -135,7 +139,9 @@ await page.waitForTimeout(250);
 check('the legend closes', !(await legend.isVisible()));
 
 await page.reload();
-await page.waitForTimeout(700);
+// Wait for hydration to complete (indicated by the Add button being present) rather
+// than sleeping a fixed 700ms — the legend must NOT appear on a second visit.
+await page.waitForSelector('button:has-text("Add a task")', { timeout: 5000 });
 check('a second visit does not re-open it', !(await legend.isVisible()));
 
 await page.locator('button[aria-label="Settings"]').click();
