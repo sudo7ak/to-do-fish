@@ -110,6 +110,16 @@
 	let settingsOpen = $state(false);
 	let legendOpen = $state(false);
 
+	// Tracks which sync error state the user has dismissed. Reset whenever the
+	// state changes so a new error (or the same one after a sign-in attempt)
+	// re-shows the banner.
+	let dismissedSyncBanner = $state<string | null>(null);
+	$effect(() => {
+		// Track the state; if it changes to a new value, clear any previous dismissal.
+		const s = syncStatus.state;
+		if (s !== dismissedSyncBanner) dismissedSyncBanner = null;
+	});
+
 	/**
 	 * The last frame the tank painted. Picking must answer against exactly what was
 	 * drawn, so it reuses this rather than the wall clock.
@@ -345,23 +355,26 @@
 	-->
 	{#if $saveFailed}
 		<Banner visible={true} />
-	{:else if syncStatus.state === 'denied'}
+	{:else if syncStatus.state === 'denied' && dismissedSyncBanner !== 'denied'}
 		<Banner
 			visible={true}
 			title="Sync is signed out."
 			detail="Your tasks are safe on this device. Open Settings to sign in again."
+			onDismiss={() => (dismissedSyncBanner = 'denied')}
 		/>
-	{:else if syncStatus.state === 'stale'}
+	{:else if syncStatus.state === 'stale' && dismissedSyncBanner !== 'stale'}
 		<Banner
 			visible={true}
 			title="This device is out of date."
 			detail="It will not sync until the app is reloaded to pick up the newer version."
+			onDismiss={() => (dismissedSyncBanner = 'stale')}
 		/>
-	{:else if syncStatus.state === 'rejected'}
+	{:else if syncStatus.state === 'rejected' && dismissedSyncBanner !== 'rejected'}
 		<Banner
 			visible={true}
 			title="The server refused this data."
 			detail="Your tasks are safe on this device, but they are not reaching your other ones."
+			onDismiss={() => (dismissedSyncBanner = 'rejected')}
 		/>
 	{/if}
 
