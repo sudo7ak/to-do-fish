@@ -344,7 +344,13 @@
 	     genuine keyboard-reachable route to every one of these actions, backed by the
 	     same store. That is why it is a first-class second view rather than a fallback. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="tank" onpointerdown={tankPointerDown} onpointerup={tapTank} onpointercancel={tankPointerCancel}>
+	<div
+		class="tank"
+		onpointerdown={tankPointerDown}
+		onpointerup={tapTank}
+		onpointercancel={tankPointerCancel}
+		oncontextmenu={(e) => e.preventDefault()}
+	>
 		<Tank {draw} />
 	</div>
 
@@ -485,6 +491,9 @@
 	.tank {
 		position: absolute;
 		inset: 0;
+		/* Must match canvas touch-action so the browser does not cancel the touch
+		   sequence on the child before setPointerCapture fires on this element. */
+		touch-action: none;
 	}
 
 	.chrome {
