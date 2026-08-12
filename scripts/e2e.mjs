@@ -21,7 +21,13 @@ const record = (name, ok, detail = '') => {
 const check = (name, ok, detail) => record(name, !!ok, ok ? '' : detail);
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 460, height: 900 } });
+// Explicit fresh context with empty storage — prevents CI runners from carrying
+// localStorage (e.g. seenLegend) over from a previous workflow run's cached profile.
+const context = await browser.newContext({
+	viewport: { width: 460, height: 900 },
+	storageState: { cookies: [], origins: [] }
+});
+const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
