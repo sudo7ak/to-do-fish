@@ -26,6 +26,7 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { base } from '$app/paths';
 
 	type Props = {
 		open: boolean;
@@ -85,6 +86,7 @@
 		{/if}
 
 		<div class="actions">
+			<a href="{base}/privacy" class="privacy-link">Privacy policy</a>
 			<button type="button" onclick={onClose}>Done</button>
 		</div>
 	</section>
@@ -211,8 +213,20 @@
 
 	.actions {
 		display: flex;
-		justify-content: flex-end;
+		align-items: center;
+		justify-content: space-between;
 		margin-top: 1rem;
+	}
+
+	.privacy-link {
+		font-size: 0.78rem;
+		color: rgba(18, 48, 58, 0.5);
+		text-decoration: none;
+	}
+
+	.privacy-link:hover {
+		color: #12303a;
+		text-decoration: underline;
 	}
 
 	button {
