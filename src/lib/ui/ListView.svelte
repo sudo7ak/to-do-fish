@@ -54,8 +54,7 @@
 	import { shiftDate, formatDay } from './DateHeader.svelte';
 	import { describeCondition, actionsFor } from './CreatureSheet.svelte';
 	import { pearlBalance } from '../store/pearls';
-	import { readConsent, writeConsent, type ConsentState } from '../persist/consent';
-	import CookieConsent from './CookieConsent.svelte';
+
 
 	type Props = {
 		open: boolean;
@@ -116,51 +115,6 @@
 		selected = new Set();
 	}
 
-	// ── Cookie consent ────────────────────────────────────────────────────────
-	// Read from localStorage when the list opens. null = not decided (show banner).
-	let consent = $state<ConsentState | null>(null);
-
-	$effect(() => {
-		if (open) consent = readConsent();
-	});
-
-	function handleAccept() {
-		writeConsent('granted');
-		consent = 'granted';
-	}
-
-	function handleDecline() {
-		writeConsent('denied');
-		consent = 'denied';
-	}
-
-	// ── Carbon Ads ────────────────────────────────────────────────────────────
-	// Injected only after explicit consent. Torn down on close so a re-open
-	// fetches a fresh ad. Replace XXXXXXXX with your Carbon slug after approval.
-	const CARBON_SERVE = 'https://cdn.carbonads.com/carbon.js?serve=XXXXXXXX&placement=your-site-name';
-
-	$effect(() => {
-		if (!open || consent !== 'granted') return;
-
-		const existing = document.getElementById('_carbonads_js');
-		if (existing) return; // already injected this session
-
-		const script = document.createElement('script');
-		script.id = '_carbonads_js';
-		script.async = true;
-		script.type = 'text/javascript';
-		script.src = CARBON_SERVE;
-
-		const target = document.getElementById('carbonads');
-		if (target) target.appendChild(script);
-
-		return () => {
-			const el = document.getElementById('_carbonads_js');
-			el?.remove();
-			const slot = document.getElementById('carbonads');
-			if (slot) slot.innerHTML = '';
-		};
-	});
 </script>
 
 {#if open}
@@ -217,18 +171,6 @@
 				{/each}
 			</ul>
 		{/each}
-
-		<!-- Sponsored / consent section -->
-		<div class="carbon-wrap">
-			{#if consent === null}
-				<!-- First open: ask before any cookie is set -->
-				<CookieConsent onAccept={handleAccept} onDecline={handleDecline} />
-			{:else if consent === 'granted'}
-				<!-- Consent given: Carbon Ads populates this div via the $effect above -->
-				<div id="carbonads" aria-label="Sponsored"></div>
-			{/if}
-			<!-- consent === 'denied': render nothing -->
-		</div>
 
 		</div>
 

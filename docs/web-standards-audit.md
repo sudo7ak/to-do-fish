@@ -19,7 +19,6 @@ from a standard production web app. Read alongside `docs/pending.md` before acti
 | Auth                       | Supabase (optional — app works without it)                                        |
 | Offline-first              | localStorage; static hosting means initial load works offline                     |
 | Privacy policy             | `src/routes/privacy/+page.svelte` — linked from Settings footer                  |
-| Cookie consent             | `src/lib/ui/CookieConsent.svelte` + `src/lib/persist/consent.ts` — shown on first list open, gates Carbon script |
 | Content Security Policy    | `<meta http-equiv="Content-Security-Policy">` in `src/app.html`                  |
 | Structured data (JSON-LD)  | `<script type="application/ld+json">` in `src/app.html` — WebApplication schema  |
 
@@ -33,12 +32,12 @@ from a standard production web app. Read alongside `docs/pending.md` before acti
 GDPR rights, and 30-day deletion commitment. Linked from the Settings sheet footer.
 Committed `fe58401`.
 
-### ~~1.2 Cookie / consent notice~~ ✅ Done
+### 1.2 Cookie / consent notice
 
-`CookieConsent.svelte` shown on the first list open. Consent stored in
-`fish-tank-todo/cookie-consent` localStorage key (separate from the task snapshot).
-Carbon Ads script is gated behind `consent === 'granted'` — it never fires on decline.
-Decline is remembered; banner does not reappear.
+Required before Carbon Ads goes live. Umami is cookieless (no notice needed for
+Umami alone), but Carbon Ads sets cookies and fingerprints. UK PECR requires informed
+consent before non-essential cookies are set. Deferred until Carbon integration is
+confirmed.
 
 ### 1.3 Terms of use
 
@@ -205,6 +204,7 @@ The Supabase option fits the app's existing stack and keeps all data first-party
 
 | Priority       | Item                                                   | Effort     |
 | -------------- | ------------------------------------------------------ | ---------- |
+| ⏸ Legal       | 1.2 Cookie consent (deferred until Carbon confirmed)   | Low        |
 | 🟠 Growth      | 4.1 App landing / marketing page                       | Medium     |
 | 🟠 Performance | 3.1 Service worker (cache-first)                       | Medium     |
 | 🟡 Growth      | 4.2 `navigator.share()` in Settings                    | Very low   |
