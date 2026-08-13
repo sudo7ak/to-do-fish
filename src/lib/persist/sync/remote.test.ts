@@ -74,6 +74,7 @@ describe('SupabaseRemote — pull', () => {
 					date: '2026-08-10',
 					condition: null,
 					treat_cost: null,
+					priority: null,
 					status: 'open',
 					created_at: 1,
 					completed_at: null,

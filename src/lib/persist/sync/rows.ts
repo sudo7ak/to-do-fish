@@ -16,6 +16,7 @@ export type TaskRow = {
 	date: string;
 	condition: Condition | null;
 	treat_cost: number | null;
+	priority: boolean | null;
 	status: TaskStatus;
 	created_at: number;
 	completed_at: number | null;
@@ -52,6 +53,7 @@ export function toTaskRow(task: Task, userId: string): TaskRow {
 		date: task.date,
 		condition: nullable(task.condition),
 		treat_cost: nullable(task.treatCost),
+		priority: nullable(task.priority),
 		status: task.status,
 		created_at: task.createdAt,
 		completed_at: nullable(task.completedAt),
@@ -70,6 +72,7 @@ export function fromTaskRow(row: TaskRow): Task {
 		updatedAt: row.updated_at,
 		...optional('condition', row.condition),
 		...optional('treatCost', row.treat_cost),
+		...optional('priority', row.priority),
 		...optional('completedAt', row.completed_at),
 		...optional('deletedAt', row.deleted_at)
 	};

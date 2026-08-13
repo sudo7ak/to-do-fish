@@ -45,6 +45,11 @@ describe('task rows', () => {
 		expect(fromTaskRow(toTaskRow(original, USER))).toEqual(original);
 	});
 
+	it('round-trips a priority task', () => {
+		const original = task({ priority: true });
+		expect(fromTaskRow(toTaskRow(original, USER))).toEqual(original);
+	});
+
 	it('round-trips a completed task', () => {
 		const original = task({ status: 'done', completedAt: 500 });
 		expect(fromTaskRow(toTaskRow(original, USER))).toEqual(original);
@@ -64,6 +69,7 @@ describe('task rows', () => {
 		expect('completedAt' in restored).toBe(false);
 		expect('condition' in restored).toBe(false);
 		expect('treatCost' in restored).toBe(false);
+		expect('priority' in restored).toBe(false);
 		expect(isLive(restored)).toBe(true);
 	});
 

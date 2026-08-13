@@ -13,6 +13,7 @@ create table if not exists public.tasks (
   date         text   not null,
   condition    jsonb,
   treat_cost   int,
+  priority     boolean,
   status       text   not null check (status in ('waiting', 'open', 'done')),
   created_at   bigint not null,
   completed_at bigint,
@@ -37,6 +38,11 @@ create table if not exists public.settings (
   version     int    not null,
   updated_at  bigint not null
 );
+
+-- `create table if not exists` above is a no-op against a database where `tasks`
+-- already exists, so a column added after launch needs its own idempotent statement
+-- to reach existing installs.
+alter table public.tasks add column if not exists priority boolean;
 
 alter table public.tasks    enable row level security;
 alter table public.koi      enable row level security;
