@@ -289,7 +289,7 @@
 
 		const state = store.snapshot();
 		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
-		const hit = pick(scene.creatures, point, lastFrame.size, Date.now(), lastFrame.animate);
+		const hit = pick(scene.creatures, point, lastFrame.size, lastFrame.time, lastFrame.animate);
 
 		// The overflow treat stands for several tasks at once, so it cannot open a
 		// sheet — it opens the list, which is the view that can show them all.
