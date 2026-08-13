@@ -27,3 +27,27 @@ Sentry.init({
 });
 
 export const handleError = Sentry.handleErrorWithSentry();
+
+/**
+ * A tab left open across a deploy still has the old `index.html`, whose links point at
+ * hashed chunk filenames a new build has already dropped from the CDN. The next
+ * client-side navigation then fails to fetch its route module and the app is stuck on
+ * a dead page — the fix is just a reload, so `index.html` picks up the new build.
+ *
+ * `sessionStorage`, not a module-level flag: a flag survives only until the reload
+ * this handler itself triggers, so a second genuine failure right after would loop.
+ * The key is cleared once a navigation actually succeeds, so a later deploy can still
+ * trigger one reload rather than being silently swallowed by a stale guard.
+ */
+if (typeof window !== 'undefined') {
+	// Reaching this line at all means the current load already succeeded, so any guard
+	// set by a previous load has done its job.
+	sessionStorage.removeItem('reloaded-after-preload-error');
+
+	window.addEventListener('vite:preloadError', (event) => {
+		event.preventDefault();
+		if (sessionStorage.getItem('reloaded-after-preload-error')) return;
+		sessionStorage.setItem('reloaded-after-preload-error', '1');
+		window.location.reload();
+	});
+}
