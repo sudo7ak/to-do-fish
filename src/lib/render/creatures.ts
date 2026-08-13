@@ -416,8 +416,14 @@ function swimPosition(
 	// Horizontal sweep. Each fish gets its own lane centre as well as its own
 	// amplitude — sweeping every one about the middle of the tank makes them all pass
 	// through the centre together and bunch there.
-	const centre = 0.5 + (mix32(seed ^ 0x5a) - 0.5) * 0.5;
-	const ampX = 0.2 + mix32(seed ^ 0x2b) * 0.12;
+	//
+	// Sharks are 1.5-2x the length of an ordinary fish, so the same lane spread that
+	// keeps ordinary fish from overlapping still lets a shark's much bigger body cover
+	// a neighbour — reading, at a glance, as one fish having replaced another. Widening
+	// the shark's own centre range and sweep gives it more of the tank to itself.
+	const isShark = creature.kind === 'shark';
+	const centre = 0.5 + (mix32(seed ^ 0x5a) - 0.5) * (isShark ? 0.8 : 0.5);
+	const ampX = (isShark ? 0.28 : 0.2) + mix32(seed ^ 0x2b) * 0.12;
 	const across = Math.min(0.94, Math.max(0.06, centre + Math.sin(swim) * ampX));
 	const x = size.w * across;
 
