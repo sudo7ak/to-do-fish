@@ -66,6 +66,12 @@ export type SpeciesSpec = {
 	palette: { back: string; belly: string; fin: string; marking: string; iris: string };
 	pattern: 'bands' | 'stripe' | 'spots' | 'none';
 	wave: Wave;
+	/**
+	 * Sharks. Draws gill slashes on the flank, a serrated tooth-line at the mouth, and a
+	 * narrow slit pupil instead of the round mascot eye — the menace lives in the face,
+	 * not the body colour.
+	 */
+	predator?: boolean;
 };
 
 const caudal = (span: number, sweep = 0.5, lag = 0.9): FinSpec => ({
@@ -438,8 +444,8 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 	reef: {
 		length: 56,
 		profile: [
-			[0, 0.01],
-			[0.1, 0.11],
+			[0, 0.004],
+			[0.07, 0.08],
 			[0.35, 0.16],
 			[0.65, 0.14],
 			[0.85, 0.06],
@@ -453,13 +459,14 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 			{ anchor: 0.22, kind: 'pectoral', span: 0.24, sweep: 1.1, lag: 0.2 }
 		],
 		palette: {
-			back: '#4a6a7a',
-			belly: '#c8d8de',
-			fin: '#3a5465',
-			marking: '#c8d8de',
-			iris: '#0d1a22'
+			back: '#2f6f8f',
+			belly: '#e8f4f8',
+			fin: '#1f4f68',
+			marking: '#e8f4f8',
+			iris: '#081218'
 		},
 		pattern: 'none',
+		predator: true,
 		wave: { amplitude: 0.09, wavelength: 1.6, speed: 6 }
 	},
 
@@ -485,13 +492,14 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 			{ anchor: 0.2, kind: 'pectoral', span: 0.22, sweep: 1.0, lag: 0.2 }
 		],
 		palette: {
-			back: '#3d5c4a',
-			belly: '#b8ccc0',
-			fin: '#2e4a3a',
-			marking: '#b8ccc0',
-			iris: '#0a1510'
+			back: '#1f7a52',
+			belly: '#d8ecd0',
+			fin: '#12583a',
+			marking: '#d8ecd0',
+			iris: '#061a10'
 		},
 		pattern: 'none',
+		predator: true,
 		wave: { amplitude: 0.08, wavelength: 1.7, speed: 5 }
 	},
 
@@ -501,8 +509,8 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 	whale: {
 		length: 72,
 		profile: [
-			[0, 0.03],
-			[0.1, 0.2],
+			[0, 0.012],
+			[0.08, 0.15],
 			[0.35, 0.36],
 			[0.62, 0.3],
 			[0.82, 0.14],
@@ -515,13 +523,14 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 			{ anchor: 0.2, kind: 'pectoral', span: 0.28, sweep: 1.0, lag: 0.2 }
 		],
 		palette: {
-			back: '#1a2e40',
-			belly: '#4a6a7a',
-			fin: '#142232',
-			marking: '#8ab0c0',
-			iris: '#0a1520'
+			back: '#12324f',
+			belly: '#5a8aa0',
+			fin: '#0c2438',
+			marking: '#f0d060',
+			iris: '#050f18'
 		},
 		pattern: 'spots',
+		predator: true,
 		wave: { amplitude: 0.07, wavelength: 1.8, speed: 4 }
 	},
 
@@ -531,8 +540,8 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 	nurse: {
 		length: 48,
 		profile: [
-			[0, 0.02],
-			[0.12, 0.18],
+			[0, 0.008],
+			[0.09, 0.13],
 			[0.38, 0.28],
 			[0.66, 0.22],
 			[0.88, 0.08],
@@ -546,13 +555,14 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 			{ anchor: 0.22, kind: 'pectoral', span: 0.2, sweep: 1.0, lag: 0.2 }
 		],
 		palette: {
-			back: '#7a6048',
-			belly: '#c0a880',
-			fin: '#5a4832',
-			marking: '#c0a880',
-			iris: '#1a1008'
+			back: '#a5723c',
+			belly: '#f0d4a0',
+			fin: '#7a4e24',
+			marking: '#f0d4a0',
+			iris: '#2a1608'
 		},
 		pattern: 'none',
+		predator: true,
 		wave: { amplitude: 0.1, wavelength: 1.5, speed: 5 }
 	},
 
@@ -562,8 +572,8 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 	thresher: {
 		length: 50,
 		profile: [
-			[0, 0.01],
-			[0.1, 0.1],
+			[0, 0.004],
+			[0.07, 0.07],
 			[0.34, 0.16],
 			[0.62, 0.12],
 			[0.84, 0.04],
@@ -578,13 +588,14 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 			{ anchor: 0.2, kind: 'pectoral', span: 0.22, sweep: 1.1, lag: 0.2 }
 		],
 		palette: {
-			back: '#5a7098',
-			belly: '#c0ccd8',
-			fin: '#445878',
-			marking: '#c0ccd8',
-			iris: '#0e1828'
+			back: '#3f5aa8',
+			belly: '#dbe2f4',
+			fin: '#2c3f80',
+			marking: '#dbe2f4',
+			iris: '#0a1230'
 		},
 		pattern: 'none',
+		predator: true,
 		wave: { amplitude: 0.1, wavelength: 1.5, speed: 7 }
 	},
 

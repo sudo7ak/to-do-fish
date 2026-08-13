@@ -1083,31 +1083,58 @@ function drawHead(
 	 * disc.
 	 */
 	const radius = Math.max(1.9, half * 0.26);
+	const eyeY = at.y - half * 0.25;
 
-	// Iris, filling the eye.
-	ctx.beginPath();
-	ctx.arc(at.x, at.y - half * 0.25, radius, 0, Math.PI * 2);
-	ctx.fillStyle = spec.palette.iris;
-	ctx.fill();
+	if (spec.predator) {
+		// Slit pupil on a narrowed iris — the shape that reads as menace, not the colour.
+		ctx.beginPath();
+		ctx.ellipse(at.x, eyeY, radius * 0.85, radius, 0, 0, Math.PI * 2);
+		ctx.fillStyle = spec.palette.iris;
+		ctx.fill();
 
-	// Pupil: darker still, and slightly forward, so the fish reads as looking ahead.
-	ctx.beginPath();
-	ctx.arc(at.x + radius * 0.16, at.y - half * 0.25, radius * 0.55, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(12, 20, 28, 0.92)';
-	ctx.fill();
+		ctx.beginPath();
+		ctx.ellipse(at.x + radius * 0.14, eyeY, radius * 0.22, radius * 0.8, 0, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(8, 10, 12, 0.95)';
+		ctx.fill();
 
-	// Catchlight — one small wet highlight, which is what stops it reading as a hole.
-	ctx.beginPath();
-	ctx.arc(at.x - radius * 0.32, at.y - half * 0.25 - radius * 0.32, radius * 0.22, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-	ctx.fill();
+		ctx.beginPath();
+		ctx.arc(at.x - radius * 0.28, eyeY - radius * 0.32, radius * 0.16, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+		ctx.fill();
 
-	// Lid: the belly tone, which reads as shadow against the lit back.
-	ctx.beginPath();
-	ctx.arc(at.x, at.y - half * 0.25, radius, Math.PI * 1.05, Math.PI * 1.95);
-	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
-	ctx.lineWidth = 1;
-	ctx.stroke();
+		// Brow ridge: a hard stroke above the eye, angled down toward the snout.
+		ctx.beginPath();
+		ctx.moveTo(at.x - radius * 1.1, eyeY - radius * 0.9);
+		ctx.lineTo(at.x + radius * 0.9, eyeY - radius * 1.2);
+		ctx.strokeStyle = withAlpha(spec.palette.fin, 0.8);
+		ctx.lineWidth = 1.2;
+		ctx.stroke();
+	} else {
+		// Iris, filling the eye.
+		ctx.beginPath();
+		ctx.arc(at.x, eyeY, radius, 0, Math.PI * 2);
+		ctx.fillStyle = spec.palette.iris;
+		ctx.fill();
+
+		// Pupil: darker still, and slightly forward, so the fish reads as looking ahead.
+		ctx.beginPath();
+		ctx.arc(at.x + radius * 0.16, eyeY, radius * 0.55, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(12, 20, 28, 0.92)';
+		ctx.fill();
+
+		// Catchlight — one small wet highlight, which is what stops it reading as a hole.
+		ctx.beginPath();
+		ctx.arc(at.x - radius * 0.32, eyeY - radius * 0.32, radius * 0.22, 0, Math.PI * 2);
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+		ctx.fill();
+
+		// Lid: the belly tone, which reads as shadow against the lit back.
+		ctx.beginPath();
+		ctx.arc(at.x, eyeY, radius, Math.PI * 1.05, Math.PI * 1.95);
+		ctx.strokeStyle = withAlpha(spec.palette.belly, 0.5);
+		ctx.lineWidth = 1;
+		ctx.stroke();
+	}
 
 	// Mouth: a notch at the nose that opens on the swim cycle.
 	const nose = pointAt(spine, 0.02);
@@ -1118,6 +1145,65 @@ function drawHead(
 	ctx.strokeStyle = withAlpha(spec.palette.belly, 0.65);
 	ctx.lineWidth = 1.1;
 	ctx.stroke();
+
+	if (spec.predator) drawTeeth(ctx, spec, nose, radius, gape);
+}
+
+/**
+ * A zigzag along the lower jaw line — small triangles reading as teeth at fish scale.
+ * Drawn only when the mouth is open enough to show them, so a closed-mouth shark does
+ * not carry a permanent white grin.
+ */
+function drawTeeth(
+	ctx: CanvasRenderingContext2D,
+	spec: SpeciesSpec,
+	nose: Point,
+	radius: number,
+	gape: number
+): void {
+	if (gape < radius * 0.18) return;
+
+	const count = 4;
+	const start = { x: nose.x, y: nose.y + gape * 0.85 };
+	const end = { x: nose.x - radius * 0.65, y: nose.y + gape * 0.1 };
+	const tooth = radius * 0.16;
+
+	ctx.beginPath();
+	for (let i = 0; i <= count; i++) {
+		const t = i / count;
+		const x = start.x + (end.x - start.x) * t;
+		const y = start.y + (end.y - start.y) * t;
+		if (i === 0) ctx.moveTo(x, y);
+		else if (i % 2 === 1) ctx.lineTo(x, y - tooth);
+		else ctx.lineTo(x, y);
+	}
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+	ctx.lineWidth = 1;
+	ctx.lineJoin = 'round';
+	ctx.stroke();
+}
+
+/**
+ * Gill slashes on the flank — three short curved strokes just behind the head,
+ * following the local normal so they wrap the body instead of sitting on it flat.
+ */
+function drawGillSlashes(ctx: CanvasRenderingContext2D, spec: SpeciesSpec, spine: Spine): void {
+	if (!spec.predator) return;
+
+	ctx.strokeStyle = withAlpha(spec.palette.fin, 0.85);
+	ctx.lineWidth = Math.max(1.1, spec.length * 0.02);
+	ctx.lineCap = 'round';
+
+	for (const t of [0.16, 0.19, 0.22]) {
+		const at = pointAt(spine, t);
+		const half = profileAt(spec.profile, t) * spec.length;
+		const angle = tangentAt(spine, t) + Math.PI / 2;
+
+		ctx.beginPath();
+		ctx.moveTo(at.x + Math.cos(angle) * half * 0.85, at.y + Math.sin(angle) * half * 0.85 - half * 0.1);
+		ctx.lineTo(at.x - Math.cos(angle) * half * 0.05, at.y - Math.sin(angle) * half * 0.05 + half * 0.7);
+		ctx.stroke();
+	}
 }
 
 /**
@@ -1200,6 +1286,7 @@ function drawFish(
 	drawBody(ctx, spec, loop);
 	drawMarkings(ctx, spec, spine, loop, seed);
 	drawPectoral(ctx, spec, spine, time, phase);
+	drawGillSlashes(ctx, spec, spine);
 	drawHead(ctx, spec, spine, time, phase);
 	drawTrail(ctx, time, seed, spec.length);
 
