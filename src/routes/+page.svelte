@@ -287,9 +287,13 @@
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
+		debugLine(`TAP pt=(${point.x.toFixed(1)},${point.y.toFixed(1)}) frame.t=${lastFrame.time.toFixed(0)} frame.sz=${lastFrame.size.w.toFixed(0)}x${lastFrame.size.h.toFixed(0)}`);
+
 		const state = store.snapshot();
 		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
 		const hit = pick(scene.creatures, point, lastFrame.size, lastFrame.time, lastFrame.animate);
+
+		debugLine(`PICK creatures=${scene.creatures.length} hit=${hit ? hit.kind + (hit.taskId ? '/' + hit.taskId.slice(-4) : '') : 'null'}`);
 
 		// The overflow treat stands for several tasks at once, so it cannot open a
 		// sheet — it opens the list, which is the view that can show them all.
@@ -351,6 +355,11 @@
 			? Math.hypot(e.clientX - tapOrigin.x, e.clientY - tapOrigin.y).toFixed(1)
 			: '—';
 		const line = `${label} id=${e.pointerId} type=${e.pointerType} (${e.clientX.toFixed(0)},${e.clientY.toFixed(0)}) moved=${moved}px`;
+		debugLog = [line, ...debugLog].slice(0, 12);
+	}
+
+	function debugLine(line: string) {
+		if (!debugMode) return;
 		debugLog = [line, ...debugLog].slice(0, 12);
 	}
 </script>
