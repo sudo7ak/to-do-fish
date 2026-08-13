@@ -262,10 +262,13 @@
 	let tapOrigin: { x: number; y: number; id: number } | null = null;
 	const TAP_SLOP = 20;
 
+	let lastPointerWasTouch = false;
+
 	function tankPointerDown(event: PointerEvent) {
 		// Capture so pointerup/pointercancel always come back to this element.
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		tapOrigin = { x: event.clientX, y: event.clientY, id: event.pointerId };
+		lastPointerWasTouch = event.pointerType === 'touch';
 	}
 
 	function tankPointerCancel(event: PointerEvent) {
@@ -351,7 +354,7 @@
 		onpointerdown={tankPointerDown}
 		onpointerup={tapTank}
 		onpointercancel={tankPointerCancel}
-		oncontextmenu={(e) => e.preventDefault()}
+		oncontextmenu={(e) => { if (lastPointerWasTouch) e.preventDefault(); }}
 	>
 		<Tank {draw} />
 	</div>
