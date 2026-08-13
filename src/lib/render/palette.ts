@@ -42,25 +42,25 @@ export type Palette = {
  * clouding rather than as a different tank.
  */
 export const CALM = {
-	waterTop: '#8FE3F2',
-	waterMid: '#43C4E0',
-	waterBottom: '#1E86AE',
+	waterTop: '#5FD8F8',
+	waterMid: '#1AB8E0',
+	waterBottom: '#0A5E8A',
 	plants: '#5FD16B',
 	plantsDeep: '#2F9E62',
 	sand: '#F0DFB4',
 	rock: '#6E8A94',
-	light: 1
+	light: 1.3
 } as const;
 
 export const LOADED = {
-	waterTop: '#5A7A85',
-	waterMid: '#47646F',
-	waterBottom: '#2C4450',
+	waterTop: '#3A6A7A',
+	waterMid: '#2A5060',
+	waterBottom: '#182E3C',
 	plants: '#4A7A4E',
 	plantsDeep: '#2E5540',
 	sand: '#9A9078',
 	rock: '#4A5A62',
-	light: 0.35
+	light: 0.45
 } as const;
 
 /** Creature colours hold steady — a fish is the same red whether the day is loaded or clear. */

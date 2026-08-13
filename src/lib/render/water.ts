@@ -115,8 +115,8 @@ export function drawCaustics(
 		const sway = Math.sin(t * 0.4 + i) * 0.35;
 
 		const shaft = ctx.createLinearGradient(x, 0, x + width, size.h);
-		shaft.addColorStop(0, `rgba(255, 253, 235, ${0.2 * strength})`);
-		shaft.addColorStop(0.5, `rgba(220, 250, 255, ${0.07 * strength})`);
+		shaft.addColorStop(0, `rgba(255, 253, 235, ${0.28 * strength})`);
+		shaft.addColorStop(0.5, `rgba(220, 250, 255, ${0.10 * strength})`);
 		shaft.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
 		ctx.fillStyle = shaft;
@@ -147,7 +147,7 @@ export function drawCaustics(
 
 		// Dimmer further down, and never uniform.
 		const fade = (1 - depth * 0.75) * (0.5 + noise(i, 25) * 0.5);
-		ctx.strokeStyle = `rgba(255, 255, 255, ${0.07 * strength * fade})`;
+		ctx.strokeStyle = `rgba(255, 255, 255, ${0.10 * strength * fade})`;
 		ctx.lineWidth = 2 + noise(i, 26) * 3;
 
 		ctx.beginPath();
