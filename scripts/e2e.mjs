@@ -132,7 +132,7 @@ const legend = page.locator('section[aria-label="What am I looking at?"]');
 // legendOpen=true asynchronously, and on a cold CI runner this easily exceeds 700ms.
 await page.waitForSelector('section[aria-label="What am I looking at?"]', { timeout: 5000 });
 check('a first visit opens the legend unasked', await legend.isVisible());
-check('the legend names every creature', (await legend.locator('li').count()) === 8);
+check('the legend names every creature', (await legend.locator('li').count()) === 9);
 
 await legend.getByRole('button', { name: 'Got it' }).click();
 await page.waitForTimeout(250);
