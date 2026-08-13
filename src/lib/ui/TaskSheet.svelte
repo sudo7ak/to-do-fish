@@ -202,13 +202,6 @@
 				<input type="date" bind:value={form.date} />
 			</label>
 
-			{#if form.kind !== 'treat'}
-				<label class="choice priority-toggle" class:selected={form.priority}>
-					<input type="checkbox" bind:checked={form.priority} />
-					<span>🦈 Priority</span>
-				</label>
-			{/if}
-
 			<fieldset>
 				<legend>When</legend>
 				{#each [['plain', 'Straight away'], ['time', 'At a time'], ['task', 'After another task'], ['text', 'When I decide'], ['treat', 'Guilty pleasure']] as [value, label] (value)}
@@ -248,6 +241,13 @@
 				<label>
 					<span>Cost in pearls</span>
 					<input type="number" min="0" step="1" bind:value={form.treatCost} />
+				</label>
+			{/if}
+
+			{#if form.kind !== 'treat'}
+				<label class="priority-check">
+					<input type="checkbox" bind:checked={form.priority} />
+					<span>🦈 Priority</span>
 				</label>
 			{/if}
 
@@ -392,6 +392,16 @@
 
 	.choice:focus-within {
 		box-shadow: 0 0 0 3px rgba(18, 48, 58, 0.18);
+	}
+
+	.priority-check {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+		font-weight: 500;
+		color: #12303a;
+		cursor: pointer;
 	}
 
 	small {
