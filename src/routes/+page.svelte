@@ -266,34 +266,24 @@
 		// Capture so pointerup/pointercancel always come back to this element.
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		tapOrigin = { x: event.clientX, y: event.clientY, id: event.pointerId };
-		debugEvent('DOWN', event);
 	}
 
 	function tankPointerCancel(event: PointerEvent) {
-		debugEvent('CANCEL', event);
 		if (tapOrigin?.id === event.pointerId) tapOrigin = null;
 	}
 
 	function tapTank(event: PointerEvent) {
-		debugEvent('UP', event);
 		if (!tapOrigin || tapOrigin.id !== event.pointerId) return;
 		const moved = Math.hypot(event.clientX - tapOrigin.x, event.clientY - tapOrigin.y);
 		tapOrigin = null;
-		if (moved > TAP_SLOP) {
-			debugEvent('SLOP-FAIL', event);
-			return; // scroll, not a tap
-		}
+		if (moved > TAP_SLOP) return; // scroll, not a tap
 
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
-		debugLine(`TAP pt=(${point.x.toFixed(1)},${point.y.toFixed(1)}) frame.t=${lastFrame.time.toFixed(0)} frame.sz=${lastFrame.size.w.toFixed(0)}x${lastFrame.size.h.toFixed(0)}`);
-
 		const state = store.snapshot();
 		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
 		const hit = pick(scene.creatures, point, lastFrame.size, lastFrame.time, lastFrame.animate);
-
-		debugLine(`PICK creatures=${scene.creatures.length} hit=${hit ? hit.kind + (hit.taskId ? '/' + hit.taskId.slice(-4) : '') : 'null'}`);
 
 		// The overflow treat stands for several tasks at once, so it cannot open a
 		// sheet — it opens the list, which is the view that can show them all.
@@ -343,25 +333,7 @@
 			: store.addTask(draft);
 	}
 
-	// ── Tap debug overlay (remove before final release) ───────────────────────
-	// Load with ?debug in the URL to see exactly what pointer events fire.
-	// TEMP: always show debug overlay — remove once tap issue is diagnosed.
-	const debugMode = true;
-	let debugLog = $state<string[]>([]);
 
-	function debugEvent(label: string, e: PointerEvent) {
-		if (!debugMode) return;
-		const moved = tapOrigin
-			? Math.hypot(e.clientX - tapOrigin.x, e.clientY - tapOrigin.y).toFixed(1)
-			: '—';
-		const line = `${label} id=${e.pointerId} type=${e.pointerType} (${e.clientX.toFixed(0)},${e.clientY.toFixed(0)}) moved=${moved}px`;
-		debugLog = [line, ...debugLog].slice(0, 12);
-	}
-
-	function debugLine(line: string) {
-		if (!debugMode) return;
-		debugLog = [line, ...debugLog].slice(0, 12);
-	}
 </script>
 
 <svelte:head>
@@ -499,14 +471,7 @@
 		onClose={() => (legendOpen = false)}
 	/>
 
-	{#if debugMode}
-		<div class="debug-overlay">
-			<div class="debug-meta">DPR={typeof window !== 'undefined' ? window.devicePixelRatio : '?'} slop={TAP_SLOP}px</div>
-			{#each debugLog as line}
-				<div class="debug-line">{line}</div>
-			{/each}
-		</div>
-	{/if}
+
 </main>
 
 <style>
@@ -567,28 +532,5 @@
 		opacity: 0.8;
 	}
 
-	.debug-overlay {
-		position: fixed;
-		bottom: 5rem;
-		left: 0.5rem;
-		right: 0.5rem;
-		z-index: 999;
-		background: rgba(0, 0, 0, 0.75);
-		color: #0f0;
-		font-family: monospace;
-		font-size: 0.65rem;
-		padding: 0.5rem;
-		border-radius: 0.5rem;
-		pointer-events: none;
-	}
 
-	.debug-meta {
-		color: #ff0;
-		margin-bottom: 0.25rem;
-	}
-
-	.debug-line {
-		white-space: pre;
-		line-height: 1.4;
-	}
 </style>
