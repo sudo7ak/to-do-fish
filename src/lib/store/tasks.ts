@@ -31,6 +31,7 @@ export type TaskDraft = {
 	date: string;
 	condition?: Condition;
 	treatCost?: number;
+	priority?: boolean;
 };
 
 export type Refusal = { ok: false; reason: 'cycle' | 'unaffordable' | 'claimed' };
@@ -50,7 +51,8 @@ export function addTask(state: State, draft: TaskDraft, now: number, id = ulid(n
 		createdAt: now,
 		updatedAt: now,
 		...(draft.condition ? { condition: draft.condition } : {}),
-		...(draft.treatCost !== undefined ? { treatCost: draft.treatCost } : {})
+		...(draft.treatCost !== undefined ? { treatCost: draft.treatCost } : {}),
+		...(draft.priority ? { priority: true } : {})
 	};
 
 	return { ok: true, state: { ...state, tasks: [...state.tasks, task] } };
@@ -59,7 +61,7 @@ export function addTask(state: State, draft: TaskDraft, now: number, id = ulid(n
 export function editTask(
 	state: State,
 	id: string,
-	patch: Partial<Pick<Task, 'title' | 'date' | 'condition' | 'treatCost'>>,
+	patch: Partial<Pick<Task, 'title' | 'date' | 'condition' | 'treatCost' | 'priority'>>,
 	now: number
 ): Outcome {
 	if (patch.condition) {
@@ -68,6 +70,25 @@ export function editTask(
 	}
 
 	return { ok: true, state: mutate(state, id, (task) => ({ ...task, ...patch }), now) };
+}
+
+/**
+ * Toggles the priority flag on a task. Setting to `undefined` rather than `false`
+ * keeps the snapshot lean — no falsy values are ever stored.
+ */
+export function togglePriority(state: State, id: string, now: number): State {
+	return mutate(
+		state,
+		id,
+		(task) => {
+			if (task.priority) {
+				const { priority: _, ...rest } = task;
+				return rest as Task;
+			}
+			return { ...task, priority: true };
+		},
+		now
+	);
 }
 
 export function moveToDate(state: State, id: string, date: string, now: number): State {
@@ -177,6 +198,7 @@ export type TaskStoreFacade = {
 	releaseBubble(id: string): Promise<void>;
 	release(ids: string[]): Promise<void>;
 	claimTreat(id: string): Promise<Outcome>;
+	togglePriority(id: string): Promise<void>;
 	setEnvironment(environment: Environment): Promise<void>;
 	markLegendSeen(): Promise<void>;
 	snapshot(): State;
@@ -248,6 +270,7 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 		completeTask: (id) => commit(completeTask(get(state), id, clock())),
 		softDelete: (id) => commit(softDelete(get(state), id, clock())),
 		releaseBubble: (id) => commit(releaseBubble(get(state), id, clock())),
+		togglePriority: (id) => commit(togglePriority(get(state), id, clock())),
 		setEnvironment: (environment) => commit(setEnvironment(get(state), environment, clock())),
 		markLegendSeen: () => commit(markLegendSeen(get(state), clock())),
 

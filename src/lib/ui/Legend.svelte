@@ -42,6 +42,13 @@
 			creature: { id: 'legend-fish', kind: 'fish', label: 'Fish', depth: 0.4, tapRadius: 34 }
 		},
 		{
+			id: 'shark',
+			title: 'Shark',
+			blurb: 'A priority task. Mark it urgent and it swims as a shark — five breeds, always the same one for the same task.',
+			zoom: 0.72,
+			creature: { id: 'legend-shark', kind: 'shark', label: 'Shark', depth: 0.4, tapRadius: 36 }
+		},
+		{
 			id: 'bubble',
 			title: 'Bubble',
 			blurb: 'A task waiting for its moment — a time, another task, or your say-so.',

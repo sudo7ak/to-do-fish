@@ -434,6 +434,7 @@
 		onEdit={openEdit}
 		onMove={(id, to) => store.moveToDate(id, to)}
 		onDelete={(id) => store.softDelete(id)}
+		onTogglePriority={(id) => store.togglePriority(id)}
 		onClose={() => (selected = null)}
 	/>
 

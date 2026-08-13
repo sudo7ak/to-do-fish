@@ -5,6 +5,7 @@ import { hash, mix32 } from './rng';
 import {
 	speciesFor,
 	treatSpeciesFor,
+	sharkSpeciesFor,
 	SPECIES,
 	TREATS,
 	type Species,
@@ -329,7 +330,11 @@ export function place(creature: Creature, size: Size, time: number, animate = tr
 		};
 	}
 
-	const kindSpeed = creature.kind === 'koi' ? 0.5 : creature.kind === 'ghost' ? 0.62 : 1;
+	const kindSpeed =
+		creature.kind === 'koi' ? 0.5 :
+		creature.kind === 'ghost' ? 0.62 :
+		creature.kind === 'shark' ? 1.25 :
+		1;
 	const phase = mix32(seed ^ 0x11) * Math.PI * 2;
 
 	// Sampled at two instants so pitch comes from the path actually travelled.
@@ -517,6 +522,8 @@ function bodyOf(creature: Creature): { spec: SpeciesSpec; scale: number } | null
 				: { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
 		case 'ghost':
 			return { spec: SPECIES[speciesFor(creature.id)], scale: 1 };
+		case 'shark':
+			return { spec: SPECIES[sharkSpeciesFor(creature.id)], scale: 1 };
 		case 'koi':
 			return { spec: SPECIES.koi, scale: 1 };
 		case 'sync':
@@ -559,6 +566,9 @@ export function drawCreature(
 	// by construction — the compiler just cannot see across the switch.
 	switch (creature.kind) {
 		case 'fish':
+			drawFish(ctx, at, body!.spec, time, hash(creature.id));
+			break;
+		case 'shark':
 			drawFish(ctx, at, body!.spec, time, hash(creature.id));
 			break;
 		case 'ghost':
@@ -691,6 +701,7 @@ const DRAW_ORDER: Record<Creature['kind'], number> = {
 	bubble: 1,
 	ghost: 2,
 	fish: 3,
+	shark: 3,
 	koi: 4,
 	treat: 5,
 	sync: 6

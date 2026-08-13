@@ -12,6 +12,7 @@
 		before: string;
 		text: string;
 		treatCost: number;
+		priority: boolean;
 	};
 
 	export function emptyForm(date: string): SheetForm {
@@ -23,7 +24,8 @@
 			dependsOn: '',
 			before: '',
 			text: '',
-			treatCost: 3
+			treatCost: 3,
+			priority: false
 		};
 	}
 
@@ -31,9 +33,10 @@
 	export function formFor(task: Task): SheetForm {
 		const form = emptyForm(task.date);
 		form.title = task.title;
+		form.priority = task.priority ?? false;
 
 		if (task.treatCost !== undefined) {
-			return { ...form, kind: 'treat', treatCost: task.treatCost };
+			return { ...form, kind: 'treat', treatCost: task.treatCost, priority: false };
 		}
 		if (task.condition?.kind === 'time') {
 			return { ...form, kind: 'time', at: task.condition.at };
@@ -55,9 +58,14 @@
 	/**
 	 * Flat form back to a draft. A task is either a treat or conditional, never both:
 	 * a reward you must also wait for is two mechanics fighting over one creature.
+	 * Treats cannot be priority — they are their own special creature kind.
 	 */
 	export function toDraft(form: SheetForm): TaskDraft {
-		const base = { title: form.title.trim(), date: form.date };
+		const base = {
+			title: form.title.trim(),
+			date: form.date,
+			...(form.priority && form.kind !== 'treat' ? { priority: true as const } : {})
+		};
 
 		switch (form.kind) {
 			case 'treat':
@@ -193,6 +201,13 @@
 				<span>Day</span>
 				<input type="date" bind:value={form.date} />
 			</label>
+
+			{#if form.kind !== 'treat'}
+				<label class="choice priority-toggle" class:selected={form.priority}>
+					<input type="checkbox" bind:checked={form.priority} />
+					<span>🦈 Priority</span>
+				</label>
+			{/if}
 
 			<fieldset>
 				<legend>When</legend>

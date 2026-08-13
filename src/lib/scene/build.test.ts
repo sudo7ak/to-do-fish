@@ -511,3 +511,50 @@ describe('buildScene — the feeding flourish', () => {
 		expect(buildScene([treat], [], DAY, NOON).feeding).toBe(0);
 	});
 });
+
+describe('buildScene — priority / shark', () => {
+	it('a priority open task is a shark', () => {
+		expect(countOf([task({ id: 'p', priority: true })], 'shark')).toBe(1);
+	});
+
+	it('a priority open task is NOT also a fish', () => {
+		expect(countOf([task({ id: 'p', priority: true })], 'fish')).toBe(0);
+	});
+
+	it('a priority done task becomes a ghost, not a shark', () => {
+		expect(countOf([task({ id: 'p', priority: true, status: 'done' })], 'ghost')).toBe(1);
+		expect(countOf([task({ id: 'p', priority: true, status: 'done' })], 'shark')).toBe(0);
+	});
+
+	it('a priority waiting task becomes a bubble, not a shark', () => {
+		const waiting = task({
+			id: 'p',
+			priority: true,
+			status: 'waiting',
+			condition: { kind: 'time', at: '18:00' }
+		});
+		expect(countOf([waiting], 'bubble')).toBe(1);
+		expect(countOf([waiting], 'shark')).toBe(0);
+	});
+
+	it('a priority treat stays a treat, not a shark', () => {
+		const treat = task({ id: 'p', priority: true, treatCost: 3, status: 'waiting' });
+		expect(countOf([treat], 'treat')).toBe(1);
+		expect(countOf([treat], 'shark')).toBe(0);
+	});
+
+	it('shark has a positive tapRadius', () => {
+		const creature = find([task({ id: 'p', priority: true })], 'p');
+		expect(creature?.tapRadius).toBeGreaterThan(0);
+	});
+
+	it('shark taskId matches the task id', () => {
+		const creature = find([task({ id: 'p', priority: true })], 'p');
+		expect(creature?.kind).toBe('shark');
+		expect(creature?.taskId).toBe('p');
+	});
+
+	it('non-priority task is not a shark', () => {
+		expect(countOf([task({ id: 'n' })], 'shark')).toBe(0);
+	});
+});

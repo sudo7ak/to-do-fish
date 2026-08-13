@@ -73,7 +73,8 @@ const TAP_RADIUS: Record<CreatureKind, number> = {
 	koi: 38,
 	treat: 36,
 	pearl: 16,
-	sync: 22
+	sync: 22,
+	shark: 36
 };
 
 export function buildScene(
@@ -145,7 +146,8 @@ function toCreature(task: Task, live: Task[], now: number): Creature {
 		};
 	}
 
-	// Open: a plain task, a released bubble, or a claimed treat swimming as an amber fish.
+	// Open: priority tasks swim as sharks; treats swim as amber fish; plain tasks as fish.
+	if (task.priority && task.treatCost === undefined) return base(task, 'shark', 0.45);
 	const fish = base(task, 'fish', 0.5);
 	return task.treatCost !== undefined ? { ...fish, claimed: true, cost: task.treatCost } : fish;
 }

@@ -22,7 +22,12 @@ export type Species =
 	| 'koi'
 	| 'exotic'
 	| 'lionfish'
-	| 'mandarin';
+	| 'mandarin'
+	| 'reef'
+	| 'hammerhead'
+	| 'whale'
+	| 'nurse'
+	| 'thresher';
 
 export type FinKind = 'dorsal' | 'anal' | 'pectoral' | 'pelvic' | 'caudal';
 
@@ -417,6 +422,172 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 		wave: { amplitude: 0.1, wavelength: 1.6, speed: 3 }
 	},
 
+	// ── Sharks ───────────────────────────────────────────────────────────────
+	//
+	// All five share the same structural grammar: pointed snout [0, 0.01], a
+	// well-developed crescent caudal (large span, high sweep), a tall triangular
+	// dorsal sitting forward on the back, and stiff blade fins (no veil). They
+	// are larger than ordinary fish and swim with a slower, more deliberate wave.
+	//
+	// The five breeds are differentiated by silhouette, not colour — just as the
+	// tank's reef fish are. A side-by-side of outlines should make all five
+	// immediately distinguishable.
+
+	// Classic torpedo. The mental image everyone reaches for when they think "shark":
+	// long, lean, pointed at both ends. Depth/length ≈ 0.28 — the most elongated.
+	reef: {
+		length: 56,
+		profile: [
+			[0, 0.01],
+			[0.1, 0.11],
+			[0.35, 0.16],
+			[0.65, 0.14],
+			[0.85, 0.06],
+			[1, 0.02]
+		],
+		fins: [
+			caudal(0.38, 1.1, 0.5),
+			{ anchor: 0.3, kind: 'dorsal', span: 0.32, sweep: 0.6, lag: 0.2 },
+			{ anchor: 0.6, kind: 'dorsal', span: 0.1, sweep: 0.5, lag: 0.2 },
+			{ anchor: 0.65, kind: 'anal', span: 0.14, sweep: 0.6, lag: 0.3 },
+			{ anchor: 0.22, kind: 'pectoral', span: 0.24, sweep: 1.1, lag: 0.2 }
+		],
+		palette: {
+			back: '#4a6a7a',
+			belly: '#c8d8de',
+			fin: '#3a5465',
+			marking: '#c8d8de',
+			iris: '#0d1a22'
+		},
+		pattern: 'none',
+		wave: { amplitude: 0.09, wavelength: 1.6, speed: 6 }
+	},
+
+	// The unmistakeable wide, flat cephalofoil head. Profile widens sharply at the
+	// snout then narrows to a slender body — that contrast is what reads as hammerhead
+	// even at 40 px. Depth/length ≈ 0.46 at the head, 0.20 at mid-body.
+	hammerhead: {
+		length: 52,
+		profile: [
+			[0, 0.01],
+			[0.06, 0.24],
+			[0.14, 0.22],
+			[0.38, 0.15],
+			[0.68, 0.12],
+			[0.86, 0.05],
+			[1, 0.02]
+		],
+		fins: [
+			caudal(0.34, 1.0, 0.5),
+			{ anchor: 0.28, kind: 'dorsal', span: 0.35, sweep: 0.55, lag: 0.2 },
+			{ anchor: 0.62, kind: 'dorsal', span: 0.09, sweep: 0.5, lag: 0.2 },
+			{ anchor: 0.66, kind: 'anal', span: 0.13, sweep: 0.6, lag: 0.3 },
+			{ anchor: 0.2, kind: 'pectoral', span: 0.22, sweep: 1.0, lag: 0.2 }
+		],
+		palette: {
+			back: '#3d5c4a',
+			belly: '#b8ccc0',
+			fin: '#2e4a3a',
+			marking: '#b8ccc0',
+			iris: '#0a1510'
+		},
+		pattern: 'none',
+		wave: { amplitude: 0.08, wavelength: 1.7, speed: 5 }
+	},
+
+	// The gentle giant: broad, blunt-nosed, enormous — length 72 makes it visibly
+	// the largest animal in the tank. Wide flat body (depth/length ≈ 0.36) and
+	// spots mark it as something categorically different.
+	whale: {
+		length: 72,
+		profile: [
+			[0, 0.03],
+			[0.1, 0.2],
+			[0.35, 0.36],
+			[0.62, 0.3],
+			[0.82, 0.14],
+			[1, 0.03]
+		],
+		fins: [
+			caudal(0.44, 1.0, 0.5),
+			{ anchor: 0.32, kind: 'dorsal', span: 0.26, sweep: 0.5, lag: 0.2 },
+			{ anchor: 0.62, kind: 'anal', span: 0.16, sweep: 0.5, lag: 0.3 },
+			{ anchor: 0.2, kind: 'pectoral', span: 0.28, sweep: 1.0, lag: 0.2 }
+		],
+		palette: {
+			back: '#1a2e40',
+			belly: '#4a6a7a',
+			fin: '#142232',
+			marking: '#8ab0c0',
+			iris: '#0a1520'
+		},
+		pattern: 'spots',
+		wave: { amplitude: 0.07, wavelength: 1.8, speed: 4 }
+	},
+
+	// Stocky, bottom-hugging — shorter body but wide mid-section gives it a slug-like
+	// silhouette (depth/length ≈ 0.38). Swims slowly, close to the floor (depth 0.75
+	// in build.ts is handled by the scene; the species itself is just the outline).
+	nurse: {
+		length: 48,
+		profile: [
+			[0, 0.02],
+			[0.12, 0.18],
+			[0.38, 0.28],
+			[0.66, 0.22],
+			[0.88, 0.08],
+			[1, 0.03]
+		],
+		fins: [
+			caudal(0.28, 0.7, 0.6),
+			{ anchor: 0.36, kind: 'dorsal', span: 0.22, sweep: 0.5, lag: 0.3 },
+			{ anchor: 0.6, kind: 'dorsal', span: 0.18, sweep: 0.5, lag: 0.3 },
+			{ anchor: 0.62, kind: 'anal', span: 0.16, sweep: 0.5, lag: 0.4 },
+			{ anchor: 0.22, kind: 'pectoral', span: 0.2, sweep: 1.0, lag: 0.2 }
+		],
+		palette: {
+			back: '#7a6048',
+			belly: '#c0a880',
+			fin: '#5a4832',
+			marking: '#c0a880',
+			iris: '#1a1008'
+		},
+		pattern: 'none',
+		wave: { amplitude: 0.1, wavelength: 1.5, speed: 5 }
+	},
+
+	// Dramatic elongated upper caudal lobe — roughly as long as the body itself.
+	// The slender body with that exaggerated tail is the whole identity. At 40 px the
+	// upper lobe reads as a spike extending well behind the fish.
+	thresher: {
+		length: 50,
+		profile: [
+			[0, 0.01],
+			[0.1, 0.1],
+			[0.34, 0.16],
+			[0.62, 0.12],
+			[0.84, 0.04],
+			[1, 0.01]
+		],
+		fins: [
+			// Elongated upper lobe: large span, strong sweep, placed at the tail root.
+			// `caudal` always anchors at 1; the long sweep pushes the tip far behind.
+			caudal(0.85, 1.3, 0.4),
+			{ anchor: 0.28, kind: 'dorsal', span: 0.3, sweep: 0.55, lag: 0.2 },
+			{ anchor: 0.64, kind: 'anal', span: 0.1, sweep: 0.6, lag: 0.3 },
+			{ anchor: 0.2, kind: 'pectoral', span: 0.22, sweep: 1.1, lag: 0.2 }
+		],
+		palette: {
+			back: '#5a7098',
+			belly: '#c0ccd8',
+			fin: '#445878',
+			marking: '#c0ccd8',
+			iris: '#0e1828'
+		},
+		pattern: 'none',
+		wave: { amplitude: 0.1, wavelength: 1.5, speed: 7 }
+	},
+
 	// The guilty pleasure: oversized sails, the most ornate thing in the tank.
 	exotic: {
 		length: 44,
@@ -470,6 +641,10 @@ export const SWIMMERS: Species[] = [
  * that stride shares a factor with the species count only a couple of species ever
  * appear.
  */
+
+/** The five shark breeds, one per priority task. Stable per task id like speciesFor. */
+export const SHARKS: Species[] = ['reef', 'hammerhead', 'whale', 'nurse', 'thresher'];
+
 /** The prizes. Chosen by task id, so two treats on one day are not clones. */
 export const TREATS: Species[] = ['exotic', 'lionfish', 'mandarin'];
 
@@ -483,4 +658,13 @@ export function treatSpeciesFor(id: string): Species {
 
 export function speciesFor(id: string): Species {
 	return SWIMMERS[Math.floor(mix32(hash(id)) * SWIMMERS.length)];
+}
+
+/**
+ * Which of the five shark breeds a priority task wears. Stable per task id —
+ * toggling priority off and on again gives you the same shark. Uses a different
+ * hash mix than speciesFor so a task is not the same breed as its fish species.
+ */
+export function sharkSpeciesFor(id: string): Species {
+	return SHARKS[Math.floor(mix32(hash(id) ^ 0x5a4b) * SHARKS.length)];
 }

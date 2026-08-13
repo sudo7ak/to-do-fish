@@ -87,6 +87,7 @@
 		onEdit: (task: Task) => void;
 		onMove: (id: string, date: string) => void;
 		onDelete: (id: string) => void;
+		onTogglePriority: (id: string) => void;
 		onClose: () => void;
 	};
 
@@ -99,6 +100,7 @@
 		onEdit,
 		onMove,
 		onDelete,
+		onTogglePriority,
 		onClose
 	}: Props = $props();
 
@@ -158,6 +160,16 @@
 			{/if}
 			{#if actions.includes('complete')}
 				<button type="button" onclick={() => act(() => onComplete(task.id))}>Done</button>
+			{/if}
+
+			{#if task.status !== 'done' && task.treatCost === undefined}
+				<button
+					type="button"
+					class="ghost"
+					onclick={() => act(() => onTogglePriority(task.id))}
+				>
+					{task.priority ? '🐟 Remove priority' : '🦈 Make priority'}
+				</button>
 			{/if}
 
 			<button type="button" class="ghost" onclick={() => act(() => onEdit(task))}>Edit</button>

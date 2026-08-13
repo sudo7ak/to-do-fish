@@ -22,6 +22,7 @@ export type Task = {
 	createdAt: number;
 	completedAt?: number;
 	updatedAt: number; // bumped on every mutation
+	priority?: boolean; // true = renders as a shark
 	deletedAt?: number; // soft delete; rows are never spliced out
 };
 

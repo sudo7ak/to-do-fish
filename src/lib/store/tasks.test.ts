@@ -390,3 +390,49 @@ describe('markLegendSeen', () => {
 		expect(markLegendSeen(state, 500).settings.environment).toBe('calm');
 	});
 });
+
+import { togglePriority } from './tasks';
+
+describe('togglePriority', () => {
+	it('sets priority to true on an unprioritised task', () => {
+		const s = state([task({ id: 'a', priority: undefined })]);
+		expect(togglePriority(s, 'a', 100).tasks[0].priority).toBe(true);
+	});
+
+	it('removes priority (sets to undefined) on a prioritised task', () => {
+		const s = state([task({ id: 'a', priority: true })]);
+		const result = togglePriority(s, 'a', 100).tasks[0];
+		expect(result.priority).toBeUndefined();
+	});
+
+	it('bumps updatedAt on toggle', () => {
+		const s = state([task({ id: 'a', updatedAt: 1 })]);
+		expect(togglePriority(s, 'a', 999).tasks[0].updatedAt).toBe(999);
+	});
+
+	it('toggling on then off returns to undefined, not false', () => {
+		const s = state([task({ id: 'a' })]);
+		const on = togglePriority(s, 'a', 100);
+		const off = togglePriority(on, 'a', 200);
+		expect(off.tasks[0].priority).toBeUndefined();
+	});
+
+	it('leaves other tasks untouched', () => {
+		const s = state([task({ id: 'a' }), task({ id: 'b' })]);
+		const result = togglePriority(s, 'a', 100);
+		expect(result.tasks[1].id).toBe('b');
+		expect(result.tasks[1].priority).toBeUndefined();
+	});
+});
+
+describe('addTask — priority', () => {
+	it('stores priority:true when draft has priority', () => {
+		const result = addTask(state(), { title: 'Urgent', date: DAY, priority: true }, 100, 'id-p');
+		expect(result.ok && result.state.tasks[0].priority).toBe(true);
+	});
+
+	it('omits priority field when draft has no priority', () => {
+		const result = addTask(state(), { title: 'Normal', date: DAY }, 100, 'id-n');
+		expect(result.ok && result.state.tasks[0].priority).toBeUndefined();
+	});
+});

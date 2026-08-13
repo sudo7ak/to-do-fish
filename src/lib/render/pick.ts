@@ -22,6 +22,7 @@ const STACKING: Record<Creature['kind'], number> = {
 	bubble: 1,
 	ghost: 2,
 	fish: 3,
+	shark: 3,
 	koi: 4,
 	treat: 5,
 	sync: 6
