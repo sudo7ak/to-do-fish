@@ -6,7 +6,7 @@
 	// The one network call in the app. Everything else is localStorage, and the tank
 	// keeps working with this blocked -- the script is `defer` and nothing reads it.
 	const UMAMI_SRC = 'https://cloud.umami.is/script.js';
-	const UMAMI_WEBSITE_ID = '95339bea-458c-446c-9c19-865b93ee5bfa';
+	const UMAMI_WEBSITE_ID = '3c183bf9-0288-4ae4-abf9-e0bd3f9fd69d';
 
 	onMount(() => {
 		// Two gates, because the counts are only worth having if they are honest.
