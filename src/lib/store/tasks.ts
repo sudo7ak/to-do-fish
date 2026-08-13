@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/sveltekit';
 import { writable, get, type Readable } from 'svelte/store';
 import {
 	SCHEMA_VERSION,
@@ -214,7 +215,8 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 		try {
 			await port.save({ version: SCHEMA_VERSION, ...carried, ...next });
 			saveFailed.set(false);
-		} catch {
+		} catch (error) {
+			Sentry.captureException(error, { tags: { source: 'task-save' } });
 			saveFailed.set(true);
 		}
 	}

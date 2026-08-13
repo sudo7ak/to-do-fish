@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/sveltekit';
 import { SCHEMA_VERSION, type Snapshot } from '../types';
 import { StorageUnavailableError, type TaskStore } from './port';
 import { migrate } from './migrate';
@@ -78,6 +79,10 @@ export class LocalTaskStore implements TaskStore {
 	 * cannot be written, starting fresh still beats refusing to open.
 	 */
 	#quarantine(raw: string): Snapshot {
+		Sentry.captureException(new Error('Corrupt snapshot quarantined'), {
+			tags: { source: 'local-storage' },
+			extra: { rawLength: raw.length, storageKey: STORAGE_KEY }
+		});
 		try {
 			this.#storage?.setItem(`${STORAGE_KEY}.corrupt.${this.#now()}`, raw);
 		} catch {

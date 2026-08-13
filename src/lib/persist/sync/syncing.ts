@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/sveltekit';
 import { SCHEMA_VERSION, type Snapshot } from '../../types';
 import { StorageUnavailableError, type TaskStore } from '../port';
 import { claimFor, merge, type RemoteSnapshot } from './merge';
@@ -323,7 +324,10 @@ export class SyncingTaskStore implements TaskStore {
 		// looking in the wrong place. It gets its own state.
 		if (error instanceof StorageUnavailableError) return this.#status('storage');
 
-		if (!(error instanceof SyncUnavailableError)) return this.#status('offline');
+		if (!(error instanceof SyncUnavailableError)) {
+			Sentry.captureException(error, { tags: { source: 'sync' } });
+			return this.#status('offline');
+		}
 
 		// `rejected` is the one failure that will never come right on its own: the
 		// server understood the write and refused the data, so the same rows will be

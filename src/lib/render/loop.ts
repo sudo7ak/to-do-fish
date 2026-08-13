@@ -18,6 +18,8 @@ export type Frame = {
 
 export type RenderLoopOptions = {
 	draw: (frame: Frame) => void;
+	/** Called when draw throws. Receives the caught value so the caller can report it. */
+	onError?: (error: unknown) => void;
 	raf?: (cb: FrameRequestCallback) => number;
 	cancelRaf?: (handle: number) => void;
 	isHidden?: () => boolean;
@@ -81,6 +83,7 @@ export function createRenderLoop(options: RenderLoopOptions): RenderLoop {
 		} catch (error) {
 			// A single bad frame must not end the session. Report and keep going.
 			console.error('Tank draw failed', error);
+			options.onError?.(error);
 		}
 
 		schedule();

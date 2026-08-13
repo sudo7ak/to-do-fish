@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import * as Sentry from '@sentry/sveltekit';
 	import { createRenderLoop, type Frame } from '../render/loop';
 
 	/**
@@ -52,7 +53,8 @@
 		observer.observe(canvas);
 
 		const loop = createRenderLoop({
-			draw: (frame) => draw(ctx, frame, size)
+			draw: (frame) => draw(ctx, frame, size),
+			onError: (error) => Sentry.captureException(error, { tags: { source: 'draw-loop' } })
 		});
 		loop.start();
 
