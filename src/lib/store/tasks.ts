@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/sveltekit';
 import { writable, get, type Readable } from 'svelte/store';
+import { track } from '../analytics';
 import {
 	SCHEMA_VERSION,
 	type Condition,
@@ -223,6 +224,11 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 	 */
 	let carried: Pick<Snapshot, 'owner'> = {};
 
+	// Resets on reload -- a per-session count, not a lifetime one. Umami's own
+	// sessions are visit-scoped the same way, so this lines up with how the
+	// dashboard already buckets everything else.
+	let completedThisSession = 0;
+
 	function publish(next: State) {
 		state.set(next);
 		tasks.set(next.tasks);
@@ -264,10 +270,20 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 
 		addTask: (draft) => apply(addTask(get(state), draft, clock())),
 		editTask: (id, patch) => apply(editTask(get(state), id, patch, clock())),
-		claimTreat: (id) => apply(claimTreat(get(state), id, clock())),
+		async claimTreat(id) {
+			const outcome = await apply(claimTreat(get(state), id, clock()));
+			if (outcome.ok) track('treat_claimed');
+			return outcome;
+		},
 
 		moveToDate: (id, date) => commit(moveToDate(get(state), id, date, clock())),
-		completeTask: (id) => commit(completeTask(get(state), id, clock())),
+		async completeTask(id) {
+			const koiBefore = get(state).koi.length;
+			await commit(completeTask(get(state), id, clock()));
+			completedThisSession += 1;
+			track('task_completed', { count: completedThisSession });
+			if (get(state).koi.length > koiBefore) track('koi_earned');
+		},
 		softDelete: (id) => commit(softDelete(get(state), id, clock())),
 		releaseBubble: (id) => commit(releaseBubble(get(state), id, clock())),
 		togglePriority: (id) => commit(togglePriority(get(state), id, clock())),
