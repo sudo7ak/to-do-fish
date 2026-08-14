@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupTasks, describeSelection } from './ListView.svelte';
+import { groupTasks, describeSelection, pearlsAtStake } from './ListView.svelte';
 import type { Task } from '../types';
 
 const DAY = '2026-08-08';
@@ -113,5 +113,36 @@ describe('describeSelection', () => {
 
 	it('uses the plural for more', () => {
 		expect(describeSelection(4)).toBe('4 tasks selected');
+	});
+});
+
+describe('pearlsAtStake', () => {
+	it('counts a selected done non-treat task', () => {
+		const tasks = [task({ id: 'a', status: 'done' })];
+		expect(pearlsAtStake(tasks, ['a'])).toBe(1);
+	});
+
+	it('ignores tasks not in the selection', () => {
+		const tasks = [task({ id: 'a', status: 'done' }), task({ id: 'b', status: 'done' })];
+		expect(pearlsAtStake(tasks, ['a'])).toBe(1);
+	});
+
+	it('ignores a selected open task — nothing earned yet', () => {
+		const tasks = [task({ id: 'a', status: 'open' })];
+		expect(pearlsAtStake(tasks, ['a'])).toBe(0);
+	});
+
+	it('ignores a completed treat — its cost was spent, not earned', () => {
+		const tasks = [task({ id: 'a', status: 'done', treatCost: 5 })];
+		expect(pearlsAtStake(tasks, ['a'])).toBe(0);
+	});
+
+	it('sums across a multi-task selection', () => {
+		const tasks = [
+			task({ id: 'a', status: 'done' }),
+			task({ id: 'b', status: 'done' }),
+			task({ id: 'c', status: 'open' })
+		];
+		expect(pearlsAtStake(tasks, ['a', 'b', 'c'])).toBe(2);
 	});
 });

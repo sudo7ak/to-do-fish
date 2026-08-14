@@ -48,6 +48,17 @@
 		if (count === 0) return 'Nothing selected';
 		return `${count} ${count === 1 ? 'task' : 'tasks'} selected`;
 	}
+
+	/**
+	 * How many pearls a bulk delete of `selected` would drop. Pearls are derived
+	 * (`pearlBalance` in store/pearls.ts) from exactly this predicate — a done,
+	 * non-treat task — so this must stay in step with that, not reimplement it loosely.
+	 */
+	export function pearlsAtStake(tasks: Task[], selected: Iterable<string>): number {
+		const ids = new Set(selected);
+		return tasks.filter((t) => ids.has(t.id) && t.status === 'done' && t.treatCost === undefined)
+			.length;
+	}
 </script>
 
 <script lang="ts">
@@ -89,6 +100,12 @@
 	const groups = $derived(groupTasks(tasks, date));
 	let selected = $state(new Set<string>());
 
+	// Deleting a completed non-treat task drops a pearl from the balance. Worth a
+	// second tap before it's gone — the rest of the app never destroys a pearl
+	// silently.
+	const atStake = $derived(pearlsAtStake(tasks, selected));
+	let armed = $state(false);
+
 	// A selection that outlived the date it was made on would move the wrong tasks.
 	$effect(() => {
 		date;
@@ -100,6 +117,7 @@
 		if (next.has(id)) next.delete(id);
 		else next.add(id);
 		selected = next;
+		armed = false;
 	}
 
 	function moveSelected(days: number) {
@@ -111,8 +129,13 @@
 	}
 
 	function deleteSelected() {
+		if (atStake > 0 && !armed) {
+			armed = true;
+			return;
+		}
 		for (const id of selected) onDelete(id);
 		selected = new Set();
+		armed = false;
 	}
 
 </script>
@@ -179,7 +202,14 @@
 				<span>{describeSelection(selected.size)}</span>
 				<button type="button" onclick={() => moveSelected(1)}>Push to tomorrow</button>
 				<button type="button" onclick={() => moveSelected(-1)}>Pull to yesterday</button>
-				<button type="button" class="danger" onclick={deleteSelected}>Delete</button>
+				{#if armed}
+					<span class="pearl-warning">
+						Removes {atStake} {atStake === 1 ? 'pearl' : 'pearls'} —
+					</span>
+				{/if}
+				<button type="button" class="danger" onclick={deleteSelected}>
+					{armed ? 'Confirm delete' : 'Delete'}
+				</button>
 			</div>
 		{/if}
 	</section>
@@ -308,6 +338,12 @@
 
 	.danger {
 		background: #a03325;
+	}
+
+	.pearl-warning {
+		font-size: 0.78rem;
+		color: #a03325;
+		font-weight: 600;
 	}
 
 	button:focus-visible,
