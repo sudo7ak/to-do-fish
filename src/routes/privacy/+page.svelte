@@ -142,6 +142,7 @@
 		<h2>8. Contact</h2>
 		<p>
 			Questions about this policy or data deletion requests:
+			email <a href="mailto:codekoolie@gmail.com">codekoolie@gmail.com</a> or
 			open an issue at
 			<a href="https://github.com/sudo7ak/to-do-fish/issues" target="_blank" rel="noopener noreferrer">github.com/sudo7ak/to-do-fish</a>.
 		</p>
