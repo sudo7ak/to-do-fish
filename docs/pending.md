@@ -9,7 +9,8 @@ that was closed. This file supersedes its open items — where the two disagree,
 one is current.
 
 State at the time of writing: 456 unit tests, 57/57 E2E checks, 0 typecheck errors,
-clean build.
+clean build. State as of 2026-08-14: 684 unit tests, 70/71 E2E checks (the 1 failure
+is a pre-existing local-env issue, unrelated to this file's items), 0 typecheck errors.
 
 Each item says whether it was **measured**, **looked at**, or **structural**, because
 the ones reasoned about rather than looked at are the ones that have been wrong before.
@@ -138,13 +139,21 @@ whether the marking colour was ever painted, which is the property it always mea
 
 ### 2.2 Puffer palette reads muddy
 
-**Looked at.** Brown-heavy, reads dirty rather than sandy next to the brighter
-species.
+**Looked at, re-reviewed 2026-08-14.** Brown-heavy, reads dirty rather than sandy
+next to the brighter species — that was the original call. Screenshotted again at
+8× and it read as golden/sandy, spots legible, not obviously muddy. Left untouched:
+a palette change on a subjective call this ambiguous, without a sharper measured
+complaint, risks the same "art done blind" trap this file warns about. See
+`scripts/tmp-debug/puffer-zoom.png` for the crop — worth an owner's own eye before
+touching the palette.
 
-### 2.3 Eel dorsal is wrong for the body
+### 2.3 Eel dorsal is wrong for the body — fixed 2026-08-14
 
-**Looked at.** A single short dorsal on a long serpentine body looks like a mistake.
-Eels want a fin running most of the length.
+Was: a single short dorsal (`span: 0.05`) on an 86-length serpentine body, reading as
+a mistake. Replaced with four small overlapping dorsal fins (`anchor` 0.18/0.36/0.54/
+0.72, `span` ~0.14–0.15 each) that build a continuous low ridge running most of the
+body, rather than one fin scaled up — a single fin that size would sail well above a
+body this thin instead of hugging it. Verified at 5× (`scripts/tmp-debug/eel-zoom2.png`).
 
 ### 2.4 `Profile` is symmetric top-to-bottom
 
@@ -153,12 +162,14 @@ Eels want a fin running most of the length.
 (swordtail, catfish, hatchetfish) are unbuildable until it splits into top and bottom
 profiles. Not a bug; a ceiling on which species can exist.
 
-### 2.5 Angel fins wash out; koi no longer reads as special
+### 2.5 Angel fins wash out; koi no longer reads as special — stale, already fixed
 
-**Looked at, from the anatomy pass.** The angel's `#fff0d2` fins disappear against
-its own cream body and against the koi when the two overlap. The koi lost its bright
-gold rim stroke in the spine port and now blends with the angel — both cream-orange,
-both marked. Re-adding a distinguishing rim is the cheap fix.
+**Was already landed by `2b0462d` ("separate the angel's fins from its body, and the
+koi from both", 2026-08-08) before this file's last edit — never struck, so it sat
+here reading as open for no reason.** Re-verified 2026-08-14 at 5×
+(`scripts/tmp-debug/koi-zoom.png`): the koi carries a bright gold rim with a shadow
+bloom (`drawKoi` in `creatures.ts`) and the angel's fins are a darker bronze against
+its own cream body — the two are unmistakable side by side. No code change needed.
 
 ### 2.6 A tail can still clip the tank edge at ~20 tasks
 
@@ -204,12 +215,14 @@ No stored fact distinguishes "claimed then completed" from "completed without
 claiming", so any repair is inference. Decide between a one-off repair and leaving
 history alone.
 
-### 3.2 Deleting a completed task silently removes a pearl
+### 3.2 Deleting a completed task silently removes a pearl — warned 2026-08-14
 
-Correct behaviour for a derived total, and the spec is explicit. Recorded because it
-will eventually surprise someone mid-save-up. If it does: either exclude soft-deleted
-tasks from `earned` only (asymmetric, messy), or warn in the delete confirmation when
-the task is a completed non-treat.
+Balance derivation is unchanged (still correct per spec). `ListView`'s bulk delete now
+counts, via `pearlsAtStake`, how many selected tasks are done-and-non-treat, and if
+that's above zero the first tap arms a warning ("Removes N pearls —") instead of
+deleting; a second tap confirms. Single-task delete (`CreatureSheet`) was not
+touched — only the list's bulk action had the immediate-delete problem this item
+named.
 
 ### 3.3 No undo, anywhere
 
@@ -262,7 +275,18 @@ so an old build would have coped with the *shape*; it breaks only on the version
 
 `WATERLINE = 128` clears a ~70px desktop header comfortably. With
 `safe-area-inset-top ≈ 47px` the header is ~97px and the treat fish clears it by a few
-pixels. **Untested on a real device.** If it collides, raise `WATERLINE`.
+pixels.
+
+**Checked 2026-08-14, simulated rather than on a real device.** `env(safe-area-inset-top)`
+can't be spoofed by script injection, so `scripts/tmp-waterline-check.mjs` forced the
+header's `padding-top` to 59px (iPhone 14 Pro-class Dynamic Island, worse than the
+47px this item assumed) via a `!important` style override and screenshotted the top
+of the tank with several treats seeded near the surface. No collision — the header's
+actual rendered content clears the waterline with margin, even at that worse inset.
+The 128px figure includes header box padding that isn't all filled with visible text,
+which is what made the arithmetic above look tighter than what actually renders.
+Still not a physical-device test — leave open if anyone reports it live, but the
+simulated worst case did not reproduce it.
 
 ### 5.2 The header inset is a magic number
 
@@ -270,11 +294,48 @@ The date header is inset `4.25rem` to clear corner buttons fixed at `1rem` and 2
 wide — three constants in two files that must agree, enforced by nothing. Resizing the
 buttons re-introduces the swallowed-arrow bug the E2E suite caught.
 
-### 5.3 The tank is pointer-only
+### 5.3 The tank is pointer-only — discoverability closed 2026-08-14
 
 By design: a canvas offers nothing to a keyboard or screen reader, which is why the
-list is a first-class second view. But every tank interaction is unreachable without a
-pointer. Worth a keyboard shortcut to the list, or a note in the UI.
+list is a first-class second view. The escape hatch (the "Task list" corner button)
+was already a real, Tab-reachable `<button>` since v1 — that part was never broken.
+What was missing is what this item actually asked for: a keyboard shortcut, and a
+note in the UI. A visually-hidden paragraph next to the tank now tells a
+screen-reader user the canvas is decorative and points them at the button/Settings.
+
+The shortcut went through two revisions live. First landed as a hardcoded `l`, which
+a Vimium-style browser extension silently ate before the page ever saw it — worked
+in incognito with extensions off, confirming the collision. Changed to a hardcoded
+Shift+L, outside that extension's default bindings. Then made **configurable in
+Settings instead, blank by default** — a bare or fixed default key can always collide
+with *something* on *someone's* machine, and there's no way to pick a default that's
+safe for every extension set. Now each person binds their own combo (captured live
+via a keydown listener in `Settings.svelte`, stored device-locally in
+`src/lib/ui/shortcut.ts` under its own `localStorage` key — deliberately not part of
+`Settings`/`Snapshot`/sync, since a keyboard shortcut means nothing on a device with
+no keyboard, or a different one). `+page.svelte`'s `handleGlobalKey` reads it fresh
+on every keydown via `loadShortcut()`, so a change in Settings takes effect
+immediately, no reload needed. Verified end-to-end with
+`scripts/tmp-configurable-shortcut-check.mjs`: blank by default, capture UI records a
+combo, that combo opens the list, survives a reload, and Clear resets it to blank.
+
+**A costly false alarm along the way, worth recording so it isn't repeated.**
+`scripts/e2e.mjs`'s "tapping a fish opens its sheet" check drives a brute-force
+coordinate sweep and looks for the task's own sheet by aria-label. With a real
+`PUBLIC_SUPABASE_URL` configured locally (`.env.local` — a normal dev setup, not a
+misconfiguration), the tank also renders a `sync` creature that competes for taps;
+hitting it opens Settings instead and disrupts the sweep's remaining coverage. Which
+creature the sweep lands on first is sensitive to hydration timing, which shifts with
+total bundle size — so the check can flip between pass and fail purely from unrelated
+code growing or shrinking elsewhere in the same file, with no change to click-handling
+logic at all. Spent most of a session bisecting Settings.svelte CSS down to
+imaginary "descendant selector" and "margin-top+padding" triggers before finding the
+real cause: building with `PUBLIC_SUPABASE_URL=` (unconfigured) makes the check pass
+reliably regardless of Settings.svelte's content, confirmed both ways many times. The
+tap-to-open mechanism itself was never broken. Worth a real fix in `e2e.mjs`
+(dismiss/ignore the sync creature, or query the store directly instead of blind
+coordinates) — flagged here rather than fixed, since this session was already deep in
+someone else's task when it surfaced.
 
 ---
 
