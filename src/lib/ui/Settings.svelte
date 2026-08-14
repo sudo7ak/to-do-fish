@@ -27,6 +27,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { base } from '$app/paths';
+	import { loadShortcut, saveShortcut, fromEvent, describe as describeShortcut, type Shortcut } from './shortcut';
 
 	type Props = {
 		open: boolean;
@@ -42,7 +43,44 @@
 	};
 
 	const { open, environment, onChange, onOpenLegend, onClose, sync }: Props = $props();
+
+	// Device-local, not a prop from the domain store — see shortcut.ts for why.
+	// Re-read every time the sheet opens rather than once at mount, so a shortcut
+	// set on this device shows correctly even if the component instance is reused.
+	let shortcut = $state<Shortcut | null>(null);
+	let listening = $state(false);
+
+	$effect(() => {
+		if (open) shortcut = loadShortcut();
+	});
+
+	function startListening() {
+		listening = true;
+	}
+
+	function captureKey(e: KeyboardEvent) {
+		if (!listening) return;
+		e.preventDefault();
+		if (e.key === 'Escape') {
+			listening = false;
+			return;
+		}
+		const next = fromEvent(e);
+		// A bare modifier isn't a shortcut on its own — keep listening for the key
+		// it's held down for.
+		if (!next) return;
+		saveShortcut(next);
+		shortcut = next;
+		listening = false;
+	}
+
+	function clearShortcut() {
+		saveShortcut(null);
+		shortcut = null;
+	}
 </script>
+
+<svelte:window onkeydown={captureKey} />
 
 {#if open}
 	<div
@@ -80,6 +118,21 @@
 			<span>What am I looking at?</span>
 			<span class="chevron" aria-hidden="true">›</span>
 		</button>
+
+		<div class="shortcut-wrap">
+			<div class="shortcut-row">
+				<span>List view shortcut</span>
+				<span class="shortcut-value">{listening ? 'Press a key…' : describeShortcut(shortcut)}</span>
+			</div>
+			<div class="shortcut-actions">
+				<button type="button" class="shortcut-btn" onclick={startListening} disabled={listening}>
+					{shortcut ? 'Change' : 'Set shortcut'}
+				</button>
+				{#if shortcut}
+					<button type="button" class="shortcut-btn" onclick={clearShortcut}>Clear</button>
+				{/if}
+			</div>
+		</div>
 
 		{#if sync}
 			{@render sync()}
@@ -209,6 +262,45 @@
 
 	.chevron {
 		opacity: 0.5;
+	}
+
+	.shortcut-wrap {
+		margin-top: 1rem;
+	}
+
+	.shortcut-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		padding: 0.75rem 0.9rem;
+		border-radius: 0.75rem;
+		background: rgba(18, 48, 58, 0.08);
+		color: #12303a;
+		font-size: 0.95rem;
+	}
+
+	.shortcut-value {
+		opacity: 0.65;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.shortcut-actions {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.shortcut-btn {
+		padding: 0.5rem 0.9rem;
+		font-size: 0.85rem;
+		background: rgba(18, 48, 58, 0.1);
+		color: #12303a;
+	}
+
+	.shortcut-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 
 	.actions {

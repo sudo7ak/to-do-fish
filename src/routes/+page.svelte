@@ -28,6 +28,7 @@
 	import Settings from '$lib/ui/Settings.svelte';
 	import Legend from '$lib/ui/Legend.svelte';
 	import SyncPanel from '$lib/ui/SyncPanel.svelte';
+	import { loadShortcut, matches as matchesShortcut } from '$lib/ui/shortcut';
 	import { shouldAutoOpen } from '$lib/store/settings';
 
 	const auth = createAuth();
@@ -336,12 +337,41 @@
 			: store.addTask(draft);
 	}
 
+	/**
+	 * The canvas offers a keyboard user nothing — the corner "Task list" button is
+	 * the only Tab-reachable route in, and nothing on screen says so. A shortcut set
+	 * in Settings opens the same list view as that button, for anyone who reaches
+	 * for one instead of hunting the corners.
+	 *
+	 * Blank by default rather than shipping a bound key: a bare, unmodified letter
+	 * is exactly what Vim-style browser extensions (Vimium and friends) bind, and
+	 * they intercept the keydown before the page ever receives it — confirmed live,
+	 * an earlier default of Shift+L did nothing until isolated to an incognito
+	 * window with extensions off. Read fresh from `loadShortcut()` on every keydown
+	 * rather than cached, so a shortcut set in Settings takes effect immediately.
+	 *
+	 * Also guarded on: no sheet already open (firing under another sheet would be a
+	 * surprise, not a convenience), and the event isn't destined for a text field.
+	 */
+	function handleGlobalKey(e: KeyboardEvent) {
+		if (!matchesShortcut(e, loadShortcut())) return;
+		const target = e.target as HTMLElement | null;
+		if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+		if (target?.isContentEditable) return;
+		if (sheetOpen || listOpen || settingsOpen || legendOpen || selected) return;
+
+		e.preventDefault();
+		listOpen = true;
+	}
+
 
 </script>
 
 <svelte:head>
 	<title>Fish Tank</title>
 </svelte:head>
+
+<svelte:window onkeydown={handleGlobalKey} />
 
 <main>
 	<!-- Pointer picking lives on the wrapper. A canvas offers nothing to a keyboard or
@@ -356,6 +386,11 @@
 		onpointercancel={tankPointerCancel}
 		oncontextmenu={(e) => { if (lastPointerWasTouch) e.preventDefault(); }}
 	>
+		<p class="visually-hidden">
+			This tank is a decorative canvas, not usable with a keyboard or screen reader.
+			Use the "Task list" button (top-left corner) for a fully accessible view of
+			the same tasks. A keyboard shortcut for it can be set in Settings.
+		</p>
 		<Tank {draw} />
 	</div>
 
@@ -502,6 +537,15 @@
 		/* Must match canvas touch-action so the browser does not cancel the touch
 		   sequence on the child before setPointerCapture fires on this element. */
 		touch-action: none;
+	}
+
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 
 	.chrome {
