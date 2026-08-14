@@ -271,7 +271,14 @@ export const SPECIES: Record<Species, SpeciesSpec> = {
 		],
 		fins: [
 			caudal(0.1, 0.5, 1.2),
-			{ anchor: 0.45, kind: 'dorsal', span: 0.05, sweep: 0.5, lag: 1 },
+			// A single fin at one point read as a mistake on a body this long — real eels
+			// carry a low dorsal ridge running most of their length. Four overlapping,
+			// modest-height fins build that ridge instead of one fin scaled up (which
+			// would sail well above a body this thin rather than hug it).
+			{ anchor: 0.18, kind: 'dorsal', span: 0.14, sweep: 0.35, lag: 0.7 },
+			{ anchor: 0.36, kind: 'dorsal', span: 0.15, sweep: 0.35, lag: 0.9 },
+			{ anchor: 0.54, kind: 'dorsal', span: 0.15, sweep: 0.35, lag: 1.1 },
+			{ anchor: 0.72, kind: 'dorsal', span: 0.14, sweep: 0.35, lag: 1.3 },
 			{ anchor: 0.2, kind: 'pectoral', span: 0.05, sweep: 0.9, lag: 0.4 }
 		],
 		palette: {
