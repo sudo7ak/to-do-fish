@@ -7,6 +7,30 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="theme-color" content="#4FC3D9" />
 
+		<!-- ── SEO hero (see body) ──────────────────────────────────── -->
+		<style>
+			.seo-hero {
+				position: fixed;
+				inset: 0;
+				z-index: -1;
+				overflow: hidden;
+				margin: 0;
+				padding: 2rem;
+				box-sizing: border-box;
+				background: #4fc3d9;
+				color: #fff;
+				font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+			}
+			.seo-hero h1 {
+				font-size: 1.5rem;
+				margin: 0 0 0.5rem;
+			}
+			.seo-hero ul {
+				margin: 0.5rem 0 0;
+				padding-left: 1.25rem;
+			}
+		</style>
+
 		<!-- ── Content Security Policy ──────────────────────────────── -->
 		<!--
 		  GitHub Pages cannot set HTTP headers, so this meta tag is the only
@@ -43,6 +67,17 @@
 				form-action 'self';
 			"
 		/>
+
+		<!--
+		  A page with its own ssr:true + <svelte:head> (currently only /about) needs
+		  its <title>, canonical, and og:* tags to win over the static block below.
+		  Per the HTML spec and every OG/Twitter parser, duplicate tags resolve to the
+		  FIRST one in document order, so the SvelteKit head placeholder below is
+		  placed here, above the static block, to make that override real. Root
+		  (`ssr = false`) has no <svelte:head> output, so this resolves empty there
+		  and the block below remains root's only (and therefore first) set of tags.
+		-->
+		%sveltekit.head%
 
 		<!-- ── Identity ─────────────────────────────────────────────── -->
 		<title>Fish Tank To-Do</title>
@@ -94,23 +129,33 @@
 				"price": "0",
 				"priceCurrency": "GBP"
 			},
-			"aggregateRating": {
-				"@type": "AggregateRating",
-				"ratingValue": "5",
-				"ratingCount": "1",
-				"bestRating": "5",
-				"worstRating": "1"
-			},
 			"author": {
 				"@type": "Person",
 				"url": "https://github.com/sudo7ak"
 			}
 		}
 		</script>
-
-		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<!--
+		  The tank is a `<canvas>` (../lib/ui/Tank.svelte) and the app tree renders
+		  client-side only (`ssr = false` in +layout.ts — the store reads localStorage,
+		  which doesn't exist on the server). That leaves zero crawlable text in the
+		  document once the SvelteKit body placeholder below takes over, so this block is plain, static HTML
+		  outside the Svelte tree: it ships in the built index.html unconditionally, is
+		  what search engines and no-JS visitors actually see, and sits behind the canvas
+		  (z-index -1) once the app mounts and paints over it.
+		-->
+		<div class="seo-hero">
+			<h1>Fish Tank To-Do</h1>
+			<p>A to-do app where every task is a fish. Finish something and watch it join the tank.</p>
+			<ul>
+				<li>If-then tasks wait in a bubble until their condition is met.</li>
+				<li>Guilty pleasures are treats priced in pearls you earn by finishing tasks.</li>
+				<li>Local-first — works with no account and no network. Sign in with Google only if you want sync across devices.</li>
+			</ul>
+			<noscript>This app needs JavaScript enabled to run.</noscript>
+		</div>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
