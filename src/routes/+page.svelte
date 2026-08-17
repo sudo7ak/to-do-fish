@@ -145,6 +145,11 @@
 	const emptyDay = $derived(hydrated && scene.creatures.every((c) => c.kind === 'sync'));
 
 	onMount(() => {
+		// The static SEO hero in app.html exists only for crawlers and no-JS visitors,
+		// before this component takes over — its <h1> duplicates DateHeader's once the
+		// real app is up, so it comes out the moment there's a live app to replace it.
+		document.querySelector('.seo-hero')?.remove();
+
 		browserOnline = navigator.onLine;
 		const goOnline = () => (browserOnline = true);
 		const goOffline = () => (browserOnline = false);
