@@ -422,7 +422,18 @@ function swimPosition(
 	// a neighbour — reading, at a glance, as one fish having replaced another. Widening
 	// the shark's own centre range and sweep gives it more of the tank to itself.
 	const isShark = creature.kind === 'shark';
-	const centre = 0.5 + (mix32(seed ^ 0x5a) - 0.5) * (isShark ? 0.8 : 0.5);
+
+	// The lane itself migrates, on a period of minutes rather than the seconds the
+	// sweep across it takes. Without this a fish orbits exactly the same track
+	// forever — its instantaneous speed can burst and glide all it likes, but the
+	// track never changing is what reads as mechanical over a longer watch.
+	// Keyed off real time `t`, not the pace-warped `swim`, so the drift's period
+	// stays a real-world span regardless of how fast a given fish or species swims.
+	const driftRate = 0.012 + mix32(seed ^ 0x6e) * 0.018;
+	const driftPhase = mix32(seed ^ 0x71) * Math.PI * 2;
+	const drift = Math.sin(t * driftRate + driftPhase) * (isShark ? 0.12 : 0.16);
+
+	const centre = 0.5 + (mix32(seed ^ 0x5a) - 0.5) * (isShark ? 0.8 : 0.5) + drift;
 	const ampX = (isShark ? 0.28 : 0.2) + mix32(seed ^ 0x2b) * 0.12;
 	const across = Math.min(0.94, Math.max(0.06, centre + Math.sin(swim) * ampX));
 	const x = size.w * across;

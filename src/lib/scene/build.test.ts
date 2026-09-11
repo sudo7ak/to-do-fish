@@ -374,6 +374,15 @@ describe('buildScene — pointer picking', () => {
 		expect(scene.creatures.every((c) => c.tapRadius > 0)).toBe(true);
 	});
 
+	it('gives an ordinary fish a touch-comfortable tap radius', () => {
+		// A moving target is harder to hit than a still one, so an ordinary fish gets a
+		// larger tap radius than the 44px Apple/Android touch-target guideline implies
+		// for a stationary control.
+		const scene = buildScene([task({ id: 'fish' })], [], DAY, NOON);
+		const fish = scene.creatures.find((c) => c.kind === 'fish');
+		expect(fish?.tapRadius).toBeGreaterThanOrEqual(40);
+	});
+
 	it('gives every creature a unique id', () => {
 		const tasks = [task({ id: 'a', status: 'done' }), task({ id: 'b', status: 'done' })];
 		const scene = buildScene(tasks, [{ date: DAY, earnedAt: 1 }], DAY, NOON);

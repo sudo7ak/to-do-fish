@@ -67,7 +67,9 @@ const DISTANT_MS = 7 * 24 * 60 * 60 * 1000; // a week out: down in the plants
  * work you still have to do; pearls are smallest because tapping one does nothing.
  */
 const TAP_RADIUS: Record<CreatureKind, number> = {
-	fish: 34,
+	// Wider than the other kinds: an ordinary fish is a moving target, and moving
+	// targets need a bigger hit box than a stationary control does.
+	fish: 40,
 	bubble: 32,
 	ghost: 26,
 	koi: 38,

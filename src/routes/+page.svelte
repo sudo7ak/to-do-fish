@@ -9,11 +9,11 @@
 	import { buildScene } from '$lib/scene/build';
 	import { palette } from '$lib/render/palette';
 	import { drawTank, drawForeground, drawFeed } from '$lib/render/water';
-	import { drawCreatures } from '$lib/render/creatures';
+	import { drawCreatures, place } from '$lib/render/creatures';
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
 	import type { Task } from '$lib/types';
-	import type { SyncMood } from '$lib/scene/types';
+	import type { Creature, SyncMood } from '$lib/scene/types';
 	import { createAuth, isSyncConfigured, type Account } from '$lib/auth/session';
 	import { SyncingTaskStore, type SyncStatus } from '$lib/persist/sync/syncing';
 	import { SupabaseRemote } from '$lib/persist/sync/remote';
@@ -30,6 +30,8 @@
 	import SyncPanel from '$lib/ui/SyncPanel.svelte';
 	import { loadShortcut, matches as matchesShortcut } from '$lib/ui/shortcut';
 	import { shouldAutoOpen } from '$lib/store/settings';
+	import { resolveTap, type TapOrigin } from '$lib/ui/tap';
+	import { labelable, clampLabelX } from '$lib/ui/reveal';
 
 	const auth = createAuth();
 
@@ -126,6 +128,21 @@
 	 * drawn, so it reuses this rather than the wall clock.
 	 */
 	let lastFrame = { time: 0, size: { w: 0, h: 0 }, animate: true };
+
+	/**
+	 * Reveal-all: a tap on open water (no fish under the finger) surfaces every
+	 * task's title at once instead of doing nothing, for a few seconds.
+	 *
+	 * `labelEls` is a plain object, not `$state` — `draw()` writes straight to each
+	 * element's `style.transform` every frame so labels track their fish exactly
+	 * the way the canvas does, without turning the render loop into something that
+	 * triggers a Svelte re-render sixty times a second.
+	 */
+	type RevealEntry = { creature: Creature; x: number; y: number };
+	let revealEntries = $state<RevealEntry[]>([]);
+	let revealTimer: ReturnType<typeof setTimeout> | undefined;
+	let labelEls: Record<string, HTMLElement | undefined> = {};
+	const REVEAL_MS = 3200;
 
 	// Prototype: the corner fish. Not wired into anything but its own tint.
 	let browserOnline = $state(true);
@@ -252,6 +269,15 @@
 		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate, scene.feeding);
 		// Haze and vignette last, so they sit over the creatures and give the tank depth.
 		drawForeground(ctx, size, colors);
+
+		// Direct DOM writes, not a `$state` assignment — see the comment on
+		// `revealEntries` for why this must not become a Svelte re-render.
+		for (const entry of revealEntries) {
+			const el = labelEls[entry.creature.id];
+			if (!el) continue;
+			const at = place(entry.creature, size, time, frame.animate);
+			el.style.transform = `translate(${clampLabelX(at.x, size.w)}px, ${at.y}px)`;
+		}
 	}
 
 	// Tap detection for mobile.
@@ -265,7 +291,7 @@
 	//    drift within that range must still register. TAP_SLOP is set to 20px to
 	//    give comfortable margin on all Android densities.
 	// 3. pointerId tracks the specific touch so multi-touch does not corrupt state.
-	let tapOrigin: { x: number; y: number; id: number } | null = null;
+	let tapOrigin: TapOrigin | null = null;
 	const TAP_SLOP = 20;
 
 	let lastPointerWasTouch = false;
@@ -273,7 +299,18 @@
 	function tankPointerDown(event: PointerEvent) {
 		// Capture so pointerup/pointercancel always come back to this element.
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-		tapOrigin = { x: event.clientX, y: event.clientY, id: event.pointerId };
+
+		// Point and time are captured now, at the instant the user aims, not later at
+		// pointerup — a fish swims on for the length of the gesture, so hit-testing
+		// against pointerup's position turns a tap on a moving fish into a near-miss.
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		tapOrigin = {
+			id: event.pointerId,
+			clientX: event.clientX,
+			clientY: event.clientY,
+			point: { x: event.clientX - rect.left, y: event.clientY - rect.top },
+			time: lastFrame.time
+		};
 		lastPointerWasTouch = event.pointerType === 'touch';
 	}
 
@@ -282,17 +319,32 @@
 	}
 
 	function tapTank(event: PointerEvent) {
-		if (!tapOrigin || tapOrigin.id !== event.pointerId) return;
-		const moved = Math.hypot(event.clientX - tapOrigin.x, event.clientY - tapOrigin.y);
+		const resolved = resolveTap(
+			tapOrigin,
+			{ id: event.pointerId, clientX: event.clientX, clientY: event.clientY },
+			TAP_SLOP
+		);
 		tapOrigin = null;
-		if (moved > TAP_SLOP) return; // scroll, not a tap
-
-		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+		if (!resolved) return; // scroll, not a tap — or a different pointer
 
 		const state = store.snapshot();
 		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
-		const hit = pick(scene.creatures, point, lastFrame.size, lastFrame.time, lastFrame.animate);
+		const hit = pick(scene.creatures, resolved.point, lastFrame.size, resolved.time, lastFrame.animate);
+
+		// A tap that lands on open water, not on any fish, reveals every task's title
+		// at once instead of doing nothing — the tank stays glanceable without having
+		// to tap each fish in turn to find one.
+		if (!hit) {
+			clearTimeout(revealTimer);
+			revealEntries = labelable(scene.creatures).map((creature) => {
+				const at = place(creature, lastFrame.size, resolved.time, lastFrame.animate);
+				return { creature, x: clampLabelX(at.x, lastFrame.size.w), y: at.y };
+			});
+			revealTimer = setTimeout(() => {
+				revealEntries = [];
+			}, REVEAL_MS);
+			return;
+		}
 
 		// The overflow treat stands for several tasks at once, so it cannot open a
 		// sheet — it opens the list, which is the view that can show them all.
@@ -397,6 +449,20 @@
 			the same tasks. A keyboard shortcut for it can be set in Settings.
 		</p>
 		<Tank {draw} />
+
+		{#if revealEntries.length}
+			<div class="reveal-layer" aria-hidden="true">
+				{#each revealEntries as entry (entry.creature.id)}
+					<span
+						class="reveal-label"
+						style="transform: translate({entry.x}px, {entry.y}px)"
+						bind:this={labelEls[entry.creature.id]}
+					>
+						<span class="reveal-label__pill">{entry.creature.label}</span>
+					</span>
+				{/each}
+			</div>
+		{/if}
 	</div>
 
 	{#snippet syncSection()}
@@ -542,6 +608,37 @@
 		/* Must match canvas touch-action so the browser does not cancel the touch
 		   sequence on the child before setPointerCapture fires on this element. */
 		touch-action: none;
+	}
+
+	.reveal-layer {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+		/* Decorative, like the canvas beneath it — never in the way of a tap. */
+		pointer-events: none;
+	}
+
+	.reveal-label {
+		position: absolute;
+		left: 0;
+		top: 0;
+		will-change: transform;
+	}
+
+	.reveal-label__pill {
+		display: inline-block;
+		transform: translate(-50%, -170%);
+		max-width: 120px;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		padding: 3px 7px;
+		border-radius: 8px;
+		background: rgba(10, 30, 40, 0.72);
+		color: #fff;
+		font-size: 11px;
+		font-weight: 600;
+		line-height: 1.3;
 	}
 
 	.visually-hidden {

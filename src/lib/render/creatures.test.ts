@@ -581,6 +581,36 @@ describe('place — where creatures sit', () => {
 		expect(fastest).toBeGreaterThan(slowest * 3);
 	});
 
+	it('drifts its lane over minutes rather than orbiting the same fixed track forever', () => {
+		// The midpoint of a fish's swept range in a 90s window reads its lane centre at
+		// that moment almost noiselessly (the fast side-to-side sweep is fully spanned
+		// and cancels out of (max+min)/2), so three widely spaced windows isolate the
+		// slow drift alone — a raw positional average is polluted by however much of
+		// the fast cycle each window happens to catch and cannot tell the two apart.
+		const ids = ['drift-a', 'drift-b', 'drift-c', 'drift-d', 'drift-e'];
+		const laneCentreAt = (id: string, mid: number) => {
+			const fish = creature('fish', { id });
+			let lo = Infinity;
+			let hi = -Infinity;
+			for (let ms = mid - 45_000; ms <= mid + 45_000; ms += 1000) {
+				const x = place(fish, SIZE, ms).x;
+				lo = Math.min(lo, x);
+				hi = Math.max(hi, x);
+			}
+			return (lo + hi) / 2;
+		};
+
+		const spans = ids.map((id) => {
+			const centres = [0, 300_000, 900_000].map((mid) => laneCentreAt(id, mid));
+			return Math.max(...centres) - Math.min(...centres);
+		});
+
+		// At least one fish's lane centre visibly relocates across these three widely
+		// spaced windows — a fixed sine sweep alone holds it pinned to noise (<1px, as
+		// measured against the unmodified formula) no matter how far apart they are.
+		expect(Math.max(...spans)).toBeGreaterThan(10);
+	});
+
 	it('gives two fish different paths, so the shoal does not move as one', () => {
 		const a = creature('fish', { id: 'fish-one' });
 		const b = creature('fish', { id: 'fish-two' });
