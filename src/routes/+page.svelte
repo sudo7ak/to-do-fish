@@ -32,6 +32,8 @@
 	import { shouldAutoOpen } from '$lib/store/settings';
 	import { resolveTap, type TapOrigin } from '$lib/ui/tap';
 	import { labelable, clampLabelX } from '$lib/ui/reveal';
+	import Calendar from '$lib/ui/Calendar.svelte';
+	import { taskDatesOf, koiDatesOf } from '$lib/ui/calendar';
 
 	const auth = createAuth();
 
@@ -112,6 +114,7 @@
 	let listOpen = $state(false);
 	let settingsOpen = $state(false);
 	let legendOpen = $state(false);
+	let calendarOpen = $state(false);
 
 	// Tracks which sync error state the user has dismissed. Reset whenever the
 	// state changes so a new error (or the same one after a sign-in attempt)
@@ -153,6 +156,9 @@
 	const pearls = $derived(pearlBalance($tasks));
 	const scene = $derived(buildScene($tasks, $koi, date, Date.now(), syncMood));
 	const clearedPct = $derived(scene.clearedPct);
+	// For the calendar's day markers — which dates have a live task, which earned a koi.
+	const taskDates = $derived(taskDatesOf($tasks));
+	const koiDates = $derived(koiDatesOf($koi));
 
 	// Only after hydrating: before the store loads, every day looks empty, and a
 	// message that flashes on every launch is worse than none.
@@ -483,6 +489,7 @@
 			{clearedPct}
 			{now}
 			onNavigate={(next) => (date = next)}
+			onOpenCalendar={() => (calendarOpen = true)}
 		/>
 	</div>
 
@@ -579,6 +586,16 @@
 		open={legendOpen}
 		environment={$settings.environment}
 		onClose={() => (legendOpen = false)}
+	/>
+
+	<Calendar
+		open={calendarOpen}
+		{date}
+		{now}
+		{taskDates}
+		{koiDates}
+		onNavigate={(next) => (date = next)}
+		onClose={() => (calendarOpen = false)}
 	/>
 
 

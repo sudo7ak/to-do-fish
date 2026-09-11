@@ -445,23 +445,42 @@ if (treatSheet) {
 	check('confirming the claim spends the pearls', (await pearls()) === before - 1);
 }
 
-// --- getting home -----------------------------------------------------------
+// --- getting home, via the calendar -----------------------------------------
 {
-	const backHome = page.getByRole('button', { name: 'Back to today' });
+	const openCalendar = () => page.getByRole('button', { name: 'Open calendar' }).click();
+	const calendarSheet = page.locator('section[aria-label="Calendar"]');
+	const closeCalendar = () => page.getByRole('button', { name: 'Done', exact: true }).click();
 
-	check('no way-back control while you are on today', (await backHome.count()) === 0);
+	await openCalendar();
+	check('the date label opens the calendar from today too', (await calendarSheet.count()) === 1);
+	await closeCalendar();
+	await page.waitForTimeout(150);
 
 	for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Previous day' }).click();
 	await page.waitForTimeout(250);
-
 	check('five days back is not today', (await heading()) !== 'Today');
-	check('a way back appears once you have wandered', (await backHome.count()) === 1);
 
-	// The point of the control: one tap home from anywhere, rather than one tap per day.
-	await backHome.click();
+	// The point of the calendar's Today button: one tap home from anywhere,
+	// rather than one tap per day walking the arrows back.
+	await openCalendar();
+	await page.getByRole('button', { name: 'Today', exact: true }).click();
 	await page.waitForTimeout(250);
-	check('one tap returns to today', (await heading()) === 'Today');
-	check('the way-back control goes away again', (await backHome.count()) === 0);
+	check('the calendar\'s Today button returns to today', (await heading()) === 'Today');
+	check('the calendar closes after jumping to today', (await calendarSheet.count()) === 0);
+
+	// Picking an arbitrary day works the same way: navigate, then close. Locale-
+	// independent: matched by the day number rather than the (locale-formatted)
+	// accessible label. Never day-of-month 1 (always in the previous month's
+	// dimmed leading row in some months) and never today's own date-of-month,
+	// which would leave the heading reading "Today" either way.
+	await openCalendar();
+	const targetDay = new Date().getDate() === 15 ? 16 : 15;
+	await calendarSheet
+		.locator('.day:not(.dim) .num', { hasText: new RegExp(`^${targetDay}$`) })
+		.click();
+	await page.waitForTimeout(250);
+	check('picking a day in the grid navigates there', (await heading()) !== 'Today');
+	check('the calendar closes after picking a day', (await calendarSheet.count()) === 0);
 }
 
 // ---------------------------------------------------------------- sync (unconfigured)

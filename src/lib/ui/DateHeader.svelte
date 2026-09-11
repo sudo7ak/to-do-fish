@@ -70,9 +70,11 @@
 		 */
 		now: string;
 		onNavigate: (date: string) => void;
+		/** Opens the calendar sheet — the label is the entry point in both states. */
+		onOpenCalendar: () => void;
 	};
 
-	const { date, environment, clearedPct, now, onNavigate }: Props = $props();
+	const { date, environment, clearedPct, now, onNavigate, onOpenCalendar }: Props = $props();
 
 	const label = $derived(formatDay(date, now));
 	const isToday = $derived(date === now);
@@ -91,24 +93,20 @@
 			‹
 		</button>
 
-		{#if isToday}
-			<div class="day">
-				<h1>{label}</h1>
-				{#if showsMood}
-					<p class="mood">{moodPercent(clearedPct)}% · {moodWord(clearedPct)}</p>
-				{/if}
-			</div>
-		{:else}
-			<!--
-				Away from today, the label itself is the way back. Returning was the only
-				O(n) interaction left in the app — three weeks back was twenty-one taps on
-				an arrow, and nothing else here makes you repeat a gesture to undo it.
-			-->
-			<button type="button" class="day back" aria-label="Back to today" onclick={() => onNavigate(now)}>
-				<h1>{label}</h1>
-				<p class="hint">Back to today</p>
-			</button>
-		{/if}
+		<!--
+			The label opens the calendar in both states — jumping more than a day or
+			two away used to mean walking the arrows one tap per day, and nothing else
+			here makes you repeat a gesture that many times. The calendar's own Today
+			button is the fast way back, which is why this no longer jumps directly.
+		-->
+		<button type="button" class="day" aria-label="Open calendar" onclick={onOpenCalendar}>
+			<h1>{label}</h1>
+			{#if isToday && showsMood}
+				<p class="mood">{moodPercent(clearedPct)}% · {moodWord(clearedPct)}</p>
+			{:else if !isToday}
+				<p class="hint">Tap to change date</p>
+			{/if}
+		</button>
 
 		<button
 			type="button"
