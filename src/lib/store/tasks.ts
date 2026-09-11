@@ -110,6 +110,25 @@ export function completeTask(state: State, id: string, now: number): State {
 	return { ...completed, koi: awardKoi(completed.koi, completed.tasks, task.date, now) };
 }
 
+/**
+ * Undoes a completion. Safe unconditionally: `pearlBalance` recomputes `earned`
+ * from live status every time, so the flip alone (no separate bookkeeping) takes
+ * back a pearl that was never spent, and one that was already spent on a treat
+ * shows up as a negative balance rather than silently vanishing. A koi already
+ * awarded for the day is never revoked — see `awardKoi` — so reopening one task on
+ * an already-cleared day just stops the day from reading as cleared today; the
+ * record of having cleared it stands.
+ */
+export function reopenTask(state: State, id: string, now: number): State {
+	return mutate(
+		state,
+		id,
+		(task) => (task.status === 'done' ? { ...task, status: 'open', completedAt: undefined } : task),
+		now,
+		{ onlyIfChanged: true }
+	);
+}
+
 export function softDelete(state: State, id: string, now: number): State {
 	// Never spliced. A device that has not yet synced would otherwise re-push a task
 	// deleted elsewhere, and deleted tasks would come back permanently.
@@ -195,6 +214,7 @@ export type TaskStoreFacade = {
 	editTask(id: string, patch: Parameters<typeof editTask>[2]): Promise<Outcome>;
 	moveToDate(id: string, date: string): Promise<void>;
 	completeTask(id: string): Promise<void>;
+	reopenTask(id: string): Promise<void>;
 	softDelete(id: string): Promise<void>;
 	releaseBubble(id: string): Promise<void>;
 	release(ids: string[]): Promise<void>;
@@ -284,6 +304,7 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 			track('task_completed', { count: completedThisSession });
 			if (get(state).koi.length > koiBefore) track('koi_earned');
 		},
+		reopenTask: (id) => commit(reopenTask(get(state), id, clock())),
 		softDelete: (id) => commit(softDelete(get(state), id, clock())),
 		releaseBubble: (id) => commit(releaseBubble(get(state), id, clock())),
 		togglePriority: (id) => commit(togglePriority(get(state), id, clock())),

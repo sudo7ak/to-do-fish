@@ -40,6 +40,12 @@
 		// still counted as spent. That is a free treat and a negative balance.
 		if (task.status !== 'done' && !unclaimedTreat) actions.push('complete');
 
+		// A ghost was otherwise a dead end: no action here ever moved a task back out
+		// of `done`. Reopening is always safe — pearls and koi are both derived or
+		// append-only (see `pearlBalance` and `awardKoi`), so nothing needs undoing
+		// alongside the status flip.
+		if (task.status === 'done') actions.push('reopen');
+
 		actions.push('edit', 'move', 'delete');
 		return actions;
 	}
@@ -82,6 +88,7 @@
 		/** Whether the current pearl balance covers this treat, if it is one. */
 		affordable: boolean;
 		onComplete: (id: string) => void;
+		onReopen: (id: string) => void;
 		onRelease: (id: string) => void;
 		onClaim: (id: string) => void;
 		onEdit: (task: Task) => void;
@@ -95,6 +102,7 @@
 		task,
 		affordable,
 		onComplete,
+		onReopen,
 		onRelease,
 		onClaim,
 		onEdit,
@@ -160,6 +168,11 @@
 			{/if}
 			{#if actions.includes('complete')}
 				<button type="button" onclick={() => act(() => onComplete(task.id))}>Done</button>
+			{/if}
+			{#if actions.includes('reopen')}
+				<button type="button" class="ghost" onclick={() => act(() => onReopen(task.id))}>
+					Reopen
+				</button>
 			{/if}
 
 			{#if task.status !== 'done' && task.treatCost === undefined}

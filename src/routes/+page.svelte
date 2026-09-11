@@ -542,6 +542,7 @@
 		task={selected}
 		affordable={selected ? canAfford($tasks, selected) : false}
 		onComplete={(id) => store.completeTask(id)}
+		onReopen={(id) => store.reopenTask(id)}
 		onRelease={(id) => store.releaseBubble(id)}
 		onClaim={(id) => store.claimTreat(id)}
 		onEdit={openEdit}
@@ -565,6 +566,7 @@
 		{date}
 		tasks={$tasks}
 		onComplete={(id) => store.completeTask(id)}
+		onReopen={(id) => store.reopenTask(id)}
 		onRelease={(id) => store.releaseBubble(id)}
 		onClaim={(id) => store.claimTreat(id)}
 		onEdit={openEdit}

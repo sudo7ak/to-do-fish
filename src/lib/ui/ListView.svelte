@@ -72,6 +72,7 @@
 		date: string;
 		tasks: Task[];
 		onComplete: (id: string) => void;
+		onReopen: (id: string) => void;
 		onRelease: (id: string) => void;
 		onClaim: (id: string) => void;
 		onEdit: (task: Task) => void;
@@ -85,6 +86,7 @@
 		date,
 		tasks,
 		onComplete,
+		onReopen,
 		onRelease,
 		onClaim,
 		onEdit,
@@ -187,6 +189,11 @@
 							{/if}
 							{#if actions.includes('complete')}
 								<button type="button" onclick={() => onComplete(task.id)}>Done</button>
+							{/if}
+							{#if actions.includes('reopen')}
+								<button type="button" class="ghost" onclick={() => onReopen(task.id)}>
+									Reopen
+								</button>
 							{/if}
 							<button type="button" class="ghost" onclick={() => onEdit(task)}>Edit</button>
 						</div>

@@ -5,6 +5,7 @@ import {
 	editTask,
 	moveToDate,
 	completeTask,
+	reopenTask,
 	softDelete,
 	releaseBubble,
 	claimTreat,
@@ -154,6 +155,37 @@ describe('completeTask', () => {
 		const added = addTask(cleared, { title: 'late', date: DAY }, 600, 'b');
 
 		expect(added.ok && added.state.koi).toEqual([{ date: DAY, earnedAt: 500 }]);
+	});
+});
+
+describe('reopenTask', () => {
+	it('moves a done task back to open and clears completedAt', () => {
+		const reopened = reopenTask(state([task({ status: 'done', completedAt: 300 })]), 'a', 500);
+
+		expect(only(reopened)).toMatchObject({ status: 'open', completedAt: undefined, updatedAt: 500 });
+	});
+
+	it('leaves a task that is not done alone', () => {
+		const reopened = reopenTask(state([task({ status: 'open' })]), 'a', 500);
+
+		expect(only(reopened).updatedAt).toBe(1);
+	});
+
+	it('does not revoke a koi already earned for the day', () => {
+		const cleared = completeTask(state([task()]), 'a', 500);
+		const reopened = reopenTask(cleared, 'a', 600);
+
+		expect(reopened.koi).toEqual([{ date: DAY, earnedAt: 500 }]);
+	});
+
+	it('leaves other tasks untouched', () => {
+		const reopened = reopenTask(
+			state([task({ id: 'a', status: 'done' }), task({ id: 'b', status: 'done', completedAt: 9 })]),
+			'a',
+			500
+		);
+
+		expect(reopened.tasks[1]).toMatchObject({ status: 'done', completedAt: 9, updatedAt: 1 });
 	});
 });
 

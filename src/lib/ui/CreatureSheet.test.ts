@@ -66,8 +66,17 @@ describe('actionsFor', () => {
 		expect(actionsFor(task({ status: 'done' }), false)).not.toContain('complete');
 	});
 
-	it('still offers edit, move and delete on a ghost', () => {
-		expect(actionsFor(task({ status: 'done' }), false)).toEqual(['edit', 'move', 'delete']);
+	it('still offers edit, move and delete on a ghost, plus reopen', () => {
+		expect(actionsFor(task({ status: 'done' }), false)).toEqual(['reopen', 'edit', 'move', 'delete']);
+	});
+
+	it('offers reopen on a ghost', () => {
+		expect(actionsFor(task({ status: 'done' }), false)).toContain('reopen');
+	});
+
+	it('does not offer reopen on a task that is not done', () => {
+		expect(actionsFor(task(), false)).not.toContain('reopen');
+		expect(actionsFor(bubble(), false)).not.toContain('reopen');
 	});
 
 	it('offers release on a waiting bubble', () => {
