@@ -567,3 +567,58 @@ describe('buildScene — priority / shark', () => {
 		expect(countOf([task({ id: 'n' })], 'shark')).toBe(0);
 	});
 });
+
+describe('buildScene — hint fish', () => {
+	it('is absent by default', () => {
+		expect(buildScene([task()], [], DAY, NOON).creatures.some((c) => c.kind === 'hint')).toBe(false);
+	});
+
+	it('is absent when asked not to show it', () => {
+		const scene = buildScene([task()], [], DAY, NOON, undefined, false);
+		expect(scene.creatures.some((c) => c.kind === 'hint')).toBe(false);
+	});
+
+	it('appears when asked to show it, even on an empty tank', () => {
+		const scene = buildScene([], [], DAY, NOON, undefined, true);
+		expect(scene.creatures.some((c) => c.kind === 'hint')).toBe(true);
+	});
+
+	it('carries no taskId — it is not backed by any task', () => {
+		const scene = buildScene([], [], DAY, NOON, undefined, true);
+		const hint = scene.creatures.find((c) => c.kind === 'hint');
+		expect(hint?.taskId).toBeUndefined();
+	});
+
+	it('has a positive tapRadius', () => {
+		const scene = buildScene([], [], DAY, NOON, undefined, true);
+		expect(scene.creatures.find((c) => c.kind === 'hint')?.tapRadius).toBeGreaterThan(0);
+	});
+
+	it('does not affect clearedPct or the pearl balance', () => {
+		const withoutHint = buildScene([task({ status: 'done' })], [], DAY, NOON, undefined, false);
+		const withHint = buildScene([task({ status: 'done' })], [], DAY, NOON, undefined, true);
+
+		expect(withHint.clearedPct).toBe(withoutHint.clearedPct);
+		expect(withHint.pearls).toBe(withoutHint.pearls);
+	});
+});
+
+describe('buildScene — sync fish label', () => {
+	// Read out loud now that it rides the reveal-all flow, not only worn as a
+	// colour — "Sync: signed-out" was fine as an internal id, not as a sentence
+	// a person taps water to read.
+	const labelFor = (mood: 'signed-out' | 'offline' | 'online') =>
+		buildScene([], [], DAY, NOON, mood).creatures.find((c) => c.kind === 'sync')?.label;
+
+	it('reads plainly when signed out', () => {
+		expect(labelFor('signed-out')).toBe('Not signed in');
+	});
+
+	it('reads plainly when offline', () => {
+		expect(labelFor('offline')).toBe('Signed in, offline');
+	});
+
+	it('reads plainly when synced', () => {
+		expect(labelFor('online')).toBe('Synced');
+	});
+});

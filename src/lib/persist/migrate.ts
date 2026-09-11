@@ -60,7 +60,22 @@ const migrations: Record<number, Migration> = {
 	// spelled: the first sign-in still merges it, which is the spec's promise that a
 	// week of offline use survives. Inventing an owner would break that; inventing a
 	// *wrong* one would wipe the data it was invented to protect.
-	3: (data) => data
+	3: (data) => data,
+
+	// 4 -> 5: `seenRevealHint` did not exist yet.
+	//
+	// TRUE, not false — same reasoning as `seenLegend` at step 1: reaching this step
+	// means there was stored data, which means the app has already been used, and an
+	// established user does not need a hint fish popping up out of nowhere on their
+	// next visit. Only a fresh install, which takes `emptySnapshot()` instead of
+	// migrating anything, should ever see it.
+	4: (data) => {
+		const settings =
+			typeof data.settings === 'object' && data.settings !== null
+				? (data.settings as Record<string, unknown>)
+				: {};
+		return { ...data, settings: { ...settings, seenRevealHint: true } };
+	}
 };
 
 export type MigrationResult =

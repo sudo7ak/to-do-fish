@@ -104,13 +104,13 @@ describe('koi rows', () => {
 
 describe('settings rows', () => {
 	it('round-trips settings', () => {
-		const original = { environment: 'calm' as const, seenLegend: true, updatedAt: 7 };
+		const original = { environment: 'calm' as const, seenLegend: true, seenRevealHint: false, updatedAt: 7 };
 		expect(fromSettingsRow(toSettingsRow(original, USER, SCHEMA_VERSION))).toEqual(original);
 	});
 
 	it('carries the writing client schema version', () => {
 		const row = toSettingsRow(
-			{ environment: 'calm', seenLegend: true, updatedAt: 7 },
+			{ environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 7 },
 			USER,
 			SCHEMA_VERSION
 		);

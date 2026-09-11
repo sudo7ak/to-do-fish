@@ -8,12 +8,12 @@
 	import { pearlBalance, canAfford } from '$lib/store/pearls';
 	import { buildScene } from '$lib/scene/build';
 	import { palette } from '$lib/render/palette';
-	import { drawTank, drawForeground, drawFeed } from '$lib/render/water';
-	import { drawCreatures, place } from '$lib/render/creatures';
+	import { drawTank, drawForeground, drawFeed, bedTopAt, chestBounds } from '$lib/render/water';
+	import { drawCreatures, place, drawHintBurst } from '$lib/render/creatures';
 	import { pick } from '$lib/render/pick';
 	import type { Frame } from '$lib/render/loop';
 	import type { Task } from '$lib/types';
-	import type { Creature, SyncMood } from '$lib/scene/types';
+	import type { Creature, Scene, SyncMood } from '$lib/scene/types';
 	import { createAuth, isSyncConfigured, type Account } from '$lib/auth/session';
 	import { SyncingTaskStore, type SyncStatus } from '$lib/persist/sync/syncing';
 	import { SupabaseRemote } from '$lib/persist/sync/remote';
@@ -29,7 +29,7 @@
 	import Legend from '$lib/ui/Legend.svelte';
 	import SyncPanel from '$lib/ui/SyncPanel.svelte';
 	import { loadShortcut, matches as matchesShortcut } from '$lib/ui/shortcut';
-	import { shouldAutoOpen } from '$lib/store/settings';
+	import { shouldAutoOpen, shouldShowRevealHint } from '$lib/store/settings';
 	import { resolveTap, type TapOrigin } from '$lib/ui/tap';
 	import { labelable, clampLabelX } from '$lib/ui/reveal';
 	import Calendar from '$lib/ui/Calendar.svelte';
@@ -147,6 +147,49 @@
 	let labelEls: Record<string, HTMLElement | undefined> = {};
 	const REVEAL_MS = 3200;
 
+	/**
+	 * The hint fish's pop, drawn on the canvas rather than as a `$state` value — same
+	 * reasoning as `labelEls`: `draw()` reads this every frame to paint the burst,
+	 * and a plain variable keeps that out of Svelte's reactivity entirely. Cleared
+	 * once `drawHintBurst` reports the burst has run its course.
+	 */
+	let hintBurst: { x: number; y: number; at: number } | null = null;
+	const HINT_BURST_MS = 550;
+
+	/**
+	 * Where the hint sign plants itself, in real canvas pixels. `$state`, unlike
+	 * `hintBurst`, because it drives a CSS position rather than a per-frame canvas
+	 * paint — but `updateHintSignPosition` only ever assigns a new object when the
+	 * numbers actually changed, so this still only writes on an actual resize, not
+	 * every frame.
+	 *
+	 * Deliberately reads `bedTopAt` rather than guessing a fixed offset from the
+	 * bottom of the screen: the sand's height is a fraction of the tank's own
+	 * height (`bedTopAt`'s `size.h * 0.12`), so a fixed CSS `bottom` lines up with
+	 * the sand only by coincidence, on whatever one viewport it was tuned against,
+	 * and drifts on every other one. `bedTopAt` is the one place that answers
+	 * "where is the sand" — the chest and the planting already read it rather than
+	 * each drawing their own idea of the line, and this is the same rule.
+	 */
+	let hintSignAt: { x: number; bottom: number } | null = $state(null);
+	const HINT_SIGN_X_FRACTION = 0.78;
+
+	function updateHintSignPosition(size: { w: number; h: number }) {
+		if (!size.w || !size.h) return;
+
+		let x = size.w * HINT_SIGN_X_FRACTION;
+		// Clear of the chest on an unusual aspect ratio, the same way the pearls
+		// sidestep it rather than drawing on top of the lid.
+		const chest = chestBounds(size);
+		if (x > chest.from - 40 && x < chest.to + 40) {
+			x = chest.to + 60 <= size.w - 20 ? chest.to + 60 : Math.max(20, chest.from - 100);
+		}
+
+		const bottom = size.h - bedTopAt(x, size);
+		if (hintSignAt && hintSignAt.x === x && hintSignAt.bottom === bottom) return;
+		hintSignAt = { x, bottom };
+	}
+
 	// Prototype: the corner fish. Not wired into anything but its own tint.
 	let browserOnline = $state(true);
 	const syncMood = $derived<SyncMood>(
@@ -154,7 +197,9 @@
 	);
 
 	const pearls = $derived(pearlBalance($tasks));
-	const scene = $derived(buildScene($tasks, $koi, date, Date.now(), syncMood));
+	// One-way latch: once popped, `showHint` never goes true again for this account.
+	const showHint = $derived(shouldShowRevealHint($settings));
+	const scene = $derived(buildScene($tasks, $koi, date, Date.now(), syncMood, showHint));
 	const clearedPct = $derived(scene.clearedPct);
 	// For the calendar's day markers — which dates have a live task, which earned a koi.
 	const taskDates = $derived(taskDatesOf($tasks));
@@ -163,9 +208,11 @@
 	// Only after hydrating: before the store loads, every day looks empty, and a
 	// message that flashes on every launch is worse than none.
 	let hydrated = $state(false);
-	// The sync fish is not task data — it swims on an empty day too, so it must not
-	// count toward whether the day looks empty.
-	const emptyDay = $derived(hydrated && scene.creatures.every((c) => c.kind === 'sync'));
+	// Neither the sync fish nor the hint fish is task data — both swim on an empty
+	// day too, so neither may count toward whether the day looks empty.
+	const emptyDay = $derived(
+		hydrated && scene.creatures.every((c) => c.kind === 'sync' || c.kind === 'hint')
+	);
 
 	onMount(() => {
 		// The static SEO hero in app.html exists only for crawlers and no-JS visitors,
@@ -261,8 +308,16 @@
 	 */
 	function draw(ctx: CanvasRenderingContext2D, frame: Frame, size: { w: number; h: number }) {
 		const state = store.snapshot();
-		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
+		const scene = buildScene(
+			state.tasks,
+			state.koi,
+			date,
+			Date.now(),
+			syncMood,
+			shouldShowRevealHint(state.settings)
+		);
 		const colors = palette(state.settings.environment, scene.clearedPct);
+		updateHintSignPosition(size);
 
 		// Under reduced motion the clock is pinned, so ambient drift holds still
 		// while state changes still repaint.
@@ -275,6 +330,15 @@
 		drawCreatures(ctx, scene.creatures, colors, size, time, frame.animate, scene.feeding);
 		// Haze and vignette last, so they sit over the creatures and give the tank depth.
 		drawForeground(ctx, size, colors);
+
+		// After the haze, not before: `lighter`-composited light has to be added on
+		// top of the wash to survive it, same reason the chest's gold and gem
+		// twinkles draw here rather than with the creatures.
+		if (hintBurst) {
+			const progress = (Date.now() - hintBurst.at) / HINT_BURST_MS;
+			drawHintBurst(ctx, hintBurst.x, hintBurst.y, progress);
+			if (progress >= 1) hintBurst = null;
+		}
 
 		// Direct DOM writes, not a `$state` assignment — see the comment on
 		// `revealEntries` for why this must not become a Svelte re-render.
@@ -324,6 +388,18 @@
 		if (tapOrigin?.id === event.pointerId) tapOrigin = null;
 	}
 
+	/** Surfaces every labelable creature's title — shared by an open-water tap and a first tap on the hint fish. */
+	function revealAll(scene: Scene, time: number) {
+		clearTimeout(revealTimer);
+		revealEntries = labelable(scene.creatures).map((creature) => {
+			const at = place(creature, lastFrame.size, time, lastFrame.animate);
+			return { creature, x: clampLabelX(at.x, lastFrame.size.w), y: at.y };
+		});
+		revealTimer = setTimeout(() => {
+			revealEntries = [];
+		}, REVEAL_MS);
+	}
+
 	function tapTank(event: PointerEvent) {
 		const resolved = resolveTap(
 			tapOrigin,
@@ -334,21 +410,21 @@
 		if (!resolved) return; // scroll, not a tap — or a different pointer
 
 		const state = store.snapshot();
-		const scene = buildScene(state.tasks, state.koi, date, Date.now(), syncMood);
+		const scene = buildScene(
+			state.tasks,
+			state.koi,
+			date,
+			Date.now(),
+			syncMood,
+			shouldShowRevealHint(state.settings)
+		);
 		const hit = pick(scene.creatures, resolved.point, lastFrame.size, resolved.time, lastFrame.animate);
 
 		// A tap that lands on open water, not on any fish, reveals every task's title
 		// at once instead of doing nothing — the tank stays glanceable without having
 		// to tap each fish in turn to find one.
 		if (!hit) {
-			clearTimeout(revealTimer);
-			revealEntries = labelable(scene.creatures).map((creature) => {
-				const at = place(creature, lastFrame.size, resolved.time, lastFrame.animate);
-				return { creature, x: clampLabelX(at.x, lastFrame.size.w), y: at.y };
-			});
-			revealTimer = setTimeout(() => {
-				revealEntries = [];
-			}, REVEAL_MS);
+			revealAll(scene, resolved.time);
 			return;
 		}
 
@@ -363,6 +439,23 @@
 		// same sync status the settings sheet already shows, rather than a new sheet.
 		if (hit && hit.kind === 'sync') {
 			settingsOpen = true;
+			return;
+		}
+
+		// The hint fish stands for no task either. Precision varies — a tap aimed at
+		// it can land squarely on its body rather than the water beside it — so a
+		// direct hit before its own label has shown teaches nothing: it would pop the
+		// one thing this whole mechanism exists to teach without ever revealing what
+		// tapping water does. Only a second tap, once the label is already up, pops
+		// it; the first behaves exactly like tapping open water.
+		if (hit && hit.kind === 'hint') {
+			const alreadyRevealed = revealEntries.some((entry) => entry.creature.kind === 'hint');
+			if (alreadyRevealed) {
+				hintBurst = { x: resolved.point.x, y: resolved.point.y, at: Date.now() };
+				void store.markRevealHintSeen();
+			} else {
+				revealAll(scene, resolved.time);
+			}
 			return;
 		}
 
@@ -467,6 +560,28 @@
 						<span class="reveal-label__pill">{entry.creature.label}</span>
 					</span>
 				{/each}
+			</div>
+		{/if}
+
+		<!-- Tied to the hint fish, not a separate flag: gone the moment it pops,
+		     same as the fish itself. A standing reminder for anyone who never taps
+		     the fish's own label into view. -->
+		{#if showHint && hintSignAt}
+			<div
+				class="hint-sign"
+				aria-hidden="true"
+				style="left: {hintSignAt.x}px; bottom: {hintSignAt.bottom}px;"
+			>
+				<span class="hint-sign__board">Tap the water</span>
+				<span class="hint-sign__post"></span>
+				<span class="hint-sign__shadow"></span>
+				<svg class="hint-sign__weeds" viewBox="0 0 64 26" aria-hidden="true">
+					<path d="M8 26 C6 16 12 10 10 2" fill="none" stroke="#2f6b2c" stroke-width="3" stroke-linecap="round" />
+					<path d="M18 26 C19 14 14 9 17 0" fill="none" stroke="#3f7d3a" stroke-width="3" stroke-linecap="round" />
+					<path d="M32 26 C31 12 36 8 33 1" fill="none" stroke="#5a9c4f" stroke-width="3" stroke-linecap="round" />
+					<path d="M46 26 C48 15 42 10 45 2" fill="none" stroke="#3f7d3a" stroke-width="3" stroke-linecap="round" />
+					<path d="M56 26 C54 17 59 11 57 3" fill="none" stroke="#2f6b2c" stroke-width="3" stroke-linecap="round" />
+				</svg>
 			</div>
 		{/if}
 	</div>
@@ -658,6 +773,101 @@
 		font-size: 11px;
 		font-weight: 600;
 		line-height: 1.3;
+	}
+
+	.hint-sign {
+		position: absolute;
+		/* `width: max-content` matters: with only `left` set, an absolutely
+		   positioned box's shrink-to-fit width is computed against the space
+		   remaining to the right of `left`, not the container's full width — at
+		   a large `left` that space can be too narrow to hold "Tap the water" on
+		   one line, wrapping it before the centering transform below ever runs. */
+		width: max-content;
+		/* `left` and `bottom` are set inline, from `hintSignAt` — computed against
+		   `bedTopAt`, the tank's own answer for where the sand sits, rather than a
+		   fixed guess here that only happens to line up on one viewport size. */
+		transform: translateX(-50%);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		pointer-events: none;
+	}
+
+	.hint-sign__board {
+		position: relative;
+		background:
+			repeating-linear-gradient(
+				100deg,
+				rgba(0, 0, 0, 0.08) 0 2px,
+				transparent 2px 9px
+			),
+			linear-gradient(180deg, #cf9152, #a2652f);
+		border: 3px solid #6e4620;
+		border-radius: 0.5rem;
+		padding: 0.6rem 1.3rem;
+		color: #fff3d0;
+		font-size: 1.05rem;
+		font-weight: 700;
+		letter-spacing: 0.01em;
+		text-shadow:
+			0 1px 0 rgba(0, 0, 0, 0.35),
+			0 -1px 0 rgba(255, 255, 255, 0.12);
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+	}
+
+	/* A wisp of moss on the corner — the sign has clearly sat here a while. */
+	.hint-sign__board::before {
+		content: '';
+		position: absolute;
+		top: -0.3rem;
+		left: -0.4rem;
+		width: 1rem;
+		height: 0.7rem;
+		background: radial-gradient(ellipse at 30% 30%, #6fae4f, #3d6f2c 70%);
+		border-radius: 60% 40% 55% 45% / 60% 50% 50% 40%;
+		box-shadow: 0.5rem 0.15rem 0 -0.1rem #59923f;
+	}
+
+	.hint-sign__post {
+		width: 0.6rem;
+		/* With the shadow now an overlay (see .hint-sign__shadow) rather than a
+		   flex child, the post is the last flow child, so its own height is
+		   what determines how far it reaches — no more fighting a fixed anchor
+		   elsewhere in the stack. A few px past the measured contact point so
+		   it reads as planted, not balanced exactly on the line. */
+		height: 2.7rem;
+		background: linear-gradient(90deg, #6d431e, #8a5a2a 45%, #6d431e);
+		border-radius: 0 0 0.15rem 0.15rem;
+	}
+
+	/*
+	 * Absolutely positioned, not a flex child — a normal-flow shadow below the
+	 * post was, by construction, the box's actual last child, so it (not the
+	 * post) was what sat on the container's `bottom`-anchored edge. Growing the
+	 * post taller pushed the whole sign upward instead of closing the gap, since
+	 * the post's own bottom was never the anchored edge to begin with. As an
+	 * overlay the post genuinely becomes the bottom-most element, its own
+	 * bottom landing exactly on `bedTopAt`.
+	 */
+	.hint-sign__shadow {
+		position: absolute;
+		left: 50%;
+		bottom: -0.15rem;
+		width: 2.4rem;
+		height: 0.5rem;
+		transform: translateX(-50%);
+		background: radial-gradient(ellipse, rgba(0, 0, 0, 0.4), transparent 72%);
+		border-radius: 50%;
+	}
+
+	.hint-sign__weeds {
+		position: absolute;
+		left: 50%;
+		bottom: -0.15rem;
+		width: 3.2rem;
+		height: 1.3rem;
+		transform: translateX(-50%);
+		overflow: visible;
 	}
 
 	.visually-hidden {

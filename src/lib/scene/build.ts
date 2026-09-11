@@ -76,7 +76,10 @@ const TAP_RADIUS: Record<CreatureKind, number> = {
 	treat: 36,
 	pearl: 16,
 	sync: 22,
-	shark: 36
+	shark: 36,
+	// As generous as the fish it mimics — it is meant to be found and tapped, not
+	// missed on a second try.
+	hint: 40
 };
 
 export function buildScene(
@@ -84,7 +87,8 @@ export function buildScene(
 	koi: KoiRecord[],
 	date: string,
 	now: number,
-	syncMood?: SyncMood
+	syncMood?: SyncMood,
+	showHint?: boolean
 ): Scene {
 	const live = tasks.filter(isLive);
 	const today = live.filter((t) => t.date === date);
@@ -115,7 +119,11 @@ export function buildScene(
 			.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
 			.slice(0, MAX_VISIBLE_KOI)
 			.map(toKoi),
-		...(syncMood ? [syncCreature(syncMood)] : [])
+		...(syncMood ? [syncCreature(syncMood)] : []),
+		// Not date-scoped, unlike everything above: it is not backed by any task, so
+		// there is no day for it to belong to, and it must still be found on an empty
+		// tank — that is the one case tapping water would otherwise do nothing at all.
+		...(showHint ? [hintCreature()] : [])
 	];
 
 	return {
@@ -251,14 +259,36 @@ function feeding(live: Task[], now: number): number {
 }
 
 /** Prototype: a fixed, tinted creature standing in for online/offline/signed-out. */
+/** Read out loud now that it rides the reveal-all flow, not only worn as a colour. */
+const SYNC_LABEL: Record<SyncMood, string> = {
+	'signed-out': 'Not signed in',
+	offline: 'Signed in, offline',
+	online: 'Synced'
+};
+
 function syncCreature(mood: SyncMood): Creature {
 	return {
 		id: 'sync-status',
 		kind: 'sync',
-		label: `Sync: ${mood}`,
+		label: SYNC_LABEL[mood],
 		depth: 0.1,
 		mood,
 		tapRadius: TAP_RADIUS.sync
+	};
+}
+
+/**
+ * The one-time onboarding creature that teaches "tap open water to see every
+ * task's name." Not backed by a task — no `taskId` — so a tap on it can only ever
+ * pop it, never open a sheet for something that does not exist.
+ */
+function hintCreature(): Creature {
+	return {
+		id: 'hint-fish',
+		kind: 'hint',
+		label: 'Tap the water!',
+		depth: 0.35,
+		tapRadius: TAP_RADIUS.hint
 	};
 }
 

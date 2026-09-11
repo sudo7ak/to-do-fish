@@ -19,7 +19,7 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 	version: SCHEMA_VERSION,
 	tasks: [],
 	koi: [],
-	settings: { environment: 'progress', seenLegend: false, updatedAt: 0 },
+	settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 0 },
 	...over
 });
 
@@ -914,7 +914,7 @@ describe('SyncingTaskStore — skipping a pull that would learn nothing', () => 
 			snapshot({
 				tasks: [task({ updatedAt: 700 })],
 				koi: [{ date: '2026-08-09', earnedAt: 900 }],
-				settings: { environment: 'progress', seenLegend: false, updatedAt: 500 }
+				settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 500 }
 			})
 		);
 		const { store } = setup(fakeLocal(), remote);

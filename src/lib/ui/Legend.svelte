@@ -122,6 +122,13 @@
 				mood: 'online',
 				tapRadius: 22
 			}
+		},
+		{
+			id: 'hint',
+			title: 'Hint fish',
+			blurb: 'Shows once, until you find it. Tap open water to see every task’s name — tap the hint fish itself to send it on its way for good.',
+			zoom: 0.85,
+			creature: { id: 'legend-hint', kind: 'hint', label: 'Hint fish', depth: 0.35, tapRadius: 34 }
 		}
 	];
 </script>

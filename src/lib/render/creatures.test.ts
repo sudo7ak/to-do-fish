@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { place, drawCreature, drawCreatures, speciesFor, MAX_TURN_RATE } from './creatures';
+import { place, drawCreature, drawCreatures, drawHintBurst, speciesFor, MAX_TURN_RATE } from './creatures';
 import { palette } from './palette';
 import type { Creature, CreatureKind } from '../scene/types';
 import { SPECIES, SWIMMERS, type SpeciesSpec } from './species';
@@ -206,7 +206,7 @@ const creature = (kind: CreatureKind, over: Partial<Creature> = {}): Creature =>
 	...over
 });
 
-const ALL_KINDS: CreatureKind[] = ['fish', 'bubble', 'ghost', 'koi', 'treat', 'pearl'];
+const ALL_KINDS: CreatureKind[] = ['fish', 'bubble', 'ghost', 'koi', 'treat', 'pearl', 'hint'];
 
 describe('drawCreature — every kind', () => {
 	it.each(ALL_KINDS)('draws a %s', (kind) => {
@@ -1263,5 +1263,37 @@ describe('heading is only read from real travel', () => {
 
 		expect(minY).toBeGreaterThan(WATERLINE);
 		expect(maxY).toBeLessThan(WATERLINE + 120);
+	});
+});
+
+describe('drawHintBurst — the hint fish popping', () => {
+	it('draws something mid-burst', () => {
+		const ctx = fakeCtx();
+		drawHintBurst(ctx, 50, 60, 0.3);
+
+		expect(ctx.calls.filter((c) => c === 'fill').length).toBeGreaterThan(0);
+	});
+
+	it('draws nothing once the burst has finished', () => {
+		const ctx = fakeCtx();
+		drawHintBurst(ctx, 50, 60, 1);
+
+		expect(ctx.calls.filter((c) => c === 'fill').length).toBe(0);
+	});
+
+	it('leaves the context balanced', () => {
+		const ctx = fakeCtx();
+		drawHintBurst(ctx, 50, 60, 0.3);
+
+		expect(ctx.depth).toBe(0);
+	});
+
+	it('fades out as it progresses', () => {
+		const early = fakeCtx();
+		drawHintBurst(early, 50, 60, 0.1);
+		const late = fakeCtx();
+		drawHintBurst(late, 50, 60, 0.8);
+
+		expect(Math.max(...late.fillAlphas)).toBeLessThan(Math.max(...early.fillAlphas));
 	});
 });

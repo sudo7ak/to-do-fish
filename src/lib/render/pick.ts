@@ -25,7 +25,8 @@ const STACKING: Record<Creature['kind'], number> = {
 	shark: 3,
 	koi: 4,
 	treat: 5,
-	sync: 6
+	sync: 6,
+	hint: 7
 };
 
 export function pick(

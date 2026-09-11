@@ -19,12 +19,20 @@ describe('labelable', () => {
 		expect(labelable([fish, bubble])).toEqual([fish, bubble]);
 	});
 
-	it('drops pearls, koi and sync — none stand for a single task', () => {
+	it('drops pearls and koi — neither stands for a single task', () => {
 		const pearl = creature('pearl-0', 'pearl');
 		const koi = creature('koi-2026-08-08', 'koi');
+
+		expect(labelable([pearl, koi])).toEqual([]);
+	});
+
+	it('keeps the sync fish even though it has no taskId of its own', () => {
+		// Same carve-out as the hint fish: not a task, but its status is worth
+		// reading on the same tap that reveals everything else, rather than only
+		// living as a colour someone has to already know how to interpret.
 		const sync = creature('sync', 'sync');
 
-		expect(labelable([pearl, koi, sync])).toEqual([]);
+		expect(labelable([sync])).toEqual([sync]);
 	});
 
 	it('drops the treat overflow marker, which has no taskId of its own', () => {
@@ -36,6 +44,15 @@ describe('labelable', () => {
 
 	it('returns an empty list for an empty tank', () => {
 		expect(labelable([])).toEqual([]);
+	});
+
+	it('keeps the hint fish even though it has no taskId of its own', () => {
+		// Not a real task, so it fails the `taskId` test everything else in this
+		// function goes by — but revealing it is the entire point of tapping water in
+		// the first place, so it needs its own carve-out rather than the general rule.
+		const hint = creature('hint', 'hint');
+
+		expect(labelable([hint])).toEqual([hint]);
 	});
 });
 

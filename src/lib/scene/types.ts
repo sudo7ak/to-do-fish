@@ -9,7 +9,16 @@
  * data and never a source of it.
  */
 
-export type CreatureKind = 'fish' | 'bubble' | 'ghost' | 'koi' | 'treat' | 'pearl' | 'sync' | 'shark';
+export type CreatureKind =
+	| 'fish'
+	| 'bubble'
+	| 'ghost'
+	| 'koi'
+	| 'treat'
+	| 'pearl'
+	| 'sync'
+	| 'shark'
+	| 'hint';
 
 /** Prototype: online/offline/signed-out shown as a fish tint, not a task-derived state. */
 export type SyncMood = 'signed-out' | 'offline' | 'online';

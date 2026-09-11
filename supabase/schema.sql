@@ -32,17 +32,24 @@ create table if not exists public.koi (
 );
 
 create table if not exists public.settings (
-  user_id     uuid primary key references auth.users on delete cascade,
-  environment text   not null check (environment in ('progress', 'calm')),
-  seen_legend boolean not null,
-  version     int    not null,
-  updated_at  bigint not null
+  user_id          uuid primary key references auth.users on delete cascade,
+  environment      text   not null check (environment in ('progress', 'calm')),
+  seen_legend      boolean not null,
+  seen_reveal_hint boolean not null default true,
+  version          int    not null,
+  updated_at       bigint not null
 );
 
 -- `create table if not exists` above is a no-op against a database where `tasks`
 -- already exists, so a column added after launch needs its own idempotent statement
 -- to reach existing installs.
 alter table public.tasks add column if not exists priority boolean;
+
+-- Same reasoning as the app-side migration (persist/migrate.ts, step 4 -> 5):
+-- `default true` so every row that already exists — which means that account has
+-- already used the app — is treated as having seen the hint fish already, not shown
+-- it out of nowhere on their next sync.
+alter table public.settings add column if not exists seen_reveal_hint boolean not null default true;
 
 alter table public.tasks    enable row level security;
 alter table public.koi      enable row level security;

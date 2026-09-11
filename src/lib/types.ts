@@ -29,19 +29,22 @@ export type Task = {
 export type KoiRecord = { date: string; earnedAt: number };
 
 /**
- * `seenLegend` is a one-way latch for the first-run legend. It is a setting rather
- * than a separate storage key because `store/` reaches persistence only through the
- * `TaskStore` port, and a second key would be a second thing to migrate.
+ * `seenLegend` and `seenRevealHint` are one-way latches for first-run teaching
+ * moments. Both are settings rather than a separate storage key because `store/`
+ * reaches persistence only through the `TaskStore` port, and a second key would be
+ * a second thing to migrate.
  */
 export type Settings = {
 	environment: 'progress' | 'calm';
 	seenLegend: boolean;
+	/** The hint fish has been tapped once and popped — never shown again. */
+	seenRevealHint: boolean;
 	/** Bumped whenever a setting changes. The whole record is the unit of sync. */
 	updatedAt: number;
 };
 
 /** Current storage schema version. Bumped when `Snapshot` changes shape. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export type Snapshot = {
 	version: number;

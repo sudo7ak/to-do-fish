@@ -18,7 +18,7 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 	version: SCHEMA_VERSION,
 	tasks: [],
 	koi: [],
-	settings: { environment: 'calm', seenLegend: true, updatedAt: 9 },
+	settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 9 },
 	...over
 });
 
@@ -220,6 +220,7 @@ describe('SupabaseRemote — a newer schema', () => {
 					user_id: USER,
 					environment: 'calm',
 					seen_legend: true,
+					seen_reveal_hint: false,
 					version: SCHEMA_VERSION + 1,
 					updated_at: 1
 				}
@@ -245,6 +246,7 @@ describe('SupabaseRemote — a newer schema', () => {
 					user_id: USER,
 					environment: 'calm',
 					seen_legend: true,
+					seen_reveal_hint: false,
 					version: SCHEMA_VERSION + 1,
 					updated_at: 1
 				}
@@ -255,7 +257,7 @@ describe('SupabaseRemote — a newer schema', () => {
 		const pulled = await new SupabaseRemote(client, USER).pull();
 
 		expect(pulled.version).toBe(SCHEMA_VERSION + 1);
-		expect(pulled.settings).toEqual({ environment: 'calm', seenLegend: true, updatedAt: 1 });
+		expect(pulled.settings).toEqual({ environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 1 });
 		expect(pulled.koi).toEqual([{ date: '2026-08-09', earnedAt: 5 }]);
 	});
 });

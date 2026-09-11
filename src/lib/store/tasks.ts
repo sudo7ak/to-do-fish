@@ -179,6 +179,12 @@ export function markLegendSeen(state: State, now: number): State {
 	return { ...state, settings: { ...state.settings, seenLegend: true, updatedAt: now } };
 }
 
+/** Records that the hint fish has been popped. Guarded the same way as `markLegendSeen`. */
+export function markRevealHintSeen(state: State, now: number): State {
+	if (state.settings.seenRevealHint) return state;
+	return { ...state, settings: { ...state.settings, seenRevealHint: true, updatedAt: now } };
+}
+
 /**
  * Applies a change to one task and bumps `updatedAt`. Every mutation goes through
  * here, which is what keeps the timestamp from being forgotten on a new action —
@@ -222,6 +228,7 @@ export type TaskStoreFacade = {
 	togglePriority(id: string): Promise<void>;
 	setEnvironment(environment: Environment): Promise<void>;
 	markLegendSeen(): Promise<void>;
+	markRevealHintSeen(): Promise<void>;
 	snapshot(): State;
 };
 
@@ -229,11 +236,16 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 	const state = writable<State>({
 		tasks: [],
 		koi: [],
-		settings: { environment: 'progress', seenLegend: false, updatedAt: 0 }
+		settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 0 }
 	});
 	const tasks = writable<Task[]>([]);
 	const koi = writable<KoiRecord[]>([]);
-	const settings = writable<Settings>({ environment: 'progress', seenLegend: false, updatedAt: 0 });
+	const settings = writable<Settings>({
+		environment: 'progress',
+		seenLegend: false,
+		seenRevealHint: false,
+		updatedAt: 0
+	});
 	const saveFailed = writable(false);
 
 	/**
@@ -310,6 +322,7 @@ export function createTaskStore(port: TaskStore, clock: () => number = Date.now)
 		togglePriority: (id) => commit(togglePriority(get(state), id, clock())),
 		setEnvironment: (environment) => commit(setEnvironment(get(state), environment, clock())),
 		markLegendSeen: () => commit(markLegendSeen(get(state), clock())),
+		markRevealHintSeen: () => commit(markRevealHintSeen(get(state), clock())),
 
 		/** Bulk release for the ticker: one commit for a whole batch of due triggers. */
 		release(ids) {

@@ -11,6 +11,7 @@ import {
 	claimTreat,
 	setEnvironment,
 	markLegendSeen,
+	markRevealHintSeen,
 	createTaskStore,
 	type State
 } from './tasks';
@@ -26,7 +27,7 @@ function state(tasks: Task[] = [], over: Partial<State> = {}): State {
 	return {
 		tasks,
 		koi: [],
-		settings: { environment: 'progress', seenLegend: false, updatedAt: 0 },
+		settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 0 },
 		...over
 	};
 }
@@ -259,7 +260,9 @@ describe('setEnvironment', () => {
 	});
 
 	it('does not move updatedAt when set to the value already held', () => {
-		const withEnv = state([], { settings: { environment: 'calm', seenLegend: false, updatedAt: 100 } });
+		const withEnv = state([], {
+			settings: { environment: 'calm', seenLegend: false, seenRevealHint: false, updatedAt: 100 }
+		});
 
 		expect(setEnvironment(withEnv, 'calm', 500).settings.updatedAt).toBe(100);
 	});
@@ -386,7 +389,7 @@ describe('markLegendSeen', () => {
 		const state = {
 			tasks: [],
 			koi: [],
-			settings: { environment: 'progress' as const, seenLegend: false, updatedAt: 0 }
+			settings: { environment: 'progress' as const, seenLegend: false, seenRevealHint: false, updatedAt: 0 }
 		};
 
 		expect(markLegendSeen(state, 500).settings.seenLegend).toBe(true);
@@ -396,7 +399,7 @@ describe('markLegendSeen', () => {
 		const state = {
 			tasks: [],
 			koi: [],
-			settings: { environment: 'calm' as const, seenLegend: true, updatedAt: 100 }
+			settings: { environment: 'calm' as const, seenLegend: true, seenRevealHint: false, updatedAt: 100 }
 		};
 
 		expect(markLegendSeen(state, 500)).toEqual(state);
@@ -406,7 +409,7 @@ describe('markLegendSeen', () => {
 		const state = {
 			tasks: [],
 			koi: [],
-			settings: { environment: 'calm' as const, seenLegend: true, updatedAt: 100 }
+			settings: { environment: 'calm' as const, seenLegend: true, seenRevealHint: false, updatedAt: 100 }
 		};
 
 		expect(markLegendSeen(state, 500).settings.updatedAt).toBe(100);
@@ -416,10 +419,52 @@ describe('markLegendSeen', () => {
 		const state = {
 			tasks: [],
 			koi: [],
-			settings: { environment: 'calm' as const, seenLegend: false, updatedAt: 0 }
+			settings: { environment: 'calm' as const, seenLegend: false, seenRevealHint: false, updatedAt: 0 }
 		};
 
 		expect(markLegendSeen(state, 500).settings.environment).toBe('calm');
+	});
+});
+
+describe('markRevealHintSeen', () => {
+	it('latches the flag on', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'progress' as const, seenLegend: true, seenRevealHint: false, updatedAt: 0 }
+		};
+
+		expect(markRevealHintSeen(state, 500).settings.seenRevealHint).toBe(true);
+	});
+
+	it('is idempotent — popping it twice is not an error', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'calm' as const, seenLegend: true, seenRevealHint: true, updatedAt: 100 }
+		};
+
+		expect(markRevealHintSeen(state, 500)).toEqual(state);
+	});
+
+	it('does not move updatedAt when it was already seen', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'calm' as const, seenLegend: true, seenRevealHint: true, updatedAt: 100 }
+		};
+
+		expect(markRevealHintSeen(state, 500).settings.updatedAt).toBe(100);
+	});
+
+	it('leaves the legend flag alone', () => {
+		const state = {
+			tasks: [],
+			koi: [],
+			settings: { environment: 'calm' as const, seenLegend: false, seenRevealHint: false, updatedAt: 0 }
+		};
+
+		expect(markRevealHintSeen(state, 500).settings.seenLegend).toBe(false);
 	});
 });
 

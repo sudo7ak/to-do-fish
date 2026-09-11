@@ -42,7 +42,7 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
 	version: SCHEMA_VERSION,
 	tasks: [task()],
 	koi: [{ date: '2026-08-07', earnedAt: 5 }],
-	settings: { environment: 'calm', seenLegend: true, updatedAt: 0 },
+	settings: { environment: 'calm', seenLegend: true, seenRevealHint: true, updatedAt: 0 },
 	...over
 });
 
@@ -160,6 +160,18 @@ describe('LocalTaskStore — migration', () => {
 		expect(emptySnapshot().settings.seenLegend).toBe(false);
 	});
 
+	// Same reasoning, same asymmetry: migrated data has an owner who already knows
+	// the tank, an empty one does not.
+	it('marks migrated data as having seen the reveal hint', async () => {
+		const storage = new FakeStorage();
+		storage.setItem(STORAGE_KEY, JSON.stringify({ version: 0, tasks: [task()] }));
+
+		const loaded = await store(storage).load();
+
+		expect(loaded.settings.seenRevealHint).toBe(true);
+		expect(emptySnapshot().settings.seenRevealHint).toBe(false);
+	});
+
 	it('migrates a version 1 snapshot, keeping the chosen environment', async () => {
 		const storage = new FakeStorage();
 		storage.setItem(
@@ -170,7 +182,12 @@ describe('LocalTaskStore — migration', () => {
 		const loaded = await store(storage).load();
 
 		expect(loaded.version).toBe(SCHEMA_VERSION);
-		expect(loaded.settings).toEqual({ environment: 'calm', seenLegend: true, updatedAt: 0 });
+		expect(loaded.settings).toEqual({
+			environment: 'calm',
+			seenLegend: true,
+			seenRevealHint: true,
+			updatedAt: 0
+		});
 	});
 
 	it('treats a blob with no version field as version 0 and migrates it', async () => {

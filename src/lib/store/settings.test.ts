@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { shouldAutoOpen, showsMoodNumber } from './settings';
+import { shouldAutoOpen, shouldShowRevealHint, showsMoodNumber } from './settings';
 import type { Settings } from '../types';
 
 const settings = (over: Partial<Settings> = {}): Settings => ({
 	environment: 'progress',
 	seenLegend: false,
+	seenRevealHint: false,
 	updatedAt: 0,
 	...over
 });
@@ -21,6 +22,20 @@ describe('shouldAutoOpen', () => {
 	it('does not care which environment is chosen', () => {
 		expect(shouldAutoOpen(settings({ environment: 'calm' }))).toBe(true);
 		expect(shouldAutoOpen(settings({ environment: 'calm', seenLegend: true }))).toBe(false);
+	});
+});
+
+describe('shouldShowRevealHint', () => {
+	it('shows the hint fish for someone who has never tapped it', () => {
+		expect(shouldShowRevealHint(settings())).toBe(true);
+	});
+
+	it('stays gone once it has been popped', () => {
+		expect(shouldShowRevealHint(settings({ seenRevealHint: true }))).toBe(false);
+	});
+
+	it('is independent of the legend flag', () => {
+		expect(shouldShowRevealHint(settings({ seenLegend: true }))).toBe(true);
 	});
 });
 

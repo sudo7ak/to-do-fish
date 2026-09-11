@@ -30,6 +30,7 @@ export type SettingsRow = {
 	user_id: string;
 	environment: Settings['environment'];
 	seen_legend: boolean;
+	seen_reveal_hint: boolean;
 	version: number;
 	updated_at: number;
 };
@@ -91,6 +92,7 @@ export function toSettingsRow(settings: Settings, userId: string, version: numbe
 		user_id: userId,
 		environment: settings.environment,
 		seen_legend: settings.seenLegend,
+		seen_reveal_hint: settings.seenRevealHint,
 		version,
 		updated_at: settings.updatedAt
 	};
@@ -100,6 +102,7 @@ export function fromSettingsRow(row: SettingsRow): Settings {
 	return {
 		environment: row.environment,
 		seenLegend: row.seen_legend,
+		seenRevealHint: row.seen_reveal_hint,
 		updatedAt: row.updated_at
 	};
 }

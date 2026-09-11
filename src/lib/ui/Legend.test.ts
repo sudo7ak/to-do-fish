@@ -15,7 +15,8 @@ const ALL_KINDS: Record<CreatureKind, true> = {
 	treat: true,
 	pearl: true,
 	sync: true,
-	shark: true
+	shark: true,
+	hint: true
 };
 
 describe('legend entries', () => {
@@ -24,8 +25,8 @@ describe('legend entries', () => {
 		expect([...Object.keys(ALL_KINDS)].filter((k) => !covered.has(k as CreatureKind))).toEqual([]);
 	});
 
-	it('has nine rows — the eight kinds plus the treat split', () => {
-		expect(LEGEND_ENTRIES).toHaveLength(9);
+	it('has ten rows — the nine kinds plus the treat split', () => {
+		expect(LEGEND_ENTRIES).toHaveLength(10);
 	});
 
 	it('gives every row a unique id', () => {

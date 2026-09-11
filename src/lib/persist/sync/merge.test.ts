@@ -16,7 +16,7 @@ const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
 	version: SCHEMA_VERSION,
 	tasks: [],
 	koi: [],
-	settings: { environment: 'progress', seenLegend: false, updatedAt: 0 },
+	settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 0 },
 	...over
 });
 
@@ -132,8 +132,8 @@ describe('merge — koi', () => {
 describe('merge — settings', () => {
 	it('takes the newer settings record whole', () => {
 		const result = merge(
-			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 20 } }),
-			snap({ settings: { environment: 'progress', seenLegend: false, updatedAt: 10 } })
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 20 } }),
+			snap({ settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 10 } })
 		);
 
 		expect(result.merged.settings.environment).toBe('calm');
@@ -143,19 +143,30 @@ describe('merge — settings', () => {
 		// A one-way latch must not be un-latched by an older device syncing in: the
 		// legend reappearing after a sign-in reads as a bug, not a setting.
 		const result = merge(
-			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 5 } }),
-			snap({ settings: { environment: 'progress', seenLegend: false, updatedAt: 50 } })
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 5 } }),
+			snap({ settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 50 } })
 		);
 
 		expect(result.merged.settings.seenLegend).toBe(true);
+	});
+
+	it('keeps seenRevealHint latched once either side has popped it', () => {
+		// Same rule as the legend, same reason: the hint fish reappearing after a
+		// sign-in reads as a bug, not a fresh teaching moment.
+		const result = merge(
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: true, updatedAt: 5 } }),
+			snap({ settings: { environment: 'progress', seenLegend: true, seenRevealHint: false, updatedAt: 50 } })
+		);
+
+		expect(result.merged.settings.seenRevealHint).toBe(true);
 	});
 
 	it('gives a tie on updatedAt to remote, matching how task ties resolve', () => {
 		// A tie must resolve the same way on both devices, or each keeps its own
 		// settings and the two never converge.
 		const result = merge(
-			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 10 } }),
-			snap({ settings: { environment: 'progress', seenLegend: true, updatedAt: 10 } })
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 10 } }),
+			snap({ settings: { environment: 'progress', seenLegend: true, seenRevealHint: false, updatedAt: 10 } })
 		);
 
 		expect(result.merged.settings.environment).toBe('progress');
@@ -198,12 +209,12 @@ describe('merge — the push', () => {
 
 	it('pushes settings only when local is the newer side', () => {
 		const localNewer = merge(
-			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 20 } }),
-			snap({ settings: { environment: 'progress', seenLegend: true, updatedAt: 10 } })
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 20 } }),
+			snap({ settings: { environment: 'progress', seenLegend: true, seenRevealHint: false, updatedAt: 10 } })
 		);
 		const remoteNewer = merge(
-			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 10 } }),
-			snap({ settings: { environment: 'progress', seenLegend: true, updatedAt: 20 } })
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 10 } }),
+			snap({ settings: { environment: 'progress', seenLegend: true, seenRevealHint: false, updatedAt: 20 } })
 		);
 
 		expect(localNewer.push.settings).toBeDefined();
@@ -218,7 +229,7 @@ describe('merge — an absent remote settings record (C2)', () => {
 		// zero-stamped record would tie and the tie goes to remote, silently replacing
 		// a choice the user actually made with the default.
 		const result = merge(
-			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 0 } }),
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 0 } }),
 			{ version: SCHEMA_VERSION, tasks: [], koi: [] }
 		);
 
@@ -235,8 +246,8 @@ describe('merge — an absent remote settings record (C2)', () => {
 
 	it('still gives a tie between two real records to remote', () => {
 		const result = merge(
-			snap({ settings: { environment: 'calm', seenLegend: true, updatedAt: 10 } }),
-			snap({ settings: { environment: 'progress', seenLegend: true, updatedAt: 10 } })
+			snap({ settings: { environment: 'calm', seenLegend: true, seenRevealHint: false, updatedAt: 10 } }),
+			snap({ settings: { environment: 'progress', seenLegend: true, seenRevealHint: false, updatedAt: 10 } })
 		);
 
 		expect(result.merged.settings.environment).toBe('progress');
@@ -270,7 +281,7 @@ describe('claimFor — which account the local snapshot belongs to (C1)', () => 
 			...snap({
 				tasks: [task()],
 				koi: [{ date: '2026-08-09', earnedAt: 1 }],
-				settings: { environment: 'calm' as const, seenLegend: true, updatedAt: 5 }
+				settings: { environment: 'calm' as const, seenLegend: true, seenRevealHint: false, updatedAt: 5 }
 			}),
 			owner: A
 		};

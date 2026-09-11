@@ -132,7 +132,7 @@ const legend = page.locator('section[aria-label="What am I looking at?"]');
 // legendOpen=true asynchronously, and on a cold CI runner this easily exceeds 700ms.
 await page.waitForSelector('section[aria-label="What am I looking at?"]', { timeout: 5000 });
 check('a first visit opens the legend unasked', await legend.isVisible());
-check('the legend names every creature', (await legend.locator('li').count()) === 9);
+check('the legend names every creature', (await legend.locator('li').count()) === 10);
 
 await legend.getByRole('button', { name: 'Got it' }).click();
 await page.waitForTimeout(250);
@@ -397,6 +397,21 @@ outer: for (let y = 200; y < 820; y += 16) {
 		if ((await sheet.count()) > 0) {
 			opened = true;
 			break outer;
+		}
+		// A moving creature other than the target can be hit by an exhaustive
+		// sweep too — the sync fish when this build is configured, say. Its own
+		// sheet opens a backdrop that swallows every click after it until
+		// dismissed, which silently failed the rest of the sweep rather than
+		// the specific check above: Escape does not close it (nothing focuses
+		// the backdrop for its own keydown handler to fire), only clicking the
+		// backdrop itself does.
+		const backdrop = page.locator('.backdrop');
+		if ((await backdrop.count()) > 0) {
+			// Not the backdrop's centre: every sheet here is bottom-anchored, so its
+			// own content sits over the backdrop's geometric middle and intercepts
+			// the click there. A corner near the top is always clear of it.
+			await backdrop.first().click({ position: { x: 5, y: 5 } });
+			await page.waitForTimeout(50);
 		}
 	}
 }

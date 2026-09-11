@@ -43,8 +43,8 @@ export function claimFor(local: Snapshot, owner: string): Snapshot {
 		version: SCHEMA_VERSION,
 		tasks: [],
 		koi: [],
-		// Not carried over, `seenLegend` included: none of it is this account's.
-		settings: { environment: 'progress', seenLegend: false, updatedAt: 0 },
+		// Not carried over, both one-way latches included: none of it is this account's.
+		settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 0 },
 		owner
 	};
 }
@@ -126,17 +126,23 @@ function mergeSettings(local: Settings, remote: Settings | undefined): Settings 
 	// local wins unconditionally.
 	if (!remote) return local;
 
-	// `seenLegend` is a one-way latch, so it is the one field that does not follow the
-	// record. An older device syncing in must not make the first-run legend reappear.
-	return { ...later(local, remote), seenLegend: local.seenLegend || remote.seenLegend };
+	// `seenLegend` and `seenRevealHint` are one-way latches, so they are the fields
+	// that do not follow the record. An older device syncing in must not make the
+	// first-run legend, or the hint fish, reappear.
+	return {
+		...later(local, remote),
+		seenLegend: local.seenLegend || remote.seenLegend,
+		seenRevealHint: local.seenRevealHint || remote.seenRevealHint
+	};
 }
 
-/** Field-wise, because the latch above means the merged record is always a new object. */
+/** Field-wise, because the latches above mean the merged record is always a new object. */
 function sameSettings(a: Settings, b: Settings | undefined): boolean {
 	return (
 		b !== undefined &&
 		a.environment === b.environment &&
 		a.seenLegend === b.seenLegend &&
+		a.seenRevealHint === b.seenRevealHint &&
 		a.updatedAt === b.updatedAt
 	);
 }

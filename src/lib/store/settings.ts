@@ -23,3 +23,13 @@ export function showsMoodNumber(settings: Settings): boolean {
 export function shouldAutoOpen(settings: Settings): boolean {
 	return !settings.seenLegend;
 }
+
+/**
+ * Whether the hint fish still swims — the one-time onboarding creature that teaches
+ * "tap open water to see every task's name." One-way, same as `shouldAutoOpen`: the
+ * flag is written the moment it is popped, not before, so a reload mid-session does
+ * not make it vanish before it was ever tapped.
+ */
+export function shouldShowRevealHint(settings: Settings): boolean {
+	return !settings.seenRevealHint;
+}

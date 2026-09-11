@@ -219,6 +219,20 @@ const SYNC_SPECIES: Record<import('../scene/types').SyncMood, SpeciesSpec> = {
 	online: syncTint('#2fb583', '#1f7a5a', '#4ad4a3')
 };
 
+/**
+ * The hint fish: a one-time onboarding creature, not backed by any task, that
+ * teaches "tap open water to see every task's name." Reuses `neon`'s body — new
+ * fin/spine geometry is the fragile, must-be-looked-at part of this codebase, and
+ * borrowing an already-tuned one sidesteps that entirely — with a bright gold
+ * palette distinct from both the real species and the sync fish's own tinted betta,
+ * so it never reads as an ordinary swimmer.
+ */
+const HINT_SPECIES: SpeciesSpec = {
+	...SPECIES.neon,
+	pattern: 'none',
+	palette: { back: '#ffd23d', belly: '#ff9f1c', fin: '#fff3b0', marking: '#ffd23d', iris: '#3a2600' }
+};
+
 // ---------------------------------------------------------------- placement
 
 export function place(creature: Creature, size: Size, time: number, animate = true): Placement {
@@ -545,6 +559,8 @@ function bodyOf(creature: Creature): { spec: SpeciesSpec; scale: number } | null
 			return { spec: SPECIES.koi, scale: 1 };
 		case 'sync':
 			return { spec: SYNC_SPECIES[creature.mood ?? 'signed-out'], scale: 1.1 };
+		case 'hint':
+			return { spec: HINT_SPECIES, scale: 1.1 };
 		case 'treat':
 			return {
 				spec: creature.locked
@@ -595,6 +611,9 @@ export function drawCreature(
 			drawKoi(ctx, at, time, hash(creature.id));
 			break;
 		case 'sync':
+			drawFish(ctx, at, body!.spec, time, hash(creature.id));
+			break;
+		case 'hint':
 			drawFish(ctx, at, body!.spec, time, hash(creature.id));
 			break;
 		case 'bubble':
@@ -721,7 +740,10 @@ const DRAW_ORDER: Record<Creature['kind'], number> = {
 	shark: 3,
 	koi: 4,
 	treat: 5,
-	sync: 6
+	sync: 6,
+	// Topmost: the one creature that must never be visually obscured, since finding
+	// it is the entire point.
+	hint: 7
 };
 
 /** Paints every creature in one pass, back to front: bubbles and pearls behind, koi in front. */
@@ -755,6 +777,41 @@ export function drawCreatures(
 		drawCreature(ctx, creature, at, colors, time, size);
 		ctx.globalAlpha = outer;
 	}
+}
+
+/**
+ * The hint fish's one-time pop. `progress` runs 0 to 1 over the burst's short life —
+ * the caller owns the clock (it is a plain wall-clock timestamp, not the tank's own
+ * animate/frozen one, since it fires from a discrete tap rather than the render
+ * loop) and this draws one frame of it: a ring of small points radiating outward
+ * and fading, `lighter`-composited the same way the chest's gems and gold already
+ * are so it reads as light rather than a tinted, muddy fill.
+ */
+export function drawHintBurst(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	progress: number
+): void {
+	if (progress >= 1) return;
+
+	const POINTS = 8;
+	const radius = 6 + progress * 34;
+	const pointSize = 4 * (1 - progress);
+
+	ctx.save();
+	ctx.globalCompositeOperation = 'lighter';
+	ctx.globalAlpha = 1 - progress;
+	ctx.fillStyle = '#fff6c8';
+
+	for (let i = 0; i < POINTS; i++) {
+		const angle = (i / POINTS) * Math.PI * 2;
+		ctx.beginPath();
+		ctx.arc(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius, pointSize, 0, Math.PI * 2);
+		ctx.fill();
+	}
+
+	ctx.restore();
 }
 
 /**

@@ -16,8 +16,9 @@ export function emptySnapshot(): Snapshot {
 		version: SCHEMA_VERSION,
 		tasks: [],
 		koi: [],
-		// A tank with nothing in it has never been used, so its owner gets the legend.
-		settings: { environment: 'progress', seenLegend: false, updatedAt: 0 }
+		// A tank with nothing in it has never been used, so its owner gets the legend
+		// and the reveal-hint fish both.
+		settings: { environment: 'progress', seenLegend: false, seenRevealHint: false, updatedAt: 0 }
 	};
 }
 
