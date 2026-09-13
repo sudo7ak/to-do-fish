@@ -330,7 +330,11 @@ check('the unselected task stays put', (await find('Gamma'))?.date === today());
 
 await page.locator('input[type="checkbox"]').first().check();
 await page.waitForTimeout(150);
+// Delete always arms first now — a plain task used to vanish on the first
+// tap with no confirmation, which was the bug.
 await page.getByRole('button', { name: 'Delete' }).click();
+await page.waitForTimeout(150);
+await page.getByRole('button', { name: 'Confirm delete' }).click();
 await page.waitForTimeout(400);
 const gamma = await find('Gamma');
 check('delete is a soft delete (tombstone kept)', gamma !== undefined && gamma.deletedAt !== undefined);
