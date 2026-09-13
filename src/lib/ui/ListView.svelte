@@ -102,9 +102,8 @@
 	const groups = $derived(groupTasks(tasks, date));
 	let selected = $state(new Set<string>());
 
-	// Deleting a completed non-treat task drops a pearl from the balance. Worth a
-	// second tap before it's gone — the rest of the app never destroys a pearl
-	// silently.
+	// Shown alongside the confirm step when it would drop a pearl from the balance
+	// — the rest of the app never destroys a pearl silently.
 	const atStake = $derived(pearlsAtStake(tasks, selected));
 	let armed = $state(false);
 
@@ -112,6 +111,7 @@
 	$effect(() => {
 		date;
 		selected = new Set();
+		armed = false;
 	});
 
 	function toggle(id: string) {
@@ -130,8 +130,11 @@
 		selected = new Set();
 	}
 
+	// Always a two-tap action, whatever is selected — a plain open task deleted
+	// this way used to vanish on the first tap, with no confirmation and no undo,
+	// unlike the tank sheet's own delete which always asks first.
 	function deleteSelected() {
-		if (atStake > 0 && !armed) {
+		if (!armed) {
 			armed = true;
 			return;
 		}
@@ -172,7 +175,10 @@
 						</label>
 
 						<div class="body">
-							<span class="title" class:done={task.status === 'done'}>{task.title}</span>
+							<span class="title" class:done={task.status === 'done'}>
+								{#if task.priority}<span class="priority" title="Priority">🦈</span>{/if}
+								{task.title}
+							</span>
 							{#if condition}<span class="condition">{condition}</span>{/if}
 						</div>
 
@@ -209,7 +215,7 @@
 				<span>{describeSelection(selected.size)}</span>
 				<button type="button" onclick={() => moveSelected(1)}>Push to tomorrow</button>
 				<button type="button" onclick={() => moveSelected(-1)}>Pull to yesterday</button>
-				{#if armed}
+				{#if armed && atStake > 0}
 					<span class="pearl-warning">
 						Removes {atStake} {atStake === 1 ? 'pearl' : 'pearls'} —
 					</span>
@@ -309,6 +315,10 @@
 	.title.done {
 		opacity: 0.5;
 		text-decoration: line-through;
+	}
+
+	.priority {
+		margin-right: 0.3em;
 	}
 
 	.condition {

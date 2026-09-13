@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { emptyForm, formFor, toDraft, formError, describeRefusal } from './TaskSheet.svelte';
+import {
+	emptyForm,
+	formFor,
+	toDraft,
+	formError,
+	describeRefusal,
+	dependencyCandidates
+} from './TaskSheet.svelte';
 import type { Task } from '../types';
 
 const DAY = '2026-08-08';
@@ -129,6 +136,32 @@ describe('formError', () => {
 
 	it('accepts a free treat', () => {
 		expect(formError(filled({ kind: 'treat', treatCost: 0 }))).toBeNull();
+	});
+});
+
+describe('dependencyCandidates', () => {
+	it('keeps a predecessor that has moved to another day', () => {
+		// Regression: the dropdown used to filter by date, so pushing "Buy
+		// groceries" to tomorrow dropped it from "Send report"'s own "After" list —
+		// wiping the already-chosen dependency and blocking save, even though
+		// evaluate() and validateCondition never cared about dates.
+		const groceries = task({ id: 'groceries', date: '2026-08-09' });
+		const report = task({ id: 'report', date: DAY });
+
+		expect(dependencyCandidates([groceries, report], 'report')).toEqual([groceries]);
+	});
+
+	it('excludes the task being edited', () => {
+		const a = task({ id: 'a' });
+		const b = task({ id: 'b' });
+
+		expect(dependencyCandidates([a, b], 'a')).toEqual([b]);
+	});
+
+	it('excludes soft-deleted tasks', () => {
+		const gone = task({ id: 'gone', deletedAt: 1 });
+
+		expect(dependencyCandidates([gone], undefined)).toEqual([]);
 	});
 });
 

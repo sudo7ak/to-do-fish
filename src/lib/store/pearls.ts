@@ -18,7 +18,13 @@ export function pearlBalance(tasks: Task[]): number {
 	// A treat counts as claimed once its status has left "waiting" — claiming is the
 	// act of paying for it. Completing it later costs nothing more, and mints
 	// nothing: a reward already paid for should not also pay out.
-	const spent = live
+	//
+	// Deliberately over `tasks`, not `live`: the pearls left the balance the moment
+	// the treat was claimed, and deleting the task afterward must not hand them
+	// back. Filtering this side by `isLive` the same way `earned` is filtered was
+	// exactly the bug — soft-deleting a claimed treat dropped it out of `spent` and
+	// silently refunded its cost.
+	const spent = tasks
 		.filter((t) => t.treatCost !== undefined && t.status !== 'waiting')
 		.reduce((total, t) => total + t.treatCost!, 0);
 

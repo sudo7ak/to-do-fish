@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { labelable, clampLabelX } from './reveal';
+import { labelable, clampLabelX, declutterLabels } from './reveal';
 import type { Creature, CreatureKind } from '../scene/types';
 
 const creature = (id: string, kind: CreatureKind, over: Partial<Creature> = {}): Creature => ({
@@ -70,5 +70,51 @@ describe('clampLabelX', () => {
 
 	it('pulls a label near the right glass in from the edge', () => {
 		expect(clampLabelX(395, 400)).toBeLessThanOrEqual(400 - 62);
+	});
+});
+
+describe('declutterLabels', () => {
+	// Regression: on a narrow phone screen a task's label landed directly on top
+	// of the sync fish's own "Not signed in" label. Both axes have to be close for
+	// two pills to actually overlap, so only a collision on both should move one.
+	it('leaves labels alone when nothing overlaps', () => {
+		const points = [
+			{ id: 'a', x: 50, y: 100 },
+			{ id: 'b', x: 300, y: 100 }
+		];
+
+		expect(declutterLabels(points)).toEqual(points);
+	});
+
+	it('pushes a colliding label down, away from the first', () => {
+		const points = [
+			{ id: 'sync', x: 60, y: 40 },
+			{ id: 'task', x: 65, y: 45 }
+		];
+
+		const result = declutterLabels(points);
+		expect(result[0]).toEqual({ id: 'sync', x: 60, y: 40 });
+		expect(result[1].y).toBeGreaterThanOrEqual(40 + 22);
+	});
+
+	it('does not move labels that only share one axis', () => {
+		const points = [
+			{ id: 'a', x: 60, y: 40 },
+			{ id: 'b', x: 60, y: 400 }
+		];
+
+		expect(declutterLabels(points)).toEqual(points);
+	});
+
+	it('keeps resolving a chain of collisions rather than stopping at the first', () => {
+		const points = [
+			{ id: 'a', x: 60, y: 40 },
+			{ id: 'b', x: 60, y: 40 },
+			{ id: 'c', x: 60, y: 40 }
+		];
+
+		const result = declutterLabels(points);
+		const ys = result.map((p) => p.y);
+		expect(new Set(ys).size).toBe(3);
 	});
 });

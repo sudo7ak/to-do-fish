@@ -31,7 +31,7 @@
 	import { loadShortcut, matches as matchesShortcut } from '$lib/ui/shortcut';
 	import { shouldAutoOpen, shouldShowRevealHint } from '$lib/store/settings';
 	import { resolveTap, type TapOrigin } from '$lib/ui/tap';
-	import { labelable, clampLabelX } from '$lib/ui/reveal';
+	import { labelable, clampLabelX, declutterLabels } from '$lib/ui/reveal';
 	import Calendar from '$lib/ui/Calendar.svelte';
 	import { taskDatesOf, koiDatesOf } from '$lib/ui/calendar';
 
@@ -342,11 +342,22 @@
 
 		// Direct DOM writes, not a `$state` assignment — see the comment on
 		// `revealEntries` for why this must not become a Svelte re-render.
-		for (const entry of revealEntries) {
-			const el = labelEls[entry.creature.id];
-			if (!el) continue;
-			const at = place(entry.creature, size, time, frame.animate);
-			el.style.transform = `translate(${clampLabelX(at.x, size.w)}px, ${at.y}px)`;
+		//
+		// Declutter every frame, not just on the initial tap: `place()` keeps
+		// moving each fish, so positions decluttered once would drift back on top
+		// of each other as soon as the fish swam. Guarded on length so the two
+		// allocations below only happen while a reveal is actually on screen,
+		// not on every frame for the rest of the session.
+		if (revealEntries.length) {
+			const points = revealEntries.map((entry) => {
+				const at = place(entry.creature, size, time, frame.animate);
+				return { id: entry.creature.id, x: clampLabelX(at.x, size.w), y: at.y };
+			});
+			for (const point of declutterLabels(points)) {
+				const el = labelEls[point.id];
+				if (!el) continue;
+				el.style.transform = `translate(${point.x}px, ${point.y}px)`;
+			}
 		}
 	}
 
@@ -391,9 +402,15 @@
 	/** Surfaces every labelable creature's title — shared by an open-water tap and a first tap on the hint fish. */
 	function revealAll(scene: Scene, time: number) {
 		clearTimeout(revealTimer);
-		revealEntries = labelable(scene.creatures).map((creature) => {
+		const creatures = labelable(scene.creatures);
+		const raw = creatures.map((creature) => {
 			const at = place(creature, lastFrame.size, time, lastFrame.animate);
-			return { creature, x: clampLabelX(at.x, lastFrame.size.w), y: at.y };
+			return { id: creature.id, x: clampLabelX(at.x, lastFrame.size.w), y: at.y };
+		});
+		const declut = new Map(declutterLabels(raw).map((point) => [point.id, point]));
+		revealEntries = creatures.map((creature) => {
+			const point = declut.get(creature.id)!;
+			return { creature, x: point.x, y: point.y };
 		});
 		revealTimer = setTimeout(() => {
 			revealEntries = [];
@@ -762,7 +779,10 @@
 	.reveal-label__pill {
 		display: inline-block;
 		transform: translate(-50%, -170%);
-		max-width: 120px;
+		/* Wide enough to show more of a long title on a phone-width viewport, capped
+		   so it can never itself force the pill past the glass on either side —
+		   `clampLabelX`'s own margin assumes a pill no wider than this. */
+		max-width: min(168px, 44vw);
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;

@@ -75,9 +75,14 @@ describe('pearlBalance — soft deletes', () => {
 		expect(pearlBalance([done('a'), done('b', { deletedAt: 1 })])).toBe(1);
 	});
 
-	it('a deleted claimed treat costs nothing', () => {
+	it('a deleted claimed treat still costs its price — deleting must not refund a spent pearl', () => {
 		const claims = [treat('x', 5, { status: 'open', deletedAt: 1 })];
-		expect(pearlBalance([done('a'), done('b'), ...claims])).toBe(2);
+		expect(pearlBalance([done('a'), done('b'), ...claims])).toBe(-3);
+	});
+
+	it('a deleted unclaimed treat still costs nothing — it was never spent', () => {
+		const unclaimed = [treat('x', 5, { deletedAt: 1 })];
+		expect(pearlBalance([done('a'), done('b'), ...unclaimed])).toBe(2);
 	});
 });
 

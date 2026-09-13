@@ -1,5 +1,5 @@
 <script module lang="ts">
-	import type { Condition, Task } from '../types';
+	import { isLive, type Condition, type Task } from '../types';
 	import type { TaskDraft, Refusal } from '../store/tasks';
 
 	/** What the form holds. Flattened, because a form cannot edit a discriminated union directly. */
@@ -97,6 +97,18 @@
 		return null;
 	}
 
+	/**
+	 * Candidates for the "After" dropdown. Not date-filtered: `evaluate()` and
+	 * `validateCondition` never look at dates, so a predecessor pushed to another
+	 * day is still a legal target. Filtering the list by date drops the very task
+	 * already selected once it moves, and Svelte's `<select bind:value>` reads that
+	 * missing option back as an empty string — silently wiping `dependsOn` and
+	 * blocking the save with "Choose the task this one waits on."
+	 */
+	export function dependencyCandidates(tasks: Task[], excludeId: string | undefined): Task[] {
+		return tasks.filter((t) => isLive(t) && t.id !== excludeId);
+	}
+
 	export function describeRefusal(refusal: Refusal): string {
 		switch (refusal.reason) {
 			case 'cycle':
@@ -113,7 +125,6 @@
 	import { untrack } from 'svelte';
 	import { validateCondition } from '../triggers/validate';
 	// `Task` is already in scope from the module script above.
-	import { isLive } from '../types';
 	import type { Outcome } from '../store/tasks';
 
 	/**
@@ -148,10 +159,7 @@
 		}
 	});
 
-	/** Candidates for a dependency: live tasks on this date, never the task being edited. */
-	const dependencies = $derived(
-		tasks.filter((t) => isLive(t) && t.date === form.date && t.id !== task?.id)
-	);
+	const dependencies = $derived(dependencyCandidates(tasks, task?.id));
 
 	// Immediate feedback while the dependency is being chosen, rather than on save.
 	const cycleWarning = $derived.by(() => {
