@@ -673,6 +673,7 @@
 	<CreatureSheet
 		task={selected}
 		affordable={selected ? canAfford($tasks, selected) : false}
+		balance={pearls}
 		onComplete={(id) => store.completeTask(id)}
 		onReopen={(id) => store.reopenTask(id)}
 		onRelease={(id) => store.releaseBubble(id)}

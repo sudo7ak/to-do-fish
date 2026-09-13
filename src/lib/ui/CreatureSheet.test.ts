@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tapAction, actionsFor, describeCondition } from './CreatureSheet.svelte';
+import { tapAction, actionsFor, describeCondition, reopenCosts } from './CreatureSheet.svelte';
 import type { Task } from '../types';
 
 const task = (over: Partial<Task> = {}): Task => ({
@@ -161,5 +161,44 @@ describe('describeCondition', () => {
 
 		expect(describeCondition(wasTimed)).toBeNull();
 		expect(describeCondition(wasDependent)).toBeNull();
+	});
+
+	it('says nothing about waiting once a bubble has been released', () => {
+		// `condition` stays on the task after release — it's the record of what
+		// released it — so a released dependency or timed bubble still carries
+		// `condition.kind === 'task' | 'time'`. Only `status` says the wait is over;
+		// a swimming task reading "Waiting on another task" is the same contradiction
+		// as a done one reading it.
+		const releasedTimed = task({ status: 'open', condition: { kind: 'time', at: '15:00' } });
+		const releasedDependent = task({ status: 'open', condition: { kind: 'task', taskId: 'dep' } });
+
+		expect(describeCondition(releasedTimed)).toBeNull();
+		expect(describeCondition(releasedDependent)).toBeNull();
+	});
+});
+
+describe('reopenCosts', () => {
+	// reopenTask flips a done task back to open, which removes one earned pearl
+	// (pearlBalance in store/pearls.ts). With no pearls left, that pearl was
+	// already spent on a treat, and the balance goes negative — reported as
+	// happening with "no warning or restriction".
+	const done = task({ status: 'done' });
+	const doneTreat = task({ status: 'done', treatCost: 5 });
+
+	it('costs a pearl when the balance is already at zero', () => {
+		expect(reopenCosts(done, 0)).toBe(true);
+	});
+
+	it('costs a pearl when the balance is already negative', () => {
+		expect(reopenCosts(done, -2)).toBe(true);
+	});
+
+	it('costs nothing when there is a pearl to spare', () => {
+		expect(reopenCosts(done, 1)).toBe(false);
+	});
+
+	it('never costs anything for a treat — its price left the balance at claim, not completion', () => {
+		expect(reopenCosts(doneTreat, 0)).toBe(false);
+		expect(reopenCosts(doneTreat, -3)).toBe(false);
 	});
 });

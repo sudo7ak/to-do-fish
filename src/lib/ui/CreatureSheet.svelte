@@ -58,9 +58,11 @@
 				: 'Claimed';
 		}
 
-		// A finished task is not waiting for anything. Reading "Waiting until 15:00"
-		// under a struck-through title in the Done group is a contradiction on screen.
-		if (task.status === 'done') return null;
+		// A released or finished task is not waiting for anything. `condition` stays on
+		// the task after release (it's the record of what released it), so gating on its
+		// presence alone keeps showing "Waiting on..." after status has moved past
+		// 'waiting' — only status says whether the wait is still true.
+		if (task.status !== 'waiting') return null;
 
 		switch (task.condition?.kind) {
 			case 'time':
@@ -75,6 +77,16 @@
 				return null;
 		}
 	}
+
+	/**
+	 * Whether reopening this done task would take back a pearl that has already
+	 * been spent on a treat, pushing the balance negative. Only ordinary tasks
+	 * count: a treat's price leaves the balance at claim, not at completion, so
+	 * reopening one never costs anything.
+	 */
+	export function reopenCosts(task: Task, balance: number): boolean {
+		return task.treatCost === undefined && balance <= 0;
+	}
 </script>
 
 <script lang="ts">
@@ -87,6 +99,8 @@
 		task: Task | null;
 		/** Whether the current pearl balance covers this treat, if it is one. */
 		affordable: boolean;
+		/** The current pearl balance — reopening a done ordinary task removes one. */
+		balance: number;
 		onComplete: (id: string) => void;
 		onReopen: (id: string) => void;
 		onRelease: (id: string) => void;
@@ -101,6 +115,7 @@
 	const {
 		task,
 		affordable,
+		balance,
 		onComplete,
 		onReopen,
 		onRelease,
@@ -115,12 +130,20 @@
 	const actions = $derived(task ? actionsFor(task, affordable) : []);
 	const condition = $derived(task ? describeCondition(task) : null);
 	const confirmingDelete = $state({ value: false });
+	const confirmingReopen = $state({ value: false });
+
+	// Reopening a done ordinary task removes an earned pearl (see `reopenTask` in
+	// store/tasks.ts). If none are left, that pearl was already spent on a treat —
+	// the balance goes negative rather than silently vanishing, so this warns first
+	// rather than let the debt appear with no explanation.
+	const reopenWarns = $derived(task ? reopenCosts(task, balance) : false);
 
 	// Disarm whenever the sheet moves to another creature, or a tap on one task
-	// would arrive at "Really delete" for the next.
+	// would arrive at "Really delete"/"Reopen anyway" for the next.
 	$effect(() => {
 		task?.id;
 		confirmingDelete.value = false;
+		confirmingReopen.value = false;
 	});
 
 	function act(fn: () => void) {
@@ -170,9 +193,15 @@
 				<button type="button" onclick={() => act(() => onComplete(task.id))}>Done</button>
 			{/if}
 			{#if actions.includes('reopen')}
-				<button type="button" class="ghost" onclick={() => act(() => onReopen(task.id))}>
-					Reopen
-				</button>
+				{#if reopenWarns && !confirmingReopen.value}
+					<button type="button" class="ghost" onclick={() => (confirmingReopen.value = true)}>
+						Reopen — no pearl left to take back
+					</button>
+				{:else}
+					<button type="button" class="ghost" onclick={() => act(() => onReopen(task.id))}>
+						{reopenWarns ? 'Reopen anyway' : 'Reopen'}
+					</button>
+				{/if}
 			{/if}
 
 			{#if task.status !== 'done' && task.treatCost === undefined}

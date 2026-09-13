@@ -112,7 +112,7 @@
 		{
 			id: 'sync',
 			title: 'Sync status',
-			blurb: 'Prototype: tinted green when synced, red offline, grey signed out.',
+			blurb: 'Tinted green when synced, red offline, grey signed out.',
 			zoom: 0.9,
 			creature: {
 				id: 'legend-sync',

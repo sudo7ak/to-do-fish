@@ -147,7 +147,7 @@
 		  what search engines and no-JS visitors actually see, and sits behind the canvas
 		  (z-index -1) once the app mounts and paints over it.
 		-->
-		<div class="seo-hero">
+		<div class="seo-hero" id="seo-hero">
 			<h1>Fish Tank To-Do</h1>
 			<p>A to-do app where every task is a fish. Finish something and watch it join the tank.</p>
 			<ul>
@@ -157,6 +157,17 @@
 			</ul>
 			<noscript>This app needs JavaScript enabled to run.</noscript>
 		</div>
+		<!--
+		  z-index -1 only hides this once something else has painted on top of it, and
+		  that something is the full Svelte app — framework bundle fetched, parsed and
+		  mounted. A hard navigation back into an already-open tab (the Google OAuth
+		  redirect is the one flow that forces this) repaints this block first and
+		  leaves it showing for that whole gap. This inline script runs the instant the
+		  parser reaches it — no bundle to wait for — so JS-capable visitors stop
+		  seeing it almost immediately; no-JS visitors and crawlers, who never run it,
+		  still get the fallback content untouched.
+		-->
+		<script>document.getElementById('seo-hero').style.display = 'none';</script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

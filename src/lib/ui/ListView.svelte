@@ -63,7 +63,7 @@
 
 <script lang="ts">
 	import { shiftDate, formatDay } from './DateHeader.svelte';
-	import { describeCondition, actionsFor } from './CreatureSheet.svelte';
+	import { describeCondition, actionsFor, reopenCosts } from './CreatureSheet.svelte';
 	import { pearlBalance } from '../store/pearls';
 
 
@@ -102,6 +102,26 @@
 	const groups = $derived(groupTasks(tasks, date));
 	let selected = $state(new Set<string>());
 
+	// Reopening a done ordinary task removes an earned pearl (see `reopenTask` in
+	// store/tasks.ts); with none left that pearl was already spent on a treat, and
+	// the balance goes negative. Warned the same two-tap way as delete, rather than
+	// let the debt appear with no explanation — see `reopenCosts` in CreatureSheet.
+	let reopenArmed = $state(new Set<string>());
+
+	function reopen(task: Task) {
+		const costs = reopenCosts(task, balance);
+		if (costs && !reopenArmed.has(task.id)) {
+			reopenArmed = new Set(reopenArmed).add(task.id);
+			return;
+		}
+		if (reopenArmed.has(task.id)) {
+			const next = new Set(reopenArmed);
+			next.delete(task.id);
+			reopenArmed = next;
+		}
+		onReopen(task.id);
+	}
+
 	// Shown alongside the confirm step when it would drop a pearl from the balance
 	// — the rest of the app never destroys a pearl silently.
 	const atStake = $derived(pearlsAtStake(tasks, selected));
@@ -112,6 +132,7 @@
 		date;
 		selected = new Set();
 		armed = false;
+		reopenArmed = new Set();
 	});
 
 	function toggle(id: string) {
@@ -197,8 +218,15 @@
 								<button type="button" onclick={() => onComplete(task.id)}>Done</button>
 							{/if}
 							{#if actions.includes('reopen')}
-								<button type="button" class="ghost" onclick={() => onReopen(task.id)}>
-									Reopen
+								{@const costs = reopenCosts(task, balance)}
+								<button type="button" class="ghost" onclick={() => reopen(task)}>
+									{#if costs && !reopenArmed.has(task.id)}
+										Reopen — no pearl left
+									{:else if costs}
+										Reopen anyway
+									{:else}
+										Reopen
+									{/if}
 								</button>
 							{/if}
 							<button type="button" class="ghost" onclick={() => onEdit(task)}>Edit</button>
