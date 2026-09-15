@@ -117,4 +117,19 @@ describe('declutterLabels', () => {
 		const ys = result.map((p) => p.y);
 		expect(new Set(ys).size).toBe(3);
 	});
+
+	// Regression: froze the tank on a real tap. `other.y + MIN_GAP_Y` rounds to a
+	// double that lands 21.999999999999943 away from `other.y`, not 22 — so the
+	// resolved position read back as still colliding with the very point it had
+	// just cleared, reassigned the identical float, and never terminated.
+	it('escapes a collision even when the resolved gap rounds a hair under MIN_GAP_Y', () => {
+		const points = [
+			{ id: 'a', x: 0, y: 505.6784705521721 },
+			{ id: 'b', x: 0, y: 492.91284972521873 }
+		];
+
+		const result = declutterLabels(points);
+		expect(result[1].id).toBe('b');
+		expect(Math.abs(result[1].y - result[0].y)).toBeGreaterThanOrEqual(22);
+	});
 });

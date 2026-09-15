@@ -56,7 +56,12 @@ export function declutterLabels(points: LabelPoint[]): LabelPoint[] {
 			collided = false;
 			for (const other of placed) {
 				if (Math.abs(point.x - other.x) < MIN_GAP_X && Math.abs(y - other.y) < MIN_GAP_Y) {
-					y = other.y + MIN_GAP_Y;
+					// `+ MIN_GAP_Y` alone can round to a double a hair under the gap (e.g.
+					// 505.678... + 22 lands 21.999999999999943 away from 505.678...,
+					// not 22), so the very next comparison reads it as still colliding
+					// with the same point and reassigns the identical float forever.
+					// The nudge pushes past that rounding noise instead of onto its edge.
+					y = other.y + MIN_GAP_Y + 1e-6;
 					collided = true;
 				}
 			}
